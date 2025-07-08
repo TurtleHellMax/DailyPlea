@@ -5,18 +5,26 @@ html, body {
 }
 
 .container {
-  /* make a full-screen flexbox */
+  /* full-screen flex to center the <p> block */
   display: flex;
   justify-content: center;
   align-items: center;
-  width: 100%;
-  height: 100%;
+  
+  /* leave 20% padding on left/right */
+  padding: 0 20%;
+  
   background-color: #ffffff;
 }
 
 .container p {
-  /* use your “custom” font */
   font-family: 'Montserrat', sans-serif;
   font-size: 2rem;
+  
+  /* 1.5× line spacing */
+  line-height: 1.5;
+  
+  /* center each line of text */
+  text-align: center;
+  
   color: #000000;
 }
