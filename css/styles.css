@@ -1,11 +1,13 @@
-/* 1) make html/body fill the viewport */
+/* css/styles.css */
+
+/* 1) reset and let body size to content */
 html, body {
   margin: 0;
   padding: 0;
-  height: 100%;
+  /* REMOVE any height:100% here */
 }
 
-/* 2) include padding in your width calculations */
+/* 2) Box-sizing for predictable padding */
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -15,11 +17,10 @@ html, body {
   justify-content: center;
   align-items: center;
 
-  /* ensure it really fills the viewport */
-  width: 100%;
-  height: 100%;
+  /* 3) ensure at least 1 viewport tall, but can grow */
+  min-height: 100vh;
 
-  /* leave 20% blank on each side */
+  /* 4) horizontal “gutters” of 20% on each side */
   padding: 0 20%;
 
   background-color: #ffffff;
@@ -32,7 +33,7 @@ html, body {
   /* 1.5× line spacing */
   line-height: 1.5;
 
-  /* center each line of text */
+  /* center text horizontally */
   text-align: center;
 
   color: #000000;
