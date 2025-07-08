@@ -4,16 +4,17 @@
     src: url('../fonts/Voice1.woff2') format('woff2'), url('../fonts/Voice1.woff') format('woff'), url('../fonts/Voice1.ttf') format('ttf');
     font-weight: normal;
     font-style: normal;
-    font-display: swap; /* ensures text is visible during load */
+    font-display: swap;
 }
 
 html, body {
-  background-color: #000;
-  margin: 0;
-  padding: 0;
+    background-color: #000;
+    margin: 0;
+    padding: 0;
 }
+
 *, *::before, *::after {
-  box-sizing: border-box;
+    box-sizing: border-box;
 }
 
 .container {
@@ -21,25 +22,24 @@ html, body {
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    padding: 0 20%;
+    padding: 0 20%; /* leave as-is */
     background-color: #000;
     text-align: center;
 }
 
-.container p {
-    font-family: 'Voice1', sans-serif;
-    font-size: 1rem;
-    line-height: 1.75;
-    color: #fff;
-    word-spacing: -0.15em;
-}
+    .container p {
+        font-family: 'Voice1', sans-serif;
+        font-size: 2rem; /* was 1rem */
+        line-height: 1.75; /* was 1.75 */
+        color: #fff;
+        word-spacing: -0.2em; /* was -0.15em */
+    }
 
-.container .plea-number {
-    font-family: 'Voice1', sans-serif;
-    display: block;
-    font-size: 2rem;
-    margin-bottom: 0.5em;
-    color: #fff;
-    word-spacing: -0.15em;
-}
-
+    .container .plea-number {
+        font-family: 'Voice1', sans-serif;
+        display: block;
+        font-size: 4rem; /* was 2rem */
+        margin-bottom: 0.5em; /* was 0.5em */
+        color: #fff;
+        word-spacing: -0.2em; /* was -0.15em */
+    }
