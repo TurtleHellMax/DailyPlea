@@ -1,30 +1,39 @@
+/* 1) make html/body fill the viewport */
 html, body {
   margin: 0;
   padding: 0;
   height: 100%;
 }
 
+/* 2) include padding in your width calculations */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 .container {
-  /* full-screen flex to center the <p> block */
   display: flex;
   justify-content: center;
   align-items: center;
-  
-  /* leave 20% padding on left/right */
+
+  /* ensure it really fills the viewport */
+  width: 100%;
+  height: 100%;
+
+  /* leave 20% blank on each side */
   padding: 0 20%;
-  
+
   background-color: #ffffff;
 }
 
 .container p {
   font-family: 'Montserrat', sans-serif;
   font-size: 2rem;
-  
+
   /* 1.5× line spacing */
   line-height: 1.5;
-  
+
   /* center each line of text */
   text-align: center;
-  
+
   color: #000000;
 }
