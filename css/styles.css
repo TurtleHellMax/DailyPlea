@@ -1,5 +1,14 @@
 /* reset/box-sizing… (same as before) */
+@font-face {
+    font-family: 'Voice1';
+    src: url('../fonts/Voice1.woff2') format('woff2'), url('../fonts/Voice1.woff') format('woff'), url('../fonts/Voice1.ttf') format('ttf');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap; /* ensures text is visible during load */
+}
+
 html, body {
+  background-color: #000;
   margin: 0;
   padding: 0;
 }
@@ -8,24 +17,29 @@ html, body {
 }
 
 .container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  padding: 0 20%;
-  background-color: #fff;
-  text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 0 20%;
+    background-color: #000;
+    text-align: center;
 }
 
 .container p {
-  /* half the original 2rem size = 1rem */
-  font-size: 1rem;
-  line-height: 1.75;     /* 1.75× spacing */
-  color: #000;
+    font-family: 'Voice1', sans-serif;
+    font-size: 1rem;
+    line-height: 1.75;
+    color: #fff;
+    word-spacing: -0.15em;
 }
 
 .container .plea-number {
-  display: block;         /* make sure it sits alone */
-  font-size: 2rem;        /* original size */
-  margin-bottom: 0.5em;   /* a little space before the rest */
+    font-family: 'Voice1', sans-serif;
+    display: block;
+    font-size: 2rem;
+    margin-bottom: 0.5em;
+    color: #fff;
+    word-spacing: -0.15em;
 }
+
