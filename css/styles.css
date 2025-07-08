@@ -1,13 +1,8 @@
-/* css/styles.css */
-
-/* 1) reset and let body size to content */
+/* reset/box-sizing… (same as before) */
 html, body {
   margin: 0;
   padding: 0;
-  /* REMOVE any height:100% here */
 }
-
-/* 2) Box-sizing for predictable padding */
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -16,25 +11,21 @@ html, body {
   display: flex;
   justify-content: center;
   align-items: center;
-
-  /* 3) ensure at least 1 viewport tall, but can grow */
   min-height: 100vh;
-
-  /* 4) horizontal “gutters” of 20% on each side */
   padding: 0 20%;
-
-  background-color: #ffffff;
+  background-color: #fff;
+  text-align: center;
 }
 
 .container p {
-  font-family: 'Montserrat', sans-serif;
-  font-size: 2rem;
+  /* half the original 2rem size = 1rem */
+  font-size: 1rem;
+  line-height: 1.75;     /* 1.75× spacing */
+  color: #000;
+}
 
-  /* 1.5× line spacing */
-  line-height: 1.5;
-
-  /* center text horizontally */
-  text-align: center;
-
-  color: #000000;
+.container .plea-number {
+  display: block;         /* make sure it sits alone */
+  font-size: 2rem;        /* original size */
+  margin-bottom: 0.5em;   /* a little space before the rest */
 }
