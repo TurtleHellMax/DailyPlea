@@ -3,9 +3,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const animateSections = Array.from(sections).slice(1);
     const prompt = document.getElementById('continue-prompt');
     const container = document.querySelector('.container');
-
-    // 1) setup AudioContext + load your WAV once
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const volumeNode = audioCtx.createGain();
+    volumeNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+
     let clickBuffer = null;
     fetch('sounds/Voice1Hum.wav')
         .then(res => {
@@ -16,17 +17,17 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(buf => { clickBuffer = buf; })
         .catch(err => console.error(err));
 
-    // helper to play the click sound on every char
     function playClick() {
         if (!clickBuffer) return;
-        // if context is still suspended, resume then play
         if (audioCtx.state === 'suspended') {
             audioCtx.resume().then(playClick);
             return;
         }
         const src = audioCtx.createBufferSource();
         src.buffer = clickBuffer;
-        src.connect(audioCtx.destination);
+        src.connect(volumeNode);
+        volumeNode.connect(audioCtx.destination);
+
         src.start();
     }
 
