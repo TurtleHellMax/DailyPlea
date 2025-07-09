@@ -3,35 +3,44 @@ document.addEventListener('DOMContentLoaded', () => {
     const animateSections = Array.from(sections).slice(1);
     const prompt = document.getElementById('continue-prompt');
     const container = document.querySelector('.container');
+    container.scrollTo({ top: 0, behavior: 'auto' });
+
+    const startOverlay = document.getElementById('start-overlay');
+    const startText = document.getElementById('start-text');
+    const ellipsis = document.getElementById('ellipsis');
+
+    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const volumeNode = audioCtx.createGain();
     volumeNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+    volumeNode.connect(audioCtx.destination);
 
     let clickBuffer = null;
+    let resumed = false;
+    let started = false;
+
     fetch('sounds/Voice1Hum.wav')
-        .then(res => {
-            if (!res.ok) throw new Error(`Audio fetch failed: ${res.status}`);
-            return res.arrayBuffer();
+        .then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status} for audio`);
+            return r.arrayBuffer();
         })
         .then(data => audioCtx.decodeAudioData(data))
         .then(buf => { clickBuffer = buf; })
-        .catch(err => console.error(err));
+        .catch(err => console.error('Audio load failed:', err));
+
+    requestAnimationFrame(() => {
+        startText.classList.add('visible');
+    });
 
     function playClick() {
-        if (!clickBuffer) return;
-        if (audioCtx.state === 'suspended') {
-            audioCtx.resume().then(playClick);
-            return;
-        }
+        if (!clickBuffer || !resumed) return;
         const src = audioCtx.createBufferSource();
         src.buffer = clickBuffer;
         src.connect(volumeNode);
-        volumeNode.connect(audioCtx.destination);
-
         src.start();
     }
 
-    // wrap only non-space chars
     animateSections.forEach(section => {
         const raw = section.textContent;
         section.textContent = '';
@@ -60,42 +69,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const schedulePrompt = idx => {
         clearTimeout(promptTimer);
         const delay = idx === 0 ? 2500 : 6000;
-        promptTimer = setTimeout(() => {
-            prompt.classList.add('visible');
-        }, delay);
+        promptTimer = setTimeout(() => prompt.classList.add('visible'), delay);
     };
 
     const revealSection = idx => {
         revealing = true;
         const chars = animateSections[idx].querySelectorAll('.char');
-        const BASE_SPEED = 30;    // ms per character
-        const PERIOD_PAUSE = 300;   // extra ms after a '.'
+        const BASE_SPEED = 30;
+        const PERIOD_PAUSE = 300;
         let accDelay = 0;
 
-        // clear any old timeouts
         timeouts.forEach(clearTimeout);
         timeouts = [];
 
         chars.forEach(c => {
             const id = setTimeout(() => {
                 c.classList.add('visible');
-
-                // 2) play the click on each character
                 playClick();
 
-                // scroll logic (keep 20% gutter)
-                const charBottomOffset = c.offsetTop + c.clientHeight;
                 const gutter = container.clientHeight * 0.2;
-                if (charBottomOffset > container.scrollTop + container.clientHeight - gutter) {
-                    const target = charBottomOffset - (container.clientHeight - gutter);
+                const charBottom = c.offsetTop + c.clientHeight;
+                const visibleBottom = container.scrollTop + container.clientHeight - gutter;
+                if (charBottom > visibleBottom) {
+                    const target = charBottom - (container.clientHeight - gutter);
                     container.scrollTo({ top: target, behavior: 'smooth' });
                 }
 
-                // end-of-section
-                if (c === chars[chars.length - 1]) {
-                    revealing = false;
-                    if (idx < animateSections.length - 2) schedulePrompt(idx);
-                }
             }, accDelay);
 
             timeouts.push(id);
@@ -104,11 +103,45 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    // auto-start first reveal
-    if (animateSections.length) {
+    async function doStartFlow() {
+        // switch text to “Connecting” and clear old ellipses
+        startText.textContent = 'Connecting';
+        ellipsis.textContent = '';
+
+        // add dots one by one
+        for (let i = 0; i < 3; i++) {
+            await new Promise(r => setTimeout(r, 300));
+            ellipsis.textContent += '.';
+        }
+
+        // random pause before hiding
+        await new Promise(r => setTimeout(r, Math.random() * 2000 + 1000));
+
+        // clear everything, wait, then hide overlay
+        startText.textContent = '';
+        ellipsis.textContent = '';
+        await new Promise(r => setTimeout(r, 1000));
+        startOverlay.classList.add('hidden');
+
+        // then wait and start the first reveal
+        await new Promise(r => setTimeout(r, 1000));
         revealSection(0);
         current = 1;
     }
+
+    function onStart(e) {
+        e.preventDefault();
+        if (started) return; 
+        started = true; 
+
+        if (audioCtx.state === 'suspended') audioCtx.resume().catch(console.error);
+        resumed = true;
+        doStartFlow();
+    }
+
+    startOverlay.addEventListener('pointerdown', onStart, { once: true });
+    startOverlay.addEventListener('touchstart', onStart, { once: true, passive: false });
+    startOverlay.addEventListener('click', onStart, { once: true });
 
     container.addEventListener('click', () => {
         hidePrompt();

@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
+    <!-- 1) Main content -->
     <div class="container">
         <p>
             <span class="section plea-number">Plea #2:</span>
@@ -57,18 +58,18 @@
 
             <span class="section">
                 the end.
-            </span>
-
-            <span class="section"></span><br><br><br><br><br>
+            </span><br><br><br><br><br>
         </p>
     </div>
 
-    <!-- Continue prompt -->
+    <!-- 2) Continue prompt -->
     <div id="continue-prompt">Continue..?</div>
 
-    <audio id="Voice1-Hum" src="sounds/Voice1Hum.wav" preload="auto"></audio>
+    <div id="start-overlay">
+        <span id="start-text">Connect?</span><span id="ellipsis"></span>
+    </div>
 
-    <!-- your script include -->
+    <!-- 4) Your script -->
     <script src="js/main.js"></script>
 </body>
 </html>

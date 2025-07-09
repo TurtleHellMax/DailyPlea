@@ -98,3 +98,44 @@ html, body {
     /* FADE-IN: wait 2.5s, then over 0.5s */
     transition: opacity 1s ease-in, transform 1s ease-in;
 }
+
+#start-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    pointer-events: auto;
+}
+
+/* hide the text until we add .visible */
+#start-text {
+    opacity: 0;
+    transition: opacity 1s ease-in-out;
+    font-family: 'Voice1', sans-serif;
+    font-size: 2rem;
+    color: #fff;
+}
+
+/* faded-in state */
+#start-text.visible {
+    opacity: 1;
+}
+
+/* hidden state once we’re done */
+#start-overlay.hidden {
+    display: none !important;
+}
+
+/* ellipsis sits immediately after the text */
+#ellipsis {
+    font-family: 'Voice1', sans-serif;
+    font-size: 2rem;
+    color: #fff;
+    margin-left: 0.25em;
+}
