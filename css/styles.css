@@ -1,12 +1,13 @@
-/* reset/box-sizing… (same as before) */
+/* 1) Define your font properly */
 @font-face {
     font-family: 'Voice1';
-    src: url('../fonts/Voice1.woff2') format('woff2'), url('../fonts/Voice1.woff') format('woff'), url('../fonts/Voice1.ttf') format('ttf');
+    src: url('../fonts/Voice1.woff2') format('woff2'), url('../fonts/Voice1.woff') format('woff'), url('../fonts/Voice1.ttf') format('truetype');
     font-weight: normal;
     font-style: normal;
     font-display: swap;
 }
 
+/* 2) Page resets */
 html, body {
     background-color: #000;
     margin: 0;
@@ -17,29 +18,83 @@ html, body {
     box-sizing: border-box;
 }
 
+/* 3) Container */
 .container {
+    height: 100vh;
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start;
     min-height: 100vh;
-    padding: 0 20%; /* leave as-is */
+    padding: 0 20%;
     background-color: #000;
     text-align: center;
+    overflow-y: auto;
 }
 
-    .container p {
-        font-family: 'Voice1', sans-serif;
-        font-size: 2rem; /* was 1rem */
-        line-height: 1.75; /* was 1.75 */
-        color: #fff;
-        word-spacing: -0.2em; /* was -0.15em */
-    }
+/* 4) Base paragraph */
+.container p {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 
-    .container .plea-number {
-        font-family: 'Voice1', sans-serif;
-        display: block;
-        font-size: 4rem; /* was 2rem */
-        margin-bottom: 0.5em; /* was 0.5em */
-        color: #fff;
-        word-spacing: -0.2em; /* was -0.15em */
-    }
+    font-family: 'Voice1', sans-serif;
+    font-size: 2rem;
+    line-height: 1.75;
+    word-spacing: -0.2em;
+    /* start invisible on black bg */
+    color: #000;
+    /* ensure child spans inherit */
+    margin: 0;
+}
+
+/* 5) Plea number stays white and big */
+.container .plea-number {
+    font-family: 'Voice1', sans-serif;
+    display: block;
+    font-size: 4rem;
+    margin-bottom: 0.5em;
+    color: #fff;
+    word-spacing: -0.2em;
+}
+
+.char {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+
+    display: inline; /* <-- allow natural wrapping */
+    font-family: 'Voice1', sans-serif;
+    font-size: inherit;
+    line-height: inherit;
+    color: #000; /* hidden on black bg */
+    transition: color 0.04s linear;
+}
+
+.char.visible {
+    color: #fff;
+}
+
+#continue-prompt {
+    position: fixed;
+    bottom: 5%;
+    left: 50%;
+    transform: translateX(-50%) translateY(100%);
+    opacity: 0;
+    font-family: 'Voice1', sans-serif;
+    font-size: 3rem;
+    color: #fff;
+    pointer-events: none;
+    /* FADE-OUT: immediately over 0.2s */
+    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+
+#continue-prompt.visible {
+    opacity: 0.7;
+    transform: translateX(-50%) translateY(0);
+    /* FADE-IN: wait 2.5s, then over 0.5s */
+    transition: opacity 1s ease-in, transform 1s ease-in;
+}
