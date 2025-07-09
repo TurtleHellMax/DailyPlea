@@ -77,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const chars = animateSections[idx].querySelectorAll('.char');
         const BASE_SPEED = 30;
         const PERIOD_PAUSE = 300;
+        const COMMA_PAUSE = 150;
         let accDelay = 0;
 
         timeouts.forEach(clearTimeout);
@@ -103,12 +104,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             timeouts.push(id);
             accDelay += BASE_SPEED;
-            if (c.textContent === '.') accDelay += PERIOD_PAUSE;
+            if (c.textContent === '.' || c.textContent === '!' || c.textContent === '?' || c.textContent === ':' || c.textContent === ';') accDelay += PERIOD_PAUSE;
+
+            if (c.textContent === ',' || c.textContent === '"') accDelay += COMMA_PAUSE;
         });
     };
 
     async function doStartFlow() {
-        // switch text to ìConnectingî and clear old ellipses
+        // switch text to ‚ÄúConnecting‚Äù and clear old ellipses
         startText.textContent = 'Connecting';
         ellipsis.textContent = '';
 
