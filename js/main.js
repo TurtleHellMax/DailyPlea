@@ -95,6 +95,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     container.scrollTo({ top: target, behavior: 'smooth' });
                 }
 
+                if (c === chars[chars.length - 1]) {
+                    revealing = false;
+                    if (idx < animateSections.length - 2) schedulePrompt(idx);
+                }
             }, accDelay);
 
             timeouts.push(id);

@@ -118,7 +118,7 @@ html, body {
     opacity: 0;
     transition: opacity 1s ease-in-out;
     font-family: 'Voice1', sans-serif;
-    font-size: 2rem;
+    font-size: 8rem;
     color: #fff;
 }
 
@@ -135,7 +135,7 @@ html, body {
 /* ellipsis sits immediately after the text */
 #ellipsis {
     font-family: 'Voice1', sans-serif;
-    font-size: 2rem;
+    font-size: 8rem;
     color: #fff;
-    margin-left: 0.25em;
+    margin-left: 0em;
 }
