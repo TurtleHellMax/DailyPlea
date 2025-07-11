@@ -101,11 +101,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (idx < animateSections.length - 2) schedulePrompt(idx);
                 }
                 else if (idx === animateSections.length - 2) {
-          // <-- this was the *final* section
-          gtag('event', 'all_text_revealed', {
-            event_category: 'engagement',
-            event_label:   'full_text'
-          });
+                    // <-- this was the *final* section
+                    gtag('event', 'all_text_revealed', {
+                        event_category: 'engagement',
+                        event_label: 'full_text'
+                    });
+                }
             }, accDelay);
 
             timeouts.push(id);
