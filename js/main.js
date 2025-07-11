@@ -105,6 +105,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             event_category: 'engagement',
                             event_label: 'full_text'
                         });
+
+fetch('https://api.countapi.xyz/hit/dailyplea/all_reveals')
+  .then(res => res.json())
                     }
                 }
             }, accDelay);
