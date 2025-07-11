@@ -100,6 +100,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     revealing = false;
                     if (idx < animateSections.length - 2) schedulePrompt(idx);
                 }
+                else {
+          // <-- this was the *final* section
+          gtag('event', 'all_text_revealed', {
+            event_category: 'engagement',
+            event_label:   'full_text'
+          });
             }, accDelay);
 
             timeouts.push(id);
