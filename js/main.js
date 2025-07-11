@@ -100,7 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     revealing = false;
                     if (idx < animateSections.length - 2) schedulePrompt(idx);
                 }
-                else {
+                else if (idx === animateSections.length - 2) {
           // <-- this was the *final* section
           gtag('event', 'all_text_revealed', {
             event_category: 'engagement',
