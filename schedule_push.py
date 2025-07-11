@@ -1,5 +1,4 @@
-﻿#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
 import os
 import time
 import datetime
@@ -16,7 +15,7 @@ def main():
         target += datetime.timedelta(days=1)
 
     wait_secs = (target - now).total_seconds()
-    print(f"[{now:%Y-%m-%d %H:%M:%S}] Waiting {wait_secs:.0f}s until {target:%Y-%m-%d %H:%M:%S}...")
+    print(f"[{now:%Y-%m-%d %H:%M:%S}] Waiting {wait_secs:.0f}s until {target:%Y-%m-%d %H:%M:%S}…")
     time.sleep(wait_secs)
 
     # Build a commit message
