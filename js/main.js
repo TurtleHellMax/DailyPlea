@@ -111,7 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             mode: 'cors'
                         })
                             .then(r => r.json())
-                            .then(data => console.log('So far, ', data.count, ' users have read posts to completion!'))
+                            .then(data => console.log('Beacon transmitted', data.count, 'times'))
                             .catch(console.error);
                     }
                 }
