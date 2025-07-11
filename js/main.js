@@ -106,8 +106,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             event_label: 'full_text'
                         });
 
-fetch('https://api.countapi.xyz/hit/dailyplea/all_reveals')
-  .then(res => res.json())
+                        fetch('https://text-reveal-worker.dupeaccmax.workers.dev/', {
+                            method: 'POST',
+                            mode: 'cors'
+                        })
+                            .then(r => r.json())
+                            .then(data => console.log('So far, ', data.count, ' users have read posts to completion!'))
+                            .catch(console.error);
                     }
                 }
             }, accDelay);
