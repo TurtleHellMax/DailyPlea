@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let resumed = false;
     let started = false;
 
-    fetch('sounds/Voice1Hum.wav')
+    fetch('sounds/Voice2Hum.wav')
         .then(r => {
             if (!r.ok) throw new Error(`HTTP ${r.status} for audio`);
             return r.arrayBuffer();
