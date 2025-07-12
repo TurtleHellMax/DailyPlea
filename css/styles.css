@@ -7,57 +7,60 @@
     font-display: swap;
 }
 
-/* 2) Page resets */
+/* 2) Mobile viewport for responsive scaling */
 html, body {
     background-color: #000;
     margin: 0;
     padding: 0;
 }
 
+meta[name="viewport"] {
+    content: "width=device-width, initial-scale=1";
+}
+
 *, *::before, *::after {
     box-sizing: border-box;
 }
 
-/* 3) Container */
+/* 3) Container with fluid side padding */
 .container {
     height: 100vh;
     display: flex;
     justify-content: center;
     align-items: flex-start;
     min-height: 100vh;
-    padding: 0 20%;
+    padding: 0 clamp(10%, 20vw, 20%);
     background-color: #000;
     text-align: center;
     overflow-y: auto;
 }
 
-/* 4) Base paragraph */
-.container p {
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
+    /* 4) Base paragraph with fluid font size */
+    .container p {
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        font-family: 'Voice1', sans-serif;
+        font-size: clamp(1rem, 4.5vw, 2rem);
+        line-height: 1.75;
+        word-spacing: -0.2em;
+        /* start invisible on black bg */
+        color: #000;
+        /* ensure child spans inherit */
+        margin: 0;
+    }
 
-    font-family: 'Voice1', sans-serif;
-    font-size: 2rem;
-    line-height: 1.75;
-    word-spacing: -0.2em;
-    /* start invisible on black bg */
-    color: #000;
-    /* ensure child spans inherit */
-    margin: 0;
-}
-
-/* 5) Plea number stays white and big */
-.container .plea-number {
-    font-family: 'Voice1', sans-serif;
-    display: block;
-    font-size: 4rem;
-    margin-bottom: 0.5em;
-    color: #fff;
-    word-spacing: -0.2em;
-}
+    /* 5) Plea number with fluid font size */
+    .container .plea-number {
+        font-family: 'Voice1', sans-serif;
+        display: block;
+        font-size: clamp(2rem, 9vw, 4rem);
+        margin-bottom: 0.5em;
+        color: #fff;
+        word-spacing: -0.2em;
+    }
 
 .char {
     -webkit-user-select: none;
@@ -65,8 +68,7 @@ html, body {
     -ms-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
-
-    display: inline; /* <-- allow natural wrapping */
+    display: inline; /* allow natural wrapping */
     font-family: 'Voice1', sans-serif;
     font-size: inherit;
     line-height: inherit;
@@ -74,10 +76,11 @@ html, body {
     transition: color 0.04s linear;
 }
 
-.char.visible {
-    color: #fff;
-}
+    .char.visible {
+        color: #fff;
+    }
 
+/* 6) Continue prompt with fluid font size */
 #continue-prompt {
     position: fixed;
     bottom: 5%;
@@ -85,20 +88,19 @@ html, body {
     transform: translateX(-50%) translateY(100%);
     opacity: 0;
     font-family: 'Voice1', sans-serif;
-    font-size: 3rem;
+    font-size: clamp(1rem, 6vw, 3rem);
     color: #fff;
     pointer-events: none;
-    /* FADE-OUT: immediately over 0.2s */
     transition: opacity 0.5s ease-out, transform 0.5s ease-out;
 }
 
-#continue-prompt.visible {
-    opacity: 0.7;
-    transform: translateX(-50%) translateY(0);
-    /* FADE-IN: wait 2.5s, then over 0.5s */
-    transition: opacity 1s ease-in, transform 1s ease-in;
-}
+    #continue-prompt.visible {
+        opacity: 0.7;
+        transform: translateX(-50%) translateY(0);
+        transition: opacity 1s ease-in, transform 1s ease-in;
+    }
 
+/* 7) Start overlay */
 #start-overlay {
     position: fixed;
     top: 0;
@@ -118,24 +120,24 @@ html, body {
     opacity: 0;
     transition: opacity 1s ease-in-out;
     font-family: 'Voice1', sans-serif;
-    font-size: 8rem;
+    font-size: clamp(2rem, 16vw, 8rem);
     color: #fff;
 }
 
-/* faded-in state */
-#start-text.visible {
-    opacity: 1;
-}
+    /* faded-in state */
+    #start-text.visible {
+        opacity: 1;
+    }
 
 /* hidden state once we’re done */
 #start-overlay.hidden {
     display: none !important;
 }
 
-/* ellipsis sits immediately after the text */
+/* 8) Ellipsis with fluid font size */
 #ellipsis {
     font-family: 'Voice1', sans-serif;
-    font-size: 8rem;
+    font-size: clamp(2rem, 16vw, 8rem);
     color: #fff;
-    margin-left: 0em;
+    margin-left: 0;
 }
