@@ -19,6 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let clickBuffer = null;
     let resumed = false;
     let started = false;
+    let lastClickTime = 0;
+    const CLICK_THROTTLE = 50;
 
     fetch('sounds/Voice3Hum.wav')
         .then(r => {
@@ -35,6 +37,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function playClick() {
         if (!clickBuffer || !resumed) return;
+        const now = performance.now();
+        if (now - lastClickTime < CLICK_THROTTLE) {
+            return;
+        }
+        lastClickTime = now;
         const src = audioCtx.createBufferSource();
         src.buffer = clickBuffer;
         src.connect(volumeNode);
@@ -85,8 +92,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         chars.forEach(c => {
             const id = setTimeout(() => {
+                const ch = c.textContent;
+                if (ch.trim() !== '') {
+                    playClick();
+                }
                 c.classList.add('visible');
-                playClick();
 
                 const gutter = container.clientHeight * 0.2;
                 const charBottom = c.offsetTop + c.clientHeight;
