@@ -20,9 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let resumed = false;
     let started = false;
     let lastClickTime = 0;
-    const CLICK_THROTTLE = 50;
+    const CLICK_THROTTLE = 100;
 
-    fetch('sounds/Voice0Hum.wav')
+    fetch('sounds/Voice5Hum.wav')
         .then(r => {
             if (!r.ok) throw new Error(`HTTP ${r.status} for audio`);
             return r.arrayBuffer();
