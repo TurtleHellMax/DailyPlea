@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastClickTime = 0;
     const CLICK_THROTTLE = 50;
 
-    fetch('sounds/Voice0Hum.wav')
+    fetch('sounds/Voice4Hum.wav')
         .then(r => {
             if (!r.ok) throw new Error(`HTTP ${r.status} for audio`);
             return r.arrayBuffer();
