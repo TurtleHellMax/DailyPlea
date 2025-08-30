@@ -1,45 +1,73 @@
+// plea page (reader)
 document.addEventListener('DOMContentLoaded', () => {
-    (
-        function addPleaHubButton()
-        {
-            const HUB_URL = '/pleas/';             // change to your selector page path
-            const ICON_SRC = '/icons/plea-hub.png'; // your pixel PNG (root-absolute)
+    // ---- progress store (per-plea) ----
+    function currentPleaNumber() {
+        const m = location.pathname.match(/\/(\d{1,6})\/?$/);
+        if (m) return parseInt(m[1], 10);
+        const t = document.querySelector('.plea-number')?.textContent || '';
+        const n = t.match(/Plea\s*#\s*(\d+)/i);
+        return n ? parseInt(n[1], 10) : null;
+    }
 
-            const a = document.createElement('a');
-            a.href = HUB_URL;
-            a.className = 'plea-hub-btn';
-            a.setAttribute('aria-label', 'Open Plea Select');
+    function beginFirstRevealIfNeeded() {
+        if (firstRevealStarted) return false;
+        firstRevealStarted = true;
+        revealSection(current);
+        current++;
+        return true;
+    }
 
-            const img = new Image();
-            img.src = ICON_SRC;
-            img.alt = 'Plea Select';
-            img.decoding = 'async';
-            img.loading = 'eager';
-            img.draggable = false;
+    const RETURN_KEY = 'plea:return';
 
-            a.appendChild(img);
-            document.body.appendChild(a);
+    // helper
+    function stashReturnTarget() {
+        if (PLEA_NUM) sessionStorage.setItem(RETURN_KEY, String(PLEA_NUM));
+    }
 
-            // fade in after it’s in the DOM
-            requestAnimationFrame(() => a.classList.add('is-show'));
-        }
-    )();
+    let firstRevealStarted = false;
+    let uiUnlocked = false; // <— NEW: block inputs until overlay is done
+
+    const PLEA_NUM = currentPleaNumber();
+    const KEY = PLEA_NUM ? `plea-progress:${PLEA_NUM}` : null;
+
+    function readProgress() {
+        if (!KEY) return null;
+        try { return JSON.parse(localStorage.getItem(KEY) || 'null'); }
+        catch { return null; }
+    }
+    function writeProgress(obj) {
+        if (!KEY) return;
+        try { localStorage.setItem(KEY, JSON.stringify({ ...obj, updatedAt: new Date().toISOString() })); }
+        catch { }
+    }
+    function clearLastIndexKeepDone() {
+        const p = readProgress() || {};
+        writeProgress({ done: !!p.done, lastIndex: undefined });
+    }
+
+    (function addPleaHubButton() {
+        const HUB_URL = '/pleas/';
+        const ICON_SRC = '/icons/plea-hub.png';
+        const a = document.createElement('a');
+        a.href = HUB_URL;
+        a.className = 'plea-hub-btn';
+        a.setAttribute('aria-label', 'Open Plea Select');
+        const img = new Image();
+        img.src = ICON_SRC; img.alt = 'Plea Select'; img.decoding = 'async'; img.loading = 'eager'; img.draggable = false;
+        a.appendChild(img); document.body.appendChild(a);
+        a.addEventListener('click', () => { stashReturnTarget(); }, { capture: true });
+        requestAnimationFrame(() => a.classList.add('is-show'));
+    })();
 
     const cfg = (() => {
         const dataHum = document.body?.dataset?.hum;
         const dataThr = document.body?.dataset?.clickThrottle;
-
         const metaHum = document.querySelector('meta[name="dp:hum"]')?.content;
         const metaThr = document.querySelector('meta[name="dp:click_throttle"]')?.content;
-
         let hum = dataHum || metaHum || 'Voice0Hum.wav';
-        if (!/^https?:\/\//i.test(hum) && !hum.startsWith('/')) {
-            hum = '/sounds/' + hum;
-        }
-
+        if (!/^https?:\/\//i.test(hum) && !hum.startsWith('/')) hum = '/sounds/' + hum;
         let throttle = parseInt(dataThr || metaThr || '50', 10);
         if (!Number.isFinite(throttle)) throttle = 50;
-
         return { HUM_SRC: hum, CLICK_THROTTLE: throttle };
     })();
 
@@ -50,54 +78,35 @@ document.addEventListener('DOMContentLoaded', () => {
     container.scrollTo({ top: 0, behavior: 'auto' });
 
     const startOverlay = document.getElementById('start-overlay');
-
-    if (startOverlay) {
-        startOverlay.setAttribute('tabindex', '0');
-        // next-tick focus so the DOM is fully ready
-        setTimeout(() => startOverlay.focus({ preventScroll: true }), 0);
-    }
-
+    if (startOverlay) { startOverlay.setAttribute('tabindex', '0'); setTimeout(() => startOverlay.focus({ preventScroll: true }), 0); }
     const startText = document.getElementById('start-text');
     const ellipsis = document.getElementById('ellipsis');
-
-    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const volumeNode = audioCtx.createGain();
     volumeNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
     volumeNode.connect(audioCtx.destination);
 
-    let clickBuffer = null;
-    let resumed = false;
-    let started = false;
-    let lastClickTime = 0;
+    let clickBuffer = null, resumed = false, started = false, lastClickTime = 0;
 
     fetch(cfg.HUM_SRC)
-        .then(r => {
-            if (!r.ok) throw new Error(`HTTP ${r.status} for audio`);
-            return r.arrayBuffer();
-        })
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status} for audio`); return r.arrayBuffer(); })
         .then(data => audioCtx.decodeAudioData(data))
         .then(buf => { clickBuffer = buf; })
         .catch(err => console.error('Audio load failed:', err));
 
-    requestAnimationFrame(() => {
-        startText?.classList.add('visible');
-    });
+    requestAnimationFrame(() => startText?.classList.add('visible'));
 
     function playClick() {
         if (!clickBuffer || !resumed) return;
         const now = performance.now();
-        // EDIT #2: use cfg.CLICK_THROTTLE
         if (now - lastClickTime < cfg.CLICK_THROTTLE) return;
         lastClickTime = now;
-
         const src = audioCtx.createBufferSource();
-        src.buffer = clickBuffer;
-        src.connect(volumeNode);
-        src.start();
+        src.buffer = clickBuffer; src.connect(volumeNode); src.start();
     }
 
+    // wrap every char in spans
     animateSections.forEach(section => {
         const raw = section.textContent;
         section.textContent = '';
@@ -129,12 +138,43 @@ document.addEventListener('DOMContentLoaded', () => {
         promptTimer = setTimeout(() => prompt.classList.add('visible'), delay);
     };
 
+    // ===== progress-aware helpers =====
+    const progress0 = readProgress();
+    const PROGRESS_LOCKED_DONE = !!progress0?.done;
+    const RESUME_INDEX = (!PROGRESS_LOCKED_DONE && Number.isFinite(progress0?.lastIndex))
+        ? Math.max(0, Math.min(animateSections.length, progress0.lastIndex | 0))
+        : 0;
+
+    function markProgressAfterSection(idx) {
+        if (!KEY || PROGRESS_LOCKED_DONE) return;
+        const FINAL_IDX = animateSections.length - 2;
+        if (idx >= FINAL_IDX) {
+            writeProgress({ done: true });
+            return;
+        }
+        const next = Math.max(0, Math.min(animateSections.length, idx + 1));
+        writeProgress({ done: false, lastIndex: next });
+    }
+
+    function preRevealUpTo(idx) {
+        for (let i = 0; i < idx; i++) {
+            const chars = animateSections[i]?.querySelectorAll('.char') || [];
+            chars.forEach(c => c.classList.add('visible'));
+        }
+        const prev = animateSections[idx - 1];
+        if (prev) {
+            const gutter = container.clientHeight * 0.2;
+            const target = Math.max(0, prev.offsetTop - gutter);
+            container.scrollTo({ top: target, behavior: 'auto' });
+        }
+        revealing = false;
+        if (idx > 0) schedulePrompt(idx - 1);
+    }
+
     const revealSection = idx => {
         revealing = true;
         const chars = animateSections[idx].querySelectorAll('.char');
-        const BASE_SPEED = 30;
-        const PERIOD_PAUSE = 300;
-        const COMMA_PAUSE = 150;
+        const BASE_SPEED = 30, PERIOD_PAUSE = 300, COMMA_PAUSE = 150;
         let accDelay = 0;
 
         timeouts.forEach(clearTimeout);
@@ -143,9 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chars.forEach(c => {
             const id = setTimeout(() => {
                 const ch = c.textContent;
-                if (ch.trim() !== '') {
-                    playClick();
-                }
+                if (ch.trim() !== '') playClick();
                 c.classList.add('visible');
 
                 const gutter = container.clientHeight * 0.2;
@@ -156,114 +194,111 @@ document.addEventListener('DOMContentLoaded', () => {
                     container.scrollTo({ top: target, behavior: 'smooth' });
                 }
 
-                if (c === chars[chars.length - 1]) {
-                    onSectionComplete(idx);
-                }
+                if (c === chars[chars.length - 1]) onSectionComplete(idx);
             }, accDelay);
 
             timeouts.push(id);
             accDelay += BASE_SPEED;
             if (c.textContent === '.' || c.textContent === '!' || c.textContent === '?' || c.textContent === ':' || c.textContent === ';') accDelay += PERIOD_PAUSE;
-
             if (c.textContent === ',' || c.textContent === '"') accDelay += COMMA_PAUSE;
         });
     };
 
-    async function doStartFlow() {
-        // switch text to “Connecting” and clear old ellipses
-        startText.textContent = 'Connecting';
-        ellipsis.textContent = '';
-
-        // add dots one by one
-        for (let i = 0; i < 3; i++) {
-            await new Promise(r => setTimeout(r, 300));
-            ellipsis.textContent += '.';
-        }
-
-        // random pause before hiding
-        await new Promise(r => setTimeout(r, Math.random() * 2000 + 1000));
-
-        // clear everything, wait, then hide overlay
-        startText.textContent = '';
-        ellipsis.textContent = '';
-        await new Promise(r => setTimeout(r, 1000));
-        startOverlay.classList.add('hidden');
-
-        // then wait and start the first reveal
-        await new Promise(r => setTimeout(r, 1000));
-        revealSection(0);
-        current = 1;
-    }
-
-    function onStart(e) {
-        e.preventDefault();
-        if (started) return; 
-        started = true; 
-
-        if (audioCtx.state === 'suspended') audioCtx.resume().catch(console.error);
-        resumed = true;
-        doStartFlow();
-    }
-
     function onSectionComplete(idx) {
         revealing = false;
-        if (idx < animateSections.length - 2) {
+        markProgressAfterSection(idx);
+        const FINAL_IDX = animateSections.length - 2;
+
+        if (idx < FINAL_IDX) {
             schedulePrompt(idx);
-        } else if (idx === animateSections.length - 2) {
-            // <-- this was the final section
-            gtag('event', 'all_text_revealed', {
-                event_category: 'engagement',
-                event_label: 'full_text'
-            });
-            fetch('https://text-reveal-worker.dupeaccmax.workers.dev/', {
-                method: 'POST', mode: 'cors'
-            })
+        } else if (idx === FINAL_IDX) {
+            try {
+                gtag('event', 'all_text_revealed', {
+                    event_category: 'engagement',
+                    event_label: 'full_text'
+                });
+            } catch { }
+            fetch('https://text-reveal-worker.dupeaccmax.workers.dev/', { method: 'POST', mode: 'cors' })
                 .then(r => r.json())
                 .then(data => console.log('Beacon transmitted', data.count, 'times'))
                 .catch(console.error);
         }
     }
 
-    // fast-forward the *current* section only; return true if we did so
+    async function doStartFlow() {
+        // “Connecting…”
+        startText.textContent = 'Connecting';
+        ellipsis.textContent = '';
+        for (let i = 0; i < 3; i++) {
+            await new Promise(r => setTimeout(r, 300));
+            ellipsis.textContent += '.';
+        }
+        await new Promise(r => setTimeout(r, Math.random() * 2000 + 1000));
+        startText.textContent = '';
+        ellipsis.textContent = '';
+        await new Promise(r => setTimeout(r, 1000));
+        startOverlay.classList.add('hidden');
+        await new Promise(r => setTimeout(r, 1000));
+
+        // UNLOCK inputs ONLY now
+        uiUnlocked = true;
+
+        // resume or start fresh
+        if (!PROGRESS_LOCKED_DONE && RESUME_INDEX > 0) {
+            preRevealUpTo(RESUME_INDEX);
+            current = RESUME_INDEX;
+        } else {
+            beginFirstRevealIfNeeded();
+            if (PROGRESS_LOCKED_DONE) clearLastIndexKeepDone();
+        }
+    }
+
+    function onStart(e) {
+        e.preventDefault();
+        if (started) return;
+        started = true;
+        if (audioCtx.state === 'suspended') audioCtx.resume().catch(console.error);
+        resumed = true;
+        doStartFlow();
+    }
+
     function finishCurrentSection() {
         if (!revealing) return false;
         timeouts.forEach(clearTimeout);
-        const idx = current - 1; // the section that’s mid-reveal
-        animateSections[idx]
-            ?.querySelectorAll('.char')
-            .forEach(c => c.classList.add('visible'));
+        const idx = current - 1;
+        animateSections[idx]?.querySelectorAll('.char')?.forEach(c => c.classList.add('visible'));
         onSectionComplete(idx);
         return true;
     }
 
+    // inputs
     startOverlay.addEventListener('pointerdown', onStart, { once: true });
     startOverlay.addEventListener('touchstart', onStart, { once: true, passive: false });
     startOverlay.addEventListener('click', onStart, { once: true });
 
     container.addEventListener('click', () => {
+        if (!started || !uiUnlocked) return;  // <— block until overlay done
         hidePrompt();
         if (current >= animateSections.length) return;
 
-        // If revealing, just finish this section. Do NOT advance yet.
-        if (finishCurrentSection()) return;
+        if (!firstRevealStarted) {            // start first reveal only
+            beginFirstRevealIfNeeded();
+            return;
+        }
+        if (finishCurrentSection()) return;   // finish current if mid-reveal
 
-        // Not revealing? Start the next section now.
-        revealSection(current);
+        revealSection(current);               // advance to next
         current++;
     });
 
-    // === Keyboard: Esc -> hub; Enter -> start/advance (single handler) ===
+    // Keyboard: Esc -> hub; Enter -> start/advance
     (() => {
         const hubHref = document.querySelector('.plea-hub-btn')?.href || '/pleas/';
-
         function keyHandler(e) {
-            // don’t hijack typing
             const tag = (e.target?.tagName || '').toLowerCase();
             if (['input', 'textarea', 'select'].includes(tag) || e.target?.isContentEditable) return;
             if (e.repeat) return;
 
-            // ensure THIS is the only handler that runs for this event
-            // (prevents double-fire from other capture/bubble listeners)
             const onceFlag = '__pleaHandled';
             if (e[onceFlag]) return;
             e[onceFlag] = true;
@@ -272,24 +307,26 @@ document.addEventListener('DOMContentLoaded', () => {
             e.stopImmediatePropagation();
 
             if (e.key === 'Escape' || e.key === 'Esc') {
+                stashReturnTarget();
                 window.location.assign(hubHref);
                 return;
             }
-
             if (e.key === 'Enter') {
-                if (!started) { onStart(e); return; }
-
+                if (!started) { onStart(e); return; }     // kick off overlay flow
+                if (!uiUnlocked) return;                  // <— ignore until unlocked
                 hidePrompt();
                 if (current >= animateSections.length) return;
 
-                if (finishCurrentSection()) return; // only finish if mid-reveal
+                if (!firstRevealStarted) {                // start first reveal only
+                    beginFirstRevealIfNeeded();
+                    return;
+                }
+                if (finishCurrentSection()) return;       // finish current if mid-reveal
 
-                revealSection(current);             // otherwise start next
+                revealSection(current);                   // advance to next
                 current++;
             }
         }
-
-        // attach ONCE at the very top of the tree, capture phase
         window.addEventListener('keydown', keyHandler, { capture: true });
     })();
 });

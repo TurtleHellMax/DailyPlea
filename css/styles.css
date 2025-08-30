@@ -213,6 +213,7 @@ body.pleas {
     padding: clamp(16px, 6vw, 48px) clamp(12px, 8vw, 120px);
     display: flex;
     flex-direction: column;
+    color: #FFEB04;
     align-items: center;
     gap: 0; /* spacing comes from each card now */
 }
@@ -246,7 +247,7 @@ body.pleas {
     font-size: clamp(4rem, 9vw, 6rem); /* your big size */
     /* line-height shrinks with --shrink so the line box gets shorter */
     line-height: calc(1.05 * var(--shrink));
-    color: #fff;
+    color: #FFEB04;
     transform-origin: center;
     opacity: var(--rest-op, 0);
     transform: translateZ(0) scale(var(--scale, 1));
@@ -257,7 +258,7 @@ body.pleas {
 /* Hover/active bump (desktop pointer only) */
 @media (hover:hover) {
     .plea-card:hover .plea-title {
-        opacity: .85;
+        opacity: .9;
     }
 
     .plea-card:active .plea-title {
