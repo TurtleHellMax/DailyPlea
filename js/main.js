@@ -1,4 +1,48 @@
 document.addEventListener('DOMContentLoaded', () => {
+    (
+        function addPleaHubButton()
+        {
+            const HUB_URL = '/pleas/';             // change to your selector page path
+            const ICON_SRC = '/icons/plea-hub.png'; // your pixel PNG (root-absolute)
+
+            const a = document.createElement('a');
+            a.href = HUB_URL;
+            a.className = 'plea-hub-btn';
+            a.setAttribute('aria-label', 'Open Plea Select');
+
+            const img = new Image();
+            img.src = ICON_SRC;
+            img.alt = 'Plea Select';
+            img.decoding = 'async';
+            img.loading = 'eager';
+            img.draggable = false;
+
+            a.appendChild(img);
+            document.body.appendChild(a);
+
+            // fade in after it’s in the DOM
+            requestAnimationFrame(() => a.classList.add('is-show'));
+        }
+    )();
+
+    const cfg = (() => {
+        const dataHum = document.body?.dataset?.hum;
+        const dataThr = document.body?.dataset?.clickThrottle;
+
+        const metaHum = document.querySelector('meta[name="dp:hum"]')?.content;
+        const metaThr = document.querySelector('meta[name="dp:click_throttle"]')?.content;
+
+        let hum = dataHum || metaHum || 'Voice0Hum.wav';
+        if (!/^https?:\/\//i.test(hum) && !hum.startsWith('/')) {
+            hum = '/sounds/' + hum;
+        }
+
+        let throttle = parseInt(dataThr || metaThr || '50', 10);
+        if (!Number.isFinite(throttle)) throttle = 50;
+
+        return { HUM_SRC: hum, CLICK_THROTTLE: throttle };
+    })();
+
     const sections = document.querySelectorAll('.container .section');
     const animateSections = Array.from(sections).slice(1);
     const prompt = document.getElementById('continue-prompt');
@@ -6,6 +50,13 @@ document.addEventListener('DOMContentLoaded', () => {
     container.scrollTo({ top: 0, behavior: 'auto' });
 
     const startOverlay = document.getElementById('start-overlay');
+
+    if (startOverlay) {
+        startOverlay.setAttribute('tabindex', '0');
+        // next-tick focus so the DOM is fully ready
+        setTimeout(() => startOverlay.focus({ preventScroll: true }), 0);
+    }
+
     const startText = document.getElementById('start-text');
     const ellipsis = document.getElementById('ellipsis');
 
@@ -20,9 +71,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let resumed = false;
     let started = false;
     let lastClickTime = 0;
-    const CLICK_THROTTLE = 50;
 
-    fetch('sounds/Voice0Hum.wav')
+    fetch(cfg.HUM_SRC)
         .then(r => {
             if (!r.ok) throw new Error(`HTTP ${r.status} for audio`);
             return r.arrayBuffer();
@@ -32,16 +82,16 @@ document.addEventListener('DOMContentLoaded', () => {
         .catch(err => console.error('Audio load failed:', err));
 
     requestAnimationFrame(() => {
-        startText.classList.add('visible');
+        startText?.classList.add('visible');
     });
 
     function playClick() {
         if (!clickBuffer || !resumed) return;
         const now = performance.now();
-        if (now - lastClickTime < CLICK_THROTTLE) {
-            return;
-        }
+        // EDIT #2: use cfg.CLICK_THROTTLE
+        if (now - lastClickTime < cfg.CLICK_THROTTLE) return;
         lastClickTime = now;
+
         const src = audioCtx.createBufferSource();
         src.buffer = clickBuffer;
         src.connect(volumeNode);
@@ -70,7 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const hidePrompt = () => {
         clearTimeout(promptTimer);
-        prompt.classList.remove('visible');
+        if (prompt) prompt.classList.remove('visible');
     };
 
     const schedulePrompt = idx => {
@@ -107,23 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 if (c === chars[chars.length - 1]) {
-                    revealing = false;
-                    if (idx < animateSections.length - 2) schedulePrompt(idx);
-                    else if (idx === animateSections.length - 2) {
-                        // <-- this was the *final* section
-                        gtag('event', 'all_text_revealed', {
-                            event_category: 'engagement',
-                            event_label: 'full_text'
-                        });
-
-                        fetch('https://text-reveal-worker.dupeaccmax.workers.dev/', {
-                            method: 'POST',
-                            mode: 'cors'
-                        })
-                            .then(r => r.json())
-                            .then(data => console.log('Beacon transmitted', data.count, 'times'))
-                            .catch(console.error);
-                    }
+                    onSectionComplete(idx);
                 }
             }, accDelay);
 
@@ -171,6 +205,37 @@ document.addEventListener('DOMContentLoaded', () => {
         doStartFlow();
     }
 
+    function onSectionComplete(idx) {
+        revealing = false;
+        if (idx < animateSections.length - 2) {
+            schedulePrompt(idx);
+        } else if (idx === animateSections.length - 2) {
+            // <-- this was the final section
+            gtag('event', 'all_text_revealed', {
+                event_category: 'engagement',
+                event_label: 'full_text'
+            });
+            fetch('https://text-reveal-worker.dupeaccmax.workers.dev/', {
+                method: 'POST', mode: 'cors'
+            })
+                .then(r => r.json())
+                .then(data => console.log('Beacon transmitted', data.count, 'times'))
+                .catch(console.error);
+        }
+    }
+
+    // fast-forward the *current* section only; return true if we did so
+    function finishCurrentSection() {
+        if (!revealing) return false;
+        timeouts.forEach(clearTimeout);
+        const idx = current - 1; // the section that’s mid-reveal
+        animateSections[idx]
+            ?.querySelectorAll('.char')
+            .forEach(c => c.classList.add('visible'));
+        onSectionComplete(idx);
+        return true;
+    }
+
     startOverlay.addEventListener('pointerdown', onStart, { once: true });
     startOverlay.addEventListener('touchstart', onStart, { once: true, passive: false });
     startOverlay.addEventListener('click', onStart, { once: true });
@@ -179,15 +244,52 @@ document.addEventListener('DOMContentLoaded', () => {
         hidePrompt();
         if (current >= animateSections.length) return;
 
-        if (revealing) {
-            timeouts.forEach(clearTimeout);
-            animateSections[current - 1]
-                .querySelectorAll('.char')
-                .forEach(c => c.classList.add('visible'));
-            revealing = false;
-        }
+        // If revealing, just finish this section. Do NOT advance yet.
+        if (finishCurrentSection()) return;
 
+        // Not revealing? Start the next section now.
         revealSection(current);
         current++;
     });
+
+    // === Keyboard: Esc -> hub; Enter -> start/advance (single handler) ===
+    (() => {
+        const hubHref = document.querySelector('.plea-hub-btn')?.href || '/pleas/';
+
+        function keyHandler(e) {
+            // don’t hijack typing
+            const tag = (e.target?.tagName || '').toLowerCase();
+            if (['input', 'textarea', 'select'].includes(tag) || e.target?.isContentEditable) return;
+            if (e.repeat) return;
+
+            // ensure THIS is the only handler that runs for this event
+            // (prevents double-fire from other capture/bubble listeners)
+            const onceFlag = '__pleaHandled';
+            if (e[onceFlag]) return;
+            e[onceFlag] = true;
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+
+            if (e.key === 'Escape' || e.key === 'Esc') {
+                window.location.assign(hubHref);
+                return;
+            }
+
+            if (e.key === 'Enter') {
+                if (!started) { onStart(e); return; }
+
+                hidePrompt();
+                if (current >= animateSections.length) return;
+
+                if (finishCurrentSection()) return; // only finish if mid-reveal
+
+                revealSection(current);             // otherwise start next
+                current++;
+            }
+        }
+
+        // attach ONCE at the very top of the tree, capture phase
+        window.addEventListener('keydown', keyHandler, { capture: true });
+    })();
 });

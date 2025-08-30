@@ -1,3 +1,67 @@
+:root {
+    --hub-native: 21;
+    --hub-scale: 3;
+    --hub-gap: 20px; /* a bit more breathing room */
+    --sbw: 0px; /* JS will update this; default to 0 */
+}
+
+@media (max-width: 480px) {
+    :root {
+        --hub-scale: 2;
+    }
+}
+
+@media (min-width: 1024px) {
+    :root {
+        --hub-scale: 4;
+    }
+}
+
+.plea-hub-btn {
+    position: fixed;
+    top: calc(var(--hub-gap) + env(safe-area-inset-top));
+    right: calc(var(--hub-gap) + env(safe-area-inset-right) + var(--sbw, 0px));
+    width: calc(var(--hub-native) * var(--hub-scale) * 1px);
+    height: calc(var(--hub-native) * var(--hub-scale) * 1px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: transparent;
+    border-radius: 0;
+    text-decoration: none;
+    z-index: 10050;
+    opacity: 0; /* will fade to .5 */
+    transition: opacity .3s ease;
+    pointer-events: auto;
+    touch-action: manipulation;
+    overflow: hidden;
+}
+
+    .plea-hub-btn.is-show {
+        opacity: .5;
+    }
+
+    .plea-hub-btn:hover,
+    .plea-hub-btn:focus-visible {
+        opacity: .8;
+    }
+
+    .plea-hub-btn:active {
+        opacity: 1;
+    }
+
+    .plea-hub-btn img {
+        width: 100%;
+        height: 100%;
+        display: block;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        image-rendering: -moz-crisp-edges;
+        -ms-interpolation-mode: nearest-neighbor;
+    }
+
 /* 1) Define your font properly */
 @font-face {
     font-family: 'Voice1';
@@ -46,9 +110,7 @@ meta[name="viewport"] {
         font-size: clamp(1rem, 4.5vw, 2rem);
         line-height: 1.75;
         word-spacing: -0.2em;
-        /* start invisible on black bg */
-        color: #000;
-        /* ensure child spans inherit */
+        color: #000; /* start invisible on black bg */
         margin: 0;
     }
 
@@ -124,7 +186,6 @@ meta[name="viewport"] {
     color: #fff;
 }
 
-    /* faded-in state */
     #start-text.visible {
         opacity: 1;
     }
@@ -140,4 +201,66 @@ meta[name="viewport"] {
     font-size: clamp(2rem, 16vw, 8rem);
     color: #fff;
     margin-left: 0;
+}
+
+/* ===== Plea Select page ===== */
+body.pleas {
+    background: #000;
+    color: #fff;
+}
+
+.plea-list {
+    padding: clamp(16px, 6vw, 48px) clamp(12px, 8vw, 120px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0; /* spacing comes from each card now */
+}
+
+/* Invisible click area; only text animates */
+.plea-card {
+    /* shrink factor: ≥50% of visual scale */
+    --shrink: calc(0.5 + 0.5 * var(--scale, 1));
+    display: block;
+    text-decoration: none;
+    background: transparent;
+    border: 0;
+    /* scale-aware vertical spacing (rem so it’s stable) */
+    padding-block: calc(0.25rem * var(--shrink)); /* was clamp(...) */
+    margin-block: calc(0.90rem * var(--shrink)); /* tighter when smaller */
+
+    padding-inline: clamp(8px, 1.8vw, 14px);
+    transform: translateY(24px); /* fly-in */
+    transition: transform .5s ease;
+    will-change: transform;
+}
+
+    .plea-card.is-in {
+        transform: translateY(0);
+    }
+
+/* Title scales/brightens near center (JS sets --scale & --rest-op) */
+.plea-title {
+    display: inline-block;
+    font-family: 'Voice1', sans-serif;
+    font-size: clamp(4rem, 9vw, 6rem); /* your big size */
+    /* line-height shrinks with --shrink so the line box gets shorter */
+    line-height: calc(1.05 * var(--shrink));
+    color: #fff;
+    transform-origin: center;
+    opacity: var(--rest-op, 0);
+    transform: translateZ(0) scale(var(--scale, 1));
+    transition: opacity .25s ease, transform .08s ease;
+    will-change: opacity, transform;
+}
+
+/* Hover/active bump (desktop pointer only) */
+@media (hover:hover) {
+    .plea-card:hover .plea-title {
+        opacity: .85;
+    }
+
+    .plea-card:active .plea-title {
+        opacity: 1;
+    }
 }
