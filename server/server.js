@@ -77,3 +77,13 @@ app.use('/api/admin', require('./routes-admin').router);
 
 const port = +(process.env.PORT || 3000);
 app.listen(port, () => console.log('Server on http://localhost:' + port));
+
+app.use((err, req, res, next) => {
+    console.error('UNCAUGHT', req.method, req.url, '\n', err);
+    if (res.headersSent) return next(err);
+    res.status(500).json({
+        error: 'server_error',
+        route: `${req.method} ${req.path}`,
+        detail: String(err && err.message || err)
+    });
+});

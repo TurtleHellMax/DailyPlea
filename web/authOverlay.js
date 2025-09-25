@@ -8,45 +8,142 @@
         overlay: null,
     };
 
-    // ---------- tiny helpers ----------
+    /* ===================== UTIL & DEBUG ===================== */
+
     const byId = (id) => document.getElementById(id);
-
-    async function fetchCsrf() {
-        const r = await fetch(state.apiBase.replace('/api', '') + '/api/csrf', { credentials: 'include' });
-        const j = await r.json();
-        state.csrf = j.token;
-        return j.token;
-    }
-
-    // replace your api() with this
-    async function api(path, opts = {}) {
-        const method = (opts.method || 'GET').toUpperCase();
-        const headers = Object.assign({ 'content-type': 'application/json' }, opts.headers || {});
-        if (method !== 'GET' && !headers['x-csrf-token']) {
-            if (!state.csrf) await fetchCsrf();
-            headers['x-csrf-token'] = state.csrf;
-        }
-        const res = await fetch(state.apiBase + path, {
-            method, credentials: 'include', headers, body: opts.body
-        });
-
-        // Accept empty/204 responses
-        const text = await res.text();
-        let data = {};
-        if (text) {
-            try { data = JSON.parse(text); } catch { /* fallback to {} */ }
-        }
-        if (!res.ok) throw (data || { error: 'request_failed', status: res.status });
-
-        return data;
-    }
 
     function msg(t = '') {
         const n = byId('dp-msg');
         if (n) n.textContent = t;
     }
 
-    // ---------- overlay UI ----------
+    function snippet(s, n = 160) {
+        if (!s) return '';
+        const t = String(s).replace(/\s+/g, ' ').trim();
+        return t.length > n ? t.slice(0, n) + '…' : t;
+    }
+
+    function showSpecificError(action, err) {
+        // Prefer a tight, single-line message in the UI
+        const line =
+            `${action} failed → ${err.method || 'GET'} ${err.path || '(unknown)'} ` +
+            `[${err.status ?? 'no-status'}] ` +
+            `${err.code || err.error || err.statusText || 'unknown'}` +
+            (err.detail ? ` · ${snippet(err.detail, 140)}` : '');
+        msg(line);
+
+        // Full payload to console for deep dive
+        console.groupCollapsed(`❌ ${action} failed`);
+        console.error('Error object:', err);
+        console.error('Request:', { method: err.method, url: err.url, headers: err.reqHeaders, body: err.reqBody });
+        console.error('Response:', { status: err.status, statusText: err.statusText, headers: err.resHeaders, data: err.data, text: err.text });
+        console.groupEnd();
+    }
+
+    /* ===================== CSRF + API WRAPPER ===================== */
+
+    async function fetchCsrf() {
+        const url = state.apiBase.replace('/api', '') + '/api/csrf';
+        const r = await fetch(url, { credentials: 'include' }).catch((e) => {
+            throw {
+                name: 'NetworkError',
+                code: 'csrf_network_error',
+                message: 'Failed to reach /api/csrf',
+                method: 'GET',
+                url,
+                path: '/api/csrf',
+                detail: String(e?.message || e),
+            };
+        });
+
+        let text = '';
+        try { text = await r.text(); } catch { }
+        let j = {};
+        try { j = text ? JSON.parse(text) : {}; } catch { }
+        if (!r.ok || !j.token) {
+            throw {
+                name: 'CsrfError',
+                code: 'csrf_bad_response',
+                message: 'Unexpected CSRF response',
+                method: 'GET',
+                url,
+                path: '/api/csrf',
+                status: r.status,
+                statusText: r.statusText,
+                text,
+                data: j,
+            };
+        }
+        state.csrf = j.token;
+        return j.token;
+    }
+
+    /**
+     * api(path, { method, headers, body })
+     * Throws a rich error object with path/method/status/error/detail.
+     */
+    async function api(path, opts = {}) {
+        const method = (opts.method || 'GET').toUpperCase();
+        const url = state.apiBase + path;
+
+        const headers = Object.assign({}, opts.headers || {});
+        if (opts.body && !headers['content-type']) {
+            headers['content-type'] = 'application/json';
+        }
+
+        // Attach CSRF for non-GETs if caller didn't supply it
+        if (method !== 'GET' && !headers['x-csrf-token']) {
+            if (!state.csrf) await fetchCsrf();
+            headers['x-csrf-token'] = state.csrf;
+        }
+
+        const reqInfo = { method, url, reqHeaders: headers, reqBody: opts.body, path };
+
+        let res;
+        try {
+            res = await fetch(url, { method, credentials: 'include', headers, body: opts.body });
+        } catch (e) {
+            throw {
+                ...reqInfo,
+                name: 'NetworkError',
+                code: 'network_error',
+                message: `Network error calling ${method} ${path}`,
+                detail: String(e?.message || e),
+            };
+        }
+
+        // Read body once; try JSON; keep raw text for diagnostics.
+        let text = '';
+        try { text = await res.text(); } catch { }
+        let data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch { /* leave as {} */ }
+
+        if (!res.ok) {
+            // Normalize an error code/message from body if present
+            const code = (data && (data.error || data.code)) || undefined;
+            const message = (data && (data.message || data.msg)) || undefined;
+
+            throw {
+                ...reqInfo,
+                name: 'HttpError',
+                code: code || 'http_error',
+                error: code,
+                message: message || `HTTP ${res.status} on ${path}`,
+                status: res.status,
+                statusText: res.statusText,
+                data,
+                text,
+                resHeaders: Object.fromEntries(res.headers.entries()),
+                detail: snippet(text || message, 300),
+            };
+        }
+
+        // Return parsed JSON or an empty object for no-body responses
+        return (text ? (data || {}) : {});
+    }
+
+    /* ===================== OVERLAY UI ===================== */
+
     function ensureOverlay() {
         if (state.overlay) return state.overlay;
 
@@ -94,15 +191,14 @@
         state.overlay.style.display = 'block';
         const [btnLogin, btnReg] = state.overlay.querySelectorAll('#dp-tabs button');
         if (startTab === 'register') {
-            setActiveTab(btnReg, btnLogin);
-            renderRegister();
+            setActiveTab(btnReg, btnLogin); renderRegister();
         } else {
-            setActiveTab(btnLogin, btnReg);
-            renderLogin();
+            setActiveTab(btnLogin, btnReg); renderLogin();
         }
     }
 
-    // ---------- views ----------
+    /* ===================== VIEWS ===================== */
+
     function renderLogin() {
         const c = byId('dp-content');
         if (!c) return;
@@ -113,8 +209,7 @@
       <label>Password</label>
       <input id="dp-pw" type="password" autocomplete="current-password">
       <div id="dp-totp-row" style="display:none">
-        <label>2FA code</label>
-        <input id="dp-totp" placeholder="123456" inputmode="numeric" pattern="\\d*">
+        <label>2FA code</label><input id="dp-totp" inputmode="numeric" placeholder="123456">
       </div>
       <button id="dp-login" style="margin-top:10px">Login</button>
       <div class="muted" style="margin-top:6px"><a href="#" id="dp-reset">Forgot password?</a></div>
@@ -127,27 +222,35 @@
             const totp = (byId('dp-totp')?.value || '').trim();
 
             try {
-                await fetchCsrf();
+                await fetchCsrf().catch((e) => { throw { ...e, action: 'Fetch CSRF' }; });
+
                 const body = { identifier, password };
                 if (totp) body.totp = totp;
-                // in renderLogin() submit handler, replace the success branch:
-                await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
+
+                await api('/auth/login', {
+                    method: 'POST',
+                    body: JSON.stringify(body)
+                }).catch((e) => { throw { ...e, action: 'Login' }; });
+
                 msg('Logged in.');
                 state.overlay.style.display = 'none';
 
-                // run post-login sync, but don't let it break login UX
-                Promise.resolve()
-                    .then(() => (window.DP && DP.syncAfterLogin) ? DP.syncAfterLogin() : null)
-                    .catch(err => console.warn('post-login sync failed:', err));
-
-                if (window.DP && DP.syncAfterLogin) DP.syncAfterLogin();
+                // Post-login sync (never break UX)
+                Promise.resolve((window.DP && DP.syncAfterLogin) ? DP.syncAfterLogin() : null)
+                    .catch((err) => {
+                        showSpecificError('Post-login sync', {
+                            method: 'POST',
+                            path: '(custom sync)',
+                            detail: String(err?.message || err),
+                        });
+                    });
             } catch (e) {
-                if (e && e.error === 'totp_required') {
-                    byId('dp-totp-row').style.display = '';
-                    msg('Enter your 2FA code.');
-                } else {
-                    msg(e?.error || 'Login failed');
+                if (e && (e.error === 'totp_required' || e.code === 'totp_required')) {
+                    const row = byId('dp-totp-row'); if (row) row.style.display = '';
+                    msg('Enter your 2FA code to continue.');
+                    return;
                 }
+                showSpecificError(e.action || 'Login', e);
             }
         };
 
@@ -155,14 +258,14 @@
             ev.preventDefault();
             msg('');
             try {
-                await fetchCsrf();
+                await fetchCsrf().catch((e) => { throw { ...e, action: 'Fetch CSRF' }; });
                 await api('/auth/password/reset/request', {
                     method: 'POST',
                     body: JSON.stringify({ identifier: byId('dp-id').value.trim() })
-                });
+                }).catch((e) => { throw { ...e, action: 'Password reset (request)' }; });
                 msg('If the account exists, a reset message was sent (Dev Mailbox).');
             } catch (e) {
-                msg(e?.error || 'Reset failed');
+                showSpecificError(e.action || 'Password reset (request)', e);
             }
         };
     }
@@ -188,37 +291,55 @@
             const password = byId('dp-pw2').value;
 
             try {
-                await fetchCsrf();
+                await fetchCsrf().catch((e) => { throw { ...e, action: 'Fetch CSRF' }; });
+
                 await api('/auth/register', {
                     method: 'POST',
                     body: JSON.stringify({ email, phone, password })
-                });
+                }).catch((e) => { throw { ...e, action: 'Register' }; });
 
-                // carry over local save to the account (if you have guest progress)
+                // carry over local save to the account (best-effort)
                 try {
                     const localSave = JSON.parse(localStorage.getItem('dp_save') || 'null');
                     if (localSave) {
-                        await api('/saves/sync', { method: 'POST', body: JSON.stringify({ localSave }) });
+                        await api('/saves/sync', {
+                            method: 'POST',
+                            body: JSON.stringify({ localSave })
+                        }).catch((e) => { throw { ...e, action: 'Carry-over saves (sync)' }; });
                     }
-                } catch { }
+                } catch (e) {
+                    showSpecificError('Carry-over saves (sync)', {
+                        method: 'POST',
+                        path: '/saves/sync',
+                        detail: String(e?.message || e),
+                    });
+                }
 
                 msg('Account created. You are signed in.');
                 state.overlay.style.display = 'none';
-                if (window.DP && DP.syncAfterLogin) DP.syncAfterLogin();
+                if (window.DP && DP.syncAfterLogin) {
+                    Promise.resolve(DP.syncAfterLogin()).catch((err) => {
+                        showSpecificError('Post-register sync', {
+                            method: 'POST',
+                            path: '(custom sync)',
+                            detail: String(err?.message || err),
+                        });
+                    });
+                }
             } catch (e) {
-                msg(e?.error || 'Register failed');
+                // Give the exact reason
+                showSpecificError(e.action || 'Register', e);
             }
         };
     }
 
-    // ---------- exports ----------
+    /* ===================== EXPORTS & AUTOBIND ===================== */
+
     window.DP = window.DP || {};
     window.DP.init = (opts = {}) => { if (opts.apiBase) state.apiBase = opts.apiBase; };
     window.DP.openAuth = () => showOverlay('login');
-    // you can override this elsewhere; provided here so callers can await it safely
     window.DP.syncAfterLogin = window.DP.syncAfterLogin || (async () => { });
 
-    // Optional convenience: auto-bind a button with id="dp-login-btn"
     window.addEventListener('DOMContentLoaded', () => {
         const btn = document.getElementById('dp-login-btn');
         if (btn) btn.addEventListener('click', () => showOverlay('login'));
