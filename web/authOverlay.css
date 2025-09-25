@@ -1,0 +1,73 @@
+#dp-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999
+}
+
+#dp-modal {
+    background: #111;
+    color: #eee;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.5);
+    width: min(420px,90vw);
+    padding: 20px
+}
+
+    #dp-modal h2 {
+        margin: 0 0 10px 0
+    }
+
+    #dp-modal label {
+        display: block;
+        margin: 8px 0 4px
+    }
+
+    #dp-modal input {
+        width: 100%;
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid #333;
+        background: #1b1b1b;
+        color: #eee
+    }
+
+    #dp-modal button {
+        margin-top: 12px;
+        width: 100%;
+        padding: 10px;
+        border-radius: 8px;
+        border: none;
+        background: #3b82f6;
+        color: #fff;
+        font-weight: 700;
+        cursor: pointer
+    }
+
+    #dp-modal .muted {
+        font-size: .9em;
+        opacity: .8;
+        margin-top: 6px
+    }
+
+#dp-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px
+}
+
+    #dp-tabs button {
+        flex: 1;
+        padding: 8px;
+        border: 1px solid #333;
+        background: #1b1b1b;
+        color: #eee;
+        border-radius: 8px
+    }
+
+        #dp-tabs button.active {
+            background: #3b82f6
+        }

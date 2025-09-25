@@ -1,0 +1,95 @@
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT UNIQUE,
+  phone TEXT UNIQUE,
+  role TEXT NOT NULL DEFAULT 'user',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  email_verified_at DATETIME,
+  phone_verified_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS credentials (
+  user_id INTEGER PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  algo TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS totp (
+  user_id INTEGER PRIMARY KEY,
+  secret_ciphertext BLOB NOT NULL,
+  is_enabled INTEGER NOT NULL DEFAULT 0,
+  backup_codes_hashes TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NOT NULL,
+  ip TEXT,
+  user_agent TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  token_hash TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS saved_games (
+  user_id INTEGER PRIMARY KEY,
+  data_json TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS plea_votes (
+  plea_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  vote INTEGER NOT NULL CHECK (vote IN (-1,0,1)),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (plea_id, user_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plea_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  edited_at DATETIME,
+  deleted_at DATETIME,
+  is_removed INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS comment_votes (
+  comment_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  vote INTEGER NOT NULL CHECK (vote IN (-1,0,1)),
+  PRIMARY KEY (comment_id, user_id),
+  FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_user_id INTEGER,
+  action TEXT NOT NULL,
+  target_type TEXT,
+  target_id TEXT,
+  metadata_json TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

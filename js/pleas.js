@@ -1,19 +1,128 @@
+/* === AUTH OVERLAY BOOTSTRAP (pure JS; no <script> tags) === */
+const API_BASE = 'http://localhost:3000/api';
+
+// <-- ADJUST THIS if your files are not at /web/*
+const ASSET_BASE = '/web';
+const OVERLAY_JS = ASSET_BASE + '/authOverlay.js';
+const OVERLAY_CSS = ASSET_BASE + '/authOverlay.css';
+const PLEALIST_JS = ASSET_BASE + '/plealist.js';
+
+function loadStyle(href) {
+    const l = document.createElement('link');
+    l.rel = 'stylesheet'; l.href = href;
+    document.head.appendChild(l);
+}
+function loadScript(src) {
+    return new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = src; s.defer = true;
+        s.onload = res; s.onerror = () => rej(new Error('Failed to load ' + src));
+        document.head.appendChild(s);
+    });
+}
+async function getCsrf() {
+    const r = await fetch(API_BASE.replace('/api', '') + '/api/csrf', { credentials: 'include' });
+    const j = await r.json(); return j.token;
+}
+async function apiLogout() {
+    const token = await getCsrf();
+    await fetch(API_BASE + '/auth/logout', {
+        method: 'POST', credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': token }
+    });
+}
+async function getMe() {
+    const r = await fetch(API_BASE + '/auth/me', { credentials: 'include' });
+    return r.ok ? r.json() : { user: null };
+}
+
+function mountAuthBar() {
+    if (document.getElementById('dp-authbar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'dp-authbar';
+    bar.style.cssText = `
+    position: fixed; top: 12px; left: 12px; z-index: 9998;
+    display: flex; gap: 10px; align-items: center;
+    background: rgba(0,0,0,.55); color: #eee; padding: 8px 12px;
+    border-radius: 10px; backdrop-filter: blur(4px);
+    font: 14px/1.2 system-ui, sans-serif;
+  `;
+    bar.innerHTML = `
+    <span id="dp-authstate">…</span>
+    <button id="dp-login-btn" style="padding:6px 10px;border:none;border-radius:8px;cursor:pointer;background:#3b82f6;color:#fff;font-weight:700">Sign in</button>
+    <button id="dp-logout-btn" style="padding:6px 10px;border:none;border-radius:8px;cursor:pointer;background:#444;color:#eee;display:none">Sign out</button>
+  `;
+    document.body.appendChild(bar);
+
+    const loginBtn = bar.querySelector('#dp-login-btn');
+    const logoutBtn = bar.querySelector('#dp-logout-btn');
+    loginBtn.onclick = () => (window.DP && DP.openAuth) ? DP.openAuth() : alert('Login UI not loaded—check ' + OVERLAY_JS);
+    logoutBtn.onclick = async () => { await apiLogout(); await refreshAuthBar(); };
+
+    // If overlay defines a post-login hook, refresh bar afterwards
+    window.DP = window.DP || {};
+    const prevSync = DP.syncAfterLogin;
+    DP.syncAfterLogin = async () => {
+        try { if (prevSync) await prevSync(); } finally { await refreshAuthBar(); }
+    };
+
+    refreshAuthBar();
+}
+
+async function refreshAuthBar() {
+    const stateEl = document.getElementById('dp-authstate');
+    const loginBtn = document.getElementById('dp-login-btn');
+    const logoutBtn = document.getElementById('dp-logout-btn');
+    if (!stateEl) return;
+    const { user } = await getMe();
+    if (user) {
+        const who = user.email || user.phone || `user#${user.id}`;
+        stateEl.textContent = `Signed in as ${who}${user.totp_enabled ? ' · 2FA' : ''}`;
+        loginBtn.style.display = 'none';
+        logoutBtn.style.display = '';
+    } else {
+        stateEl.textContent = 'Not signed in';
+        loginBtn.style.display = '';
+        logoutBtn.style.display = 'none';
+    }
+}
+
+async function ensureAuthUI() {
+    // Load overlay assets (handle missing files gracefully)
+    try { loadStyle(OVERLAY_CSS); } catch { }
+    let overlayOk = true;
+    try { await loadScript(OVERLAY_JS); } catch (e) { overlayOk = false; console.warn(e.message); }
+    try { await loadScript(PLEALIST_JS); } catch { } // optional
+
+    // Initialize overlay/plealist if present
+    window.DP = window.DP || {};
+    if (overlayOk && DP.init) DP.init({ apiBase: API_BASE });
+    if (DP.initPlealist) DP.initPlealist({ apiBase: API_BASE });
+
+    // Always mount bar (Sign in will alert if overlay missing)
+    mountAuthBar();
+}
+/* === END BOOTSTRAP === */
+
+
 // /pleas/ (selector)
 document.addEventListener('DOMContentLoaded', async () => {
     const listEl = document.getElementById('plea-list');
     if (!listEl) return;
 
-    // ---- simple progress store ----
+    // 🔹 bring up login overlay + auth bar
+    await ensureAuthUI();
+
+    // ---- your existing code below (unchanged) ----
+
     const KEY = n => `plea-progress:${n}`;
     function readProgress(n) {
         try { return JSON.parse(localStorage.getItem(KEY(n)) || 'null'); }
         catch { return null; }
     }
 
-    // ---- return target (from reader) ----
     const RETURN_KEY = 'plea:return';
     function consumeReturnNum() {
-        // prefer sessionStorage set by reader, but also allow ?return=123 or #123
         let n = sessionStorage.getItem(RETURN_KEY);
         if (!n) {
             const sp = new URLSearchParams(location.search);
@@ -31,55 +140,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     const returnNum = consumeReturnNum();
 
-    // inject minimal styles for status colors
     (function injectStyles() {
         const css = `
-        .plea-card{
-            background: none;
-            color: inherit;
-            transition: color .2s, filter .2s;
-        }
-        .plea-card .plea-title{ color: inherit; }
-
-        /* in-progress = amber text */
-        .plea-card.is-inprogress,
-        .plea-card.is-inprogress:link,
-        .plea-card.is-inprogress:visited{
-            color: #D9D38D;
-        }
-
-        /* done = bright yellow text + subtle desat */
-        .plea-card.is-done,
-        .plea-card.is-done:link,
-        .plea-card.is-done:visited{
-            color: #FFFFFF;
-        }
-        `;
+      .plea-card{ background:none; color:inherit; transition:color .2s, filter .2s; }
+      .plea-card .plea-title{ color:inherit; }
+      .plea-card.is-inprogress, .plea-card.is-inprogress:link, .plea-card.is-inprogress:visited{ color:#D9D38D; }
+      .plea-card.is-done, .plea-card.is-done:link, .plea-card.is-done:visited{ color:#FFFFFF; }
+      `;
         const s = document.createElement('style');
         s.textContent = css;
         document.head.appendChild(s);
     })();
 
-    // -------- sitemap -> numbered URLs --------
     async function getPleaUrlsFromSitemap() {
         try {
             const res = await fetch('/sitemap.xml', { cache: 'no-cache' });
             const xml = await res.text();
             const doc = new DOMParser().parseFromString(xml, 'application/xml');
             const locs = [...doc.querySelectorAll('url > loc')].map(n => n.textContent || '');
-            return locs
-                .map(u => {
-                    const m = u.match(/\/(\d+)\/?$/);
-                    return m ? { num: Number(m[1]), url: `/${m[1]}/` } : null;
-                })
-                .filter(Boolean)
-                .sort((a, b) => b.num - a.num);
+            return locs.map(u => {
+                const m = u.match(/\/(\d+)\/?$/);
+                return m ? { num: Number(m[1]), url: `/${m[1]}/` } : null;
+            }).filter(Boolean).sort((a, b) => b.num - a.num);
         } catch {
             return [];
         }
     }
 
-    // -------- get display title (strip leading "Plea ") --------
     async function fetchPleaTitle(u) {
         try {
             const res = await fetch(u, { cache: 'no-store' });
@@ -95,7 +182,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const urls = await getPleaUrlsFromSitemap();
     const cards = [];
 
-    // build in stable DOM order, then hydrate titles, then apply status colors
     {
         const frag = document.createDocumentFragment();
         urls.forEach(({ num, url }) => {
@@ -111,7 +197,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         listEl.appendChild(frag);
 
-        // hydrate titles in-place
         urls.forEach(({ url }, idx) => {
             fetchPleaTitle(url).then(title => {
                 const el = cards[idx].querySelector('.plea-title') || cards[idx];
@@ -119,7 +204,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             }).catch(() => { });
         });
 
-        // apply status classes from localStorage
         urls.forEach(({ num }, idx) => {
             const p = readProgress(num);
             const card = cards[idx];
@@ -136,7 +220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // === visuals / snap ===
+    // visuals / snap (unchanged)
     let centerRAF = null;
     function cancelCentering() { if (centerRAF) { cancelAnimationFrame(centerRAF); centerRAF = null; } }
     function centerOn(el) {
@@ -181,7 +265,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         requestAnimationFrame(step);
     }
 
-    // NEW: outward reveal from a chosen start index (center, then ±1, ±2, …)
     function revealOutwardFrom(startIdx) {
         if (!cards.length) return;
         const order = [];
@@ -194,7 +277,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         order.forEach(i => { tweenIntro(cards[i], 550, t); t += gap; gap *= factor; });
     }
 
-    // falloff + snapping (keeps your current constants)
     const MIN_SCALE = 0.22, MAX_OP = 0.75, MIN_OP = 0.06, BASE_VH = 900, K_VIEW_CLAMP = [0.6, 1.6];
     const viewMult = vh => Math.min(K_VIEW_CLAMP[1], Math.max(K_VIEW_CLAMP[0], vh / BASE_VH));
     function peakTail(d, vh, A = 0.25, k = 0.5, a = 0.20) { const m = viewMult(vh); return A * Math.exp(-(k * m) * d * d) + (1 - A) * (1 / (1 + (a * m) * Math.sqrt(d || 0))); }
@@ -289,7 +371,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.addEventListener('pointerdown', () => { pointerDown = true; clearTimeout(snapTimer); }, { passive: true });
     document.addEventListener('pointerup', () => { pointerDown = false; if (!scrolling && !navigating) scheduleSnap(); }, { passive: true });
 
-    // ---- initialize: center on return card (if any), then reveal outward ----
     function findIndexByNum(num) {
         if (!Number.isFinite(num)) return -1;
         for (let i = 0; i < cards.length; i++) {
@@ -301,12 +382,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateVisuals();
     setTimeout(() => {
         applyCenterBuffer();
-
-        // pick start index
         let startIdx = 0;
         const idxFromNum = findIndexByNum(returnNum);
         if (idxFromNum >= 0) {
-            // hard-center immediately (no gentle nudge for initial position)
             const el = cards[idxFromNum].querySelector('.plea-title') || cards[idxFromNum];
             const r = el.getBoundingClientRect();
             const targetY = (r.top + window.pageYOffset) - (window.innerHeight / 2 - r.height / 2);
@@ -315,14 +393,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else {
             startIdx = centeredIndex();
         }
-
-        // reveal from the start index outward (both directions)
         revealOutwardFrom(startIdx);
-
         updateVisuals();
         scheduleSnap();
-
-        // gently “lock” perfect center (only if we had a specific target)
         if (idxFromNum >= 0) {
             const el = cards[idxFromNum].querySelector('.plea-title') || cards[idxFromNum];
             setTimeout(() => centerOn(el), 0);
