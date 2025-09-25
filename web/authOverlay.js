@@ -18,6 +18,7 @@
         return j.token;
     }
 
+    // replace your api() with this
     async function api(path, opts = {}) {
         const method = (opts.method || 'GET').toUpperCase();
         const headers = Object.assign({ 'content-type': 'application/json' }, opts.headers || {});
@@ -26,13 +27,17 @@
             headers['x-csrf-token'] = state.csrf;
         }
         const res = await fetch(state.apiBase + path, {
-            method,
-            credentials: 'include',
-            headers,
-            body: opts.body
+            method, credentials: 'include', headers, body: opts.body
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw data;
+
+        // Accept empty/204 responses
+        const text = await res.text();
+        let data = {};
+        if (text) {
+            try { data = JSON.parse(text); } catch { /* fallback to {} */ }
+        }
+        if (!res.ok) throw (data || { error: 'request_failed', status: res.status });
+
         return data;
     }
 
@@ -125,10 +130,16 @@
                 await fetchCsrf();
                 const body = { identifier, password };
                 if (totp) body.totp = totp;
+                // in renderLogin() submit handler, replace the success branch:
                 await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
-
                 msg('Logged in.');
                 state.overlay.style.display = 'none';
+
+                // run post-login sync, but don't let it break login UX
+                Promise.resolve()
+                    .then(() => (window.DP && DP.syncAfterLogin) ? DP.syncAfterLogin() : null)
+                    .catch(err => console.warn('post-login sync failed:', err));
+
                 if (window.DP && DP.syncAfterLogin) DP.syncAfterLogin();
             } catch (e) {
                 if (e && e.error === 'totp_required') {
@@ -187,7 +198,7 @@
                 try {
                     const localSave = JSON.parse(localStorage.getItem('dp_save') || 'null');
                     if (localSave) {
-                        await api('/save/sync', { method: 'POST', body: JSON.stringify({ localSave }) });
+                        await api('/saves/sync', { method: 'POST', body: JSON.stringify({ localSave }) });
                     }
                 } catch { }
 

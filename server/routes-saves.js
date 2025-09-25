@@ -1,24 +1,21 @@
-// server/routes-saves.js
+// at top
 const express = require('express');
 const { db } = require('./db');
 const { requireAuth } = require('./routes-auth');
-
 const router = express.Router();
 
-// Fetch current save
-router.get('/save', requireAuth, (req, res) => {
-    const row = db.prepare('SELECT data_json, version, updated_at FROM saved_games WHERE user_id = ?')
-        .get(req.userId);
+// --- shared handlers ---
+function getSave(req, res) {
+    const row = db.prepare(
+        'SELECT data_json, version, updated_at FROM saved_games WHERE user_id = ?'
+    ).get(req.userId);
     if (!row) return res.json({ data: null, version: 0 });
-    let data = null;
-    try { data = JSON.parse(row.data_json); } catch { data = null; }
+    let data = null; try { data = JSON.parse(row.data_json); } catch { }
     res.json({ data, version: row.version, updated_at: row.updated_at });
-});
+}
 
-// Upsert save
-router.post('/save', requireAuth, (req, res) => {
-    const data = req.body?.data ?? {};
-    const json = JSON.stringify(data);
+function upsertSave(req, res) {
+    const json = JSON.stringify(req.body?.data ?? {});
     db.prepare(`
     INSERT INTO saved_games (user_id, data_json, version, updated_at)
     VALUES (?, ?, 1, CURRENT_TIMESTAMP)
@@ -28,10 +25,9 @@ router.post('/save', requireAuth, (req, res) => {
       updated_at = CURRENT_TIMESTAMP
   `).run(req.userId, json);
     res.json({ ok: true });
-});
+}
 
-// Carry over guest save after first login/registration (only if none exists)
-router.post('/save/sync', requireAuth, (req, res) => {
+function syncLocal(req, res) {
     const local = req.body?.localSave;
     if (!local) return res.json({ ok: true });
     const exists = db.prepare('SELECT 1 FROM saved_games WHERE user_id = ?').get(req.userId);
@@ -40,6 +36,16 @@ router.post('/save/sync', requireAuth, (req, res) => {
             .run(req.userId, JSON.stringify(local));
     }
     res.json({ ok: true });
-});
+}
+
+// --- plural routes (current style) ---
+router.get('/saves', requireAuth, getSave);
+router.post('/saves', requireAuth, upsertSave);
+router.post('/saves/sync', requireAuth, syncLocal);
+
+// --- singular aliases (compat with old client) ---
+router.get('/save', requireAuth, getSave);
+router.post('/save', requireAuth, upsertSave);
+router.post('/save/sync', requireAuth, syncLocal);
 
 module.exports = { router };
