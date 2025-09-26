@@ -192,14 +192,10 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('[comments] already on window.DP');
             return Promise.resolve('already_loaded');
         }
-
-        // Remove any previously injected tags so the browser can’t reuse them
         document.querySelectorAll('script[data-dp-comments]').forEach(n => n.remove());
-
         return new Promise((resolve, reject) => {
             let i = 0;
             const bust = 'v=' + Date.now();
-
             function tryNext() {
                 if (i >= COMMENT_PATHS.length) {
                     console.error('[comments] Could not load from any path:', COMMENT_PATHS);
@@ -209,7 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const s = document.createElement('script');
                 s.async = true;
                 s.dataset.dpComments = '1';
-                s.src = url + (url.includes('?') ? '&' : '?') + bust; // <- cache buster
+                s.src = url + (url.includes('?') ? '&' : '?') + bust;
                 s.onload = () => { console.info('[comments] loaded:', s.src); resolve(url); };
                 s.onerror = () => { console.warn('[comments] failed:', s.src); s.remove(); tryNext(); };
                 document.head.appendChild(s);
@@ -217,7 +213,6 @@ document.addEventListener('DOMContentLoaded', () => {
             tryNext();
         });
     }
-
 
     function debugBadge(msg, sub = '') {
         let el = document.getElementById('dp-debug-badge');
@@ -257,9 +252,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function mountCommentsForPlea(pleaNum) {
-        console.groupCollapsed('%cCOMMENTS: mount (fallback if empty)', 'color:#3b82f6;font-weight:600');
+        console.groupCollapsed('%cCOMMENTS: mount (vendor or fallback)', 'color:#3b82f6;font-weight:600');
         try {
-            // 1) Load vendor lib (if present) + init
+            // 1) Load optional vendor lib + init
             await loadCommentsLib().catch(() => { });
             if (window.DP?.init) window.DP.init({ apiBase: API_BASE });
 
@@ -274,7 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
             host.id = 'dp-comments-host';
             wrap.appendChild(host);
 
-            // 3) CSS: narrow column + pager centering + one-page scroll
+            // 3) CSS (narrow column + pager centering + fallback styles)
             if (!document.getElementById('dp-comments-fb-css')) {
                 const s = document.createElement('style');
                 s.id = 'dp-comments-fb-css';
@@ -305,62 +300,60 @@ document.addEventListener('DOMContentLoaded', () => {
 #dp-comments-host .dp-actions .dp-btn{font-size:inherit;}
 #dp-comments-host .dp-c-composer textarea{width:100%;font-size:var(--dp-composer-size);}
 #dp-comments-host .dp-post{font-size:var(--dp-post-size);}
-#dp-comments-host .dp-pager{display:flex!important;justify-content:center!important;align-items:center!important;width:100%!important;text-align:center!important;margin-top:12px!important;gap:0!important;}
-#dp-comments-host .dp-pager > *{float:none!important;margin:0!important;}
-#dp-comments-host .dp-pager .dp-prev{display:none!important;}
+
+/* Pager centering (vendor + fallback) */
+#dp-comments-host .dp-pager,
+#dp-comments-host .dp-fb-pager{display:flex!important;justify-content:center!important;align-items:center!important;width:100%!important;text-align:center!important;margin-top:12px!important;gap:0!important;}
+#dp-comments-host .dp-pager > *,
+#dp-comments-host .dp-fb-pager > *{float:none!important;margin:0 auto!important;display:inline-flex!important;}
+#dp-comments-host .dp-next,
+#dp-comments-host .dp-loadmore,
+#dp-comments-host .dp-fb-next{margin:0 auto!important;display:inline-flex!important;font-size:var(--dp-viewmore-size)!important;padding:6px 10px;border:1px solid rgba(255,255,255,.2);border-radius:8px;background:transparent;color:#fff;cursor:pointer}
+
 /* Fallback UI */
 #dp-comments-host .dp-fb-item{border-top:1px solid rgba(255,255,255,.12);padding-top:12px;margin-top:var(--dp-gap-between-items);}
 #dp-comments-host .dp-fb-head{font-size:var(--dp-comment-header-size);text-align:center;margin-bottom:var(--dp-gap-header-body);opacity:.9}
 #dp-comments-host .dp-fb-body{font-size:var(--dp-content-size);}
-#dp-comments-host .dp-fb-actions{margin-top:var(--dp-gap-body-actions);display:flex;justify-content:center;gap:10px;font-size:var(--dp-actions-size);opacity:.9}
+#dp-comments-host .dp-fb-actions{margin-top:var(--dp-gap-body-actions);display:flex;justify-content:center;gap:10px;font-size:var(--dp-actions-size);opacity:.95}
 #dp-comments-host .dp-fb-replies{margin-top:10px;border-left:2px solid rgba(255,255,255,.15);padding-left:12px}
 #dp-comments-host .dp-fb-reply{margin-top:12px;opacity:.95}
-#dp-comments-host .dp-fb-pager{display:flex;justify-content:center;margin-top:14px}
-#dp-comments-host .dp-fb-next{font-size:var(--dp-viewmore-size);padding:6px 10px;border:1px solid rgba(255,255,255,.2);background:transparent;color:#fff;border-radius:8px;cursor:pointer}
-.container{overflow:visible!important;height:auto!important;max-height:none!important;}
-html,body{height:auto;overflow-y:auto;}
       `;
                 document.head.appendChild(s);
             }
 
-            // 4) Try vendor widget first (if present)
+            // 4) Vendor widget (if available)
             let usedFallback = false;
             async function tryVendor() {
                 if (!window.DP?.mountComments) return false;
                 console.log('[comments][vendor] mounting…');
                 const maybePromise = window.DP.mountComments(pleaNum, host);
                 try { await Promise.resolve(maybePromise); } catch { }
-                // try to expand if it's collapsed
                 const toggle = host.querySelector?.('.dp-c-toggle');
-                if (toggle && toggle.getAttribute('aria-expanded') !== 'true') {
-                    toggle.click?.();
-                }
-                // wait a tick to render
+                if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click?.();
                 await new Promise(r => setTimeout(r, 200));
                 const items = host.querySelectorAll?.('.dp-item');
                 const lists = host.querySelectorAll?.('.dp-list, .dp-replies, .dp-thread');
                 console.log('[comments][vendor] items:', items?.length || 0, 'lists:', lists?.length || 0);
                 if ((items?.length || 0) > 0) {
-                    // center vendor pager if present
                     host.querySelectorAll?.('.dp-pager')?.forEach(p => {
                         p.style.display = 'flex'; p.style.justifyContent = 'center'; p.style.alignItems = 'center';
                         const btn = p.querySelector('.dp-next, .dp-loadmore, button, a');
-                        if (btn) { btn.style.margin = '0 auto'; btn.style.display = 'inline-flex'; btn.textContent = btn.textContent?.trim() || 'View more'; }
+                        if (btn) { btn.style.margin = '0 auto'; btn.style.display = 'inline-flex'; btn.textContent = btn.textContent?.trim() || 'View more comments'; }
                     });
                     return true;
                 }
                 return false;
             }
 
-            // 5) Fallback renderer (uses your API directly)
+            // 5) Fallback renderer (uses your API directly) — WITH "View replies (n)" TOGGLE
             async function fetchList(page = 1, page_size = 10) {
                 const url = `${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments?sort=hottest&page=${page}&page_size=${page_size}`;
                 const res = await diagFetch(url, { credentials: 'include' });
                 const items = Array.isArray(res?.items) ? res.items : (Array.isArray(res) ? res : []);
-                return { items, total: res?.total ?? items.length, page, page_size };
+                const total = Number.isFinite(res?.total) ? +res.total : items.length;
+                return { items, total, page, page_size };
             }
             async function fetchReplies(parentId) {
-                // try common patterns
                 const candidates = [
                     `${API_BASE}/comments/${encodeURIComponent(parentId)}/replies`,
                     `${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments?parent_id=${encodeURIComponent(parentId)}`,
@@ -381,68 +374,115 @@ html,body{height:auto;overflow-y:auto;}
                 if (txt != null) n.textContent = txt;
                 return n;
             }
+
             async function renderFallback() {
                 usedFallback = true;
                 console.warn('[comments][fallback] vendor rendered nothing — switching to fallback UI.');
+
                 const root = el('div', 'dp-fb');
                 root.appendChild(el('h3', 'dp-c-title', 'Comments'));
                 const listEl = el('div', 'dp-fb-list');
                 root.appendChild(listEl);
+
                 const pager = el('div', 'dp-fb-pager');
-                const nextBtn = el('button', 'dp-fb-next', 'View more');
+                pager.style.display = 'flex'; pager.style.justifyContent = 'center'; pager.style.alignItems = 'center';
+                const nextBtn = el('button', 'dp-fb-next', 'View more comments');
                 pager.appendChild(nextBtn);
-                root.appendChild(pager);
+
                 host.innerHTML = '';
                 host.appendChild(root);
+                host.appendChild(pager);
 
                 let page = 1, page_size = 10, total = 0, loaded = 0;
 
+                function centeredPagerVisibility(hasMore) {
+                    pager.style.display = hasMore ? 'flex' : 'none';
+                    nextBtn.style.margin = '0 auto';
+                    nextBtn.style.display = 'inline-flex';
+                }
+
+                function normalAuthor(c) {
+                    return (c?.author?.display_name || c?.author?.name || c?.user?.name || c?.username || 'Anonymous');
+                }
+                function normalBody(c) {
+                    return (c?.body ?? c?.text ?? c?.content ?? '');
+                }
+                function normalTime(c) {
+                    const iso = (c?.created_at ?? c?.createdAt ?? c?.timestamp ?? Date.now());
+                    try { return new Date(iso).toLocaleString(); } catch { return ''; }
+                }
+                function normalId(c) {
+                    return (c?.id ?? c?.comment_id ?? c?._id ?? null);
+                }
+                function normalReplyCount(c) {
+                    const rc = (c?.reply_count ?? c?.replies_count ?? (Array.isArray(c?.replies) ? c.replies.length : 0) ?? 0);
+                    return Number(rc) || 0;
+                }
+
                 async function addPage() {
-                    const { items, total: t, page: p } = await fetchList(page, page_size);
-                    total = t; page = p;
-                    items.forEach(async (c) => {
+                    const { items, total: t } = await fetchList(page, page_size);
+                    total = t;
+                    for (const c of items) {
                         const it = el('article', 'dp-fb-item');
-                        const head = el('div', 'dp-fb-head', `#${c.id ?? '?'} • ${new Date(c.created_at || Date.now()).toLocaleString()} • replies: ${c.reply_count ?? 0}`);
-                        const body = el('div', 'dp-fb-body', c.body || '');
-                        const actions = el('div', 'dp-fb-actions', `▲ ${c.likes ?? 0}  ▼ ${c.dislikes ?? 0}`);
-                        it.append(head, body, actions);
 
+                        const head = el('div', 'dp-fb-head', `${normalAuthor(c)} • ${normalTime(c)}`);
+                        const body = el('div', 'dp-fb-body', normalBody(c));
+                        const actions = el('div', 'dp-fb-actions');
+
+                        const rc = normalReplyCount(c);
                         const repWrap = el('div', 'dp-fb-replies');
-                        it.appendChild(repWrap);
+                        repWrap.style.display = 'none';
+                        repWrap.dataset.loaded = 'false';
 
-                        // fetch replies if any
-                        const rc = Number(c.reply_count ?? 0);
                         if (rc > 0) {
-                            repWrap.appendChild(el('div', 'dp-fb-reply', 'Loading replies…'));
-                            try {
-                                const reps = await fetchReplies(c.id);
-                                repWrap.innerHTML = '';
-                                if (!reps.length) {
-                                    repWrap.appendChild(el('div', 'dp-fb-reply', '(No replies returned by API)'));
-                                } else {
-                                    reps.forEach(r => {
-                                        const rr = el('div', 'dp-fb-reply');
-                                        rr.appendChild(el('div', 'dp-fb-head', `↳ #${r.id ?? '?'} • ${new Date(r.created_at || Date.now()).toLocaleString()}`));
-                                        rr.appendChild(el('div', 'dp-fb-body', r.body || ''));
-                                        repWrap.appendChild(rr);
-                                    });
+                            const toggle = el('button', 'dp-fb-replies-toggle dp-btn', `View replies (${rc})`);
+                            toggle.addEventListener('click', async () => {
+                                const expanded = repWrap.style.display !== 'none';
+                                if (expanded) {
+                                    repWrap.style.display = 'none';
+                                    toggle.textContent = `View replies (${rc})`;
+                                    return;
                                 }
-                                console.log('[comments][fallback] replies rendered:', reps.length, 'for parent', c.id);
-                            } catch (e) {
-                                repWrap.innerHTML = '';
-                                repWrap.appendChild(el('div', 'dp-fb-reply', '(Failed to load replies)'));
-                            }
+                                repWrap.style.display = '';
+                                toggle.textContent = 'Hide replies';
+
+                                if (repWrap.dataset.loaded !== 'true') {
+                                    toggle.disabled = true;
+                                    repWrap.innerHTML = '';
+                                    repWrap.appendChild(el('div', 'dp-fb-reply', 'Loading replies…'));
+                                    try {
+                                        const parentId = normalId(c);
+                                        const reps = await fetchReplies(parentId);
+                                        repWrap.innerHTML = '';
+                                        if (!reps.length) {
+                                            repWrap.appendChild(el('div', 'dp-fb-reply', '(No replies)'));
+                                        } else {
+                                            for (const r of reps) {
+                                                const rr = el('div', 'dp-fb-reply');
+                                                rr.appendChild(el('div', 'dp-fb-head', `↳ ${normalTime(r)}`));
+                                                rr.appendChild(el('div', 'dp-fb-body', normalBody(r)));
+                                                repWrap.appendChild(rr);
+                                            }
+                                        }
+                                        repWrap.dataset.loaded = 'true';
+                                    } catch (e) {
+                                        repWrap.innerHTML = '';
+                                        repWrap.appendChild(el('div', 'dp-fb-reply', '(Failed to load replies)'));
+                                    } finally {
+                                        toggle.disabled = false;
+                                    }
+                                }
+                            });
+                            actions.appendChild(toggle);
                         }
+
+                        it.append(head, body, actions, repWrap);
                         listEl.appendChild(it);
                         loaded++;
-                    });
-
-                    // pager visibility + centering
-                    if (loaded >= total) {
-                        pager.style.display = 'none';
-                    } else {
-                        pager.style.display = 'flex';
                     }
+
+                    const hasMore = loaded < total && items.length === page_size;
+                    centeredPagerVisibility(hasMore);
                     console.log(`[comments][fallback] page ${page} loaded ${loaded}/${total}`);
                 }
 
@@ -468,10 +508,10 @@ html,body{height:auto;overflow-y:auto;}
         }
     }
 
+    // Hard patch to keep pager centered even if vendor re-injects it later
     (function dpCommentsHardPatch() {
         const hostId = 'dp-comments-host';
 
-        // 2a) Highest-specificity CSS with !important to beat injected styles
         const STYLE_ID = 'dp-center-pager-and-debug';
         if (!document.getElementById(STYLE_ID)) {
             const s = document.createElement('style');
@@ -502,7 +542,6 @@ html,body{height:auto;overflow-y:auto;}
             document.head.appendChild(s);
         }
 
-        // 2b) JS that force-centers any (re)inserted pager button
         function centerPagers(root) {
             const pagers = root.querySelectorAll?.('.dp-pager, .dp-fb-pager');
             pagers.forEach(p => {
@@ -515,33 +554,18 @@ html,body{height:auto;overflow-y:auto;}
                     ch.style.display = 'inline-flex';
                 });
                 const btn = p.querySelector('.dp-next, .dp-loadmore, .dp-fb-next, button, a');
-                if (btn && !(/\S/.test(btn.textContent))) btn.textContent = 'View more';
+                if (btn && !(/\S/.test(btn.textContent))) btn.textContent = 'View more comments';
             });
         }
 
-        // 2c) Replies debug logger
-        async function apiProbeReplies(API_BASE, pleaNum) {
-            try {
-                const res = await fetch(`${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments?sort=hottest&page=1&page_size=10`, { credentials: 'include' });
-                const txt = await res.text(); let json;
-                try { json = JSON.parse(txt); } catch { }
-                const items = json?.items || [];
-                const rc = items.map(c => ({ id: c.id, reply_count: c.reply_count }));
-                console.log('[comments][api] top-level:', rc);
-            } catch (e) {
-                console.warn('[comments][api] probe failed:', e);
-            }
-        }
-
         function logRepliesPresence(root, reason) {
-            const containers = root.querySelectorAll('.dp-replies, .dp-thread, .dp-replies-inner');
-            const toggles = root.querySelectorAll('.dp-toggle-replies, .dp-reply-toggle, [data-action="toggle-replies"], [class*="view-repl"]');
-            const items = root.querySelectorAll('.dp-reply, [data-reply-id]');
+            const containers = root.querySelectorAll('.dp-replies, .dp-thread, .dp-replies-inner, .dp-fb-replies');
+            const toggles = root.querySelectorAll('.dp-toggle-replies, .dp-reply-toggle, [data-action="toggle-replies"], [class*="repl"], .dp-fb-replies-toggle');
+            const items = root.querySelectorAll('.dp-reply, [data-reply-id], .dp-fb-reply');
             const visible = [...containers].filter(el => getComputedStyle(el).display !== 'none');
             console.log('[comments][replies-debug]', { reason, toggles: toggles.length, containers: containers.length, visible: visible.length, items: items.length });
         }
 
-        // 2d) Run against current DOM and keep running on mutations
         function boot() {
             const host = document.getElementById(hostId);
             if (!host) { setTimeout(boot, 100); return; }
@@ -557,26 +581,27 @@ html,body{height:auto;overflow-y:auto;}
             });
             mo.observe(host, { childList: true, subtree: true });
 
-            // Extra: also center a moment after vendor paints
             setTimeout(() => { centerPagers(host); logRepliesPresence(host, 't200'); }, 200);
             setTimeout(() => { centerPagers(host); logRepliesPresence(host, 't1000'); }, 1000);
         }
 
-        // 2e) Kick off (and expose tiny helper)
         boot();
         window.__DP_FORCE_CENTER = () => {
             const host = document.getElementById(hostId);
             if (host) { centerPagers(host); logRepliesPresence(host, 'manual'); }
         };
 
-        // Optional: call API probe once (adjust API_BASE / PLEA_NUM if you want)
+        // Optional small probe
         try {
             const PLEA_NUM = (location.pathname.match(/\/(\d{1,6})\/?$/) || [])[1];
             const API_BASE = (document.querySelector('meta[name="dp:api"]')?.content) || 'http://localhost:3000/api';
-            if (PLEA_NUM) apiProbeReplies(API_BASE, PLEA_NUM);
+            if (PLEA_NUM) fetch(`${API_BASE}/pleas/${encodeURIComponent(PLEA_NUM)}/comments?sort=hottest&page=1&page_size=10`, { credentials: 'include' })
+                .then(r => r.json()).then(j => {
+                    const rc = (Array.isArray(j?.items) ? j.items : []).map(c => ({ id: c.id, reply_count: c.reply_count }));
+                    console.log('[comments][api] top-level:', rc);
+                }).catch(() => { });
         } catch { }
     })();
-
 
     // Connectivity diagnostics — prints EXACT failures
     async function diagnoseConnectivity(pleaNum) {
