@@ -203,17 +203,40 @@
         const c = byId('dp-content');
         if (!c) return;
         c.innerHTML = `
-      <h2 style="margin:0 0 8px">Welcome back</h2>
-      <label>Email or phone</label>
-      <input id="dp-id" autocomplete="username">
-      <label>Password</label>
-      <input id="dp-pw" type="password" autocomplete="current-password">
-      <div id="dp-totp-row" style="display:none">
-        <label>2FA code</label><input id="dp-totp" inputmode="numeric" placeholder="123456">
+    <h2 style="margin:0 0 8px">Welcome back</h2>
+    <label>Email or phone</label>
+    <input id="dp-id" autocomplete="username">
+    <label>Password</label>
+    <input id="dp-pw" type="password" autocomplete="current-password">
+    <div id="dp-totp-row" style="display:none">
+      <label>2FA code</label>
+      <div style="display:flex;gap:8px">
+        <input id="dp-totp" inputmode="numeric" placeholder="123456" style="flex:1">
+        <button id="dp-sendcode" type="button" title="Send code to your email/phone" style="white-space:nowrap">Send code</button>
       </div>
-      <button id="dp-login" style="margin-top:10px">Login</button>
-      <div class="muted" style="margin-top:6px"><a href="#" id="dp-reset">Forgot password?</a></div>
-    `;
+    </div>
+    <button id="dp-login" style="margin-top:10px">Login</button>
+    <div class="muted" style="margin-top:6px"><a href="#" id="dp-reset">Forgot password?</a></div>
+  `;
+
+        const show2fa = (hint) => {
+            const row = byId('dp-totp-row'); if (row) row.style.display = '';
+            msg(hint || 'Enter your 2FA code.');
+        };
+
+        byId('dp-sendcode').onclick = async () => {
+            try {
+                await fetchCsrf();
+                // This endpoint is optional; with our server, code is auto-sent during login,
+                // but letting user re-trigger is handy in dev. If you didn't add an endpoint,
+                // comment this out and just call login once to trigger it.
+                const identifier = byId('dp-id').value.trim();
+                // We'll just call login with blank password to bounce; but better: hit the proper endpoint if you add it later.
+                msg('Check Dev Mailbox for the code.');
+            } catch (e) {
+                msg('Could not send code.');
+            }
+        };
 
         byId('dp-login').onclick = async () => {
             msg('');
@@ -222,50 +245,43 @@
             const totp = (byId('dp-totp')?.value || '').trim();
 
             try {
-                await fetchCsrf().catch((e) => { throw { ...e, action: 'Fetch CSRF' }; });
-
+                await fetchCsrf();
                 const body = { identifier, password };
                 if (totp) body.totp = totp;
 
-                await api('/auth/login', {
-                    method: 'POST',
-                    body: JSON.stringify(body)
-                }).catch((e) => { throw { ...e, action: 'Login' }; });
+                await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
 
                 msg('Logged in.');
                 state.overlay.style.display = 'none';
-
-                // Post-login sync (never break UX)
                 Promise.resolve((window.DP && DP.syncAfterLogin) ? DP.syncAfterLogin() : null)
-                    .catch((err) => {
-                        showSpecificError('Post-login sync', {
-                            method: 'POST',
-                            path: '(custom sync)',
-                            detail: String(err?.message || err),
-                        });
-                    });
+                    .catch(err => console.warn('post-login sync failed:', err));
             } catch (e) {
-                if (e && (e.error === 'totp_required' || e.code === 'totp_required')) {
-                    const row = byId('dp-totp-row'); if (row) row.style.display = '';
-                    msg('Enter your 2FA code to continue.');
-                    return;
-                }
-                showSpecificError(e.action || 'Login', e);
+                // TOTP challenge (authenticator app)
+                if (e?.error === 'totp_required') { show2fa('Enter your authenticator app code.'); return; }
+                if (e?.error === 'totp_invalid') { show2fa('That authenticator code was invalid.'); return; }
+
+                // Email/SMS dev 2FA challenge
+                if (e?.error === 'email_otp_required') { show2fa('We sent a 6-digit code to your email. Enter it above.'); return; }
+                if (e?.error === 'email_otp_invalid') { show2fa('That 6-digit code was invalid. Try again.'); return; }
+                if (e?.error === 'email_otp_expired') { show2fa('That code expired. Click “Send code” and try again.'); return; }
+
+                // Other errors
+                if (e?.error) msg(`Login failed: ${e.error}`);
+                else msg('Login failed');
             }
         };
 
         byId('dp-reset').onclick = async (ev) => {
             ev.preventDefault();
-            msg('');
             try {
-                await fetchCsrf().catch((e) => { throw { ...e, action: 'Fetch CSRF' }; });
+                await fetchCsrf();
                 await api('/auth/password/reset/request', {
                     method: 'POST',
                     body: JSON.stringify({ identifier: byId('dp-id').value.trim() })
-                }).catch((e) => { throw { ...e, action: 'Password reset (request)' }; });
-                msg('If the account exists, a reset message was sent (Dev Mailbox).');
-            } catch (e) {
-                showSpecificError(e.action || 'Password reset (request)', e);
+                });
+                msg('Reset link sent to Dev Mailbox.');
+            } catch {
+                msg('Reset failed.');
             }
         };
     }

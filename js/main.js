@@ -1,6 +1,47 @@
-// plea page (reader)
+// plea page (reader) — DEBUG BUILD
 document.addEventListener('DOMContentLoaded', () => {
-    // ---- progress store (per-plea) ----
+    console.log('PLEA BUILD', new Date().toISOString());
+    /***********************
+     * DEBUG SETTINGS
+     ***********************/
+    const DEBUG = true;
+    const API_BASE = 'http://localhost:3000/api';  // change if needed
+    const STATIC_ORIGINS = ['http://localhost:5500', 'http://127.0.0.1:5500'];
+
+    // style-y debug printers
+    function dgroup(title) { if (!DEBUG) return () => { }; console.groupCollapsed('%c' + title, 'color:#3b82f6;font-weight:600'); return () => console.groupEnd(); }
+    function dlog(...a) { if (DEBUG) console.log(...a); }
+    function dwarn(...a) { if (DEBUG) console.warn(...a); }
+    function derr(...a) { if (DEBUG) console.error(...a); }
+
+    async function diagFetch(url, opts = {}) {
+        const t0 = performance.now();
+        const label = `[fetch] ${opts.method || 'GET'} ${url}`;
+        const endG = dgroup(label);
+        try {
+            dlog('options:', opts);
+            const res = await fetch(url, opts);
+            const text = await res.text();
+            const dt = Math.round(performance.now() - t0);
+            dlog('status:', res.status, res.statusText, `(${dt}ms)`);
+            dlog('headers:', [...res.headers.entries()]);
+            dlog('body(text):', text.slice(0, 400) + (text.length > 400 ? '…' : ''));
+            endG();
+            try { return JSON.parse(text); } catch { return text; }
+        } catch (err) {
+            derr('NETWORK ERROR ->', err?.name, err?.message);
+            if (location.protocol === 'file:') {
+                derr('You are on file:// — use a local server like http://localhost:5500 or similar.');
+            }
+            derr('If this is a CORS issue, make sure your API allows your static origin via CORS.');
+            endG();
+            throw err;
+        }
+    }
+
+    /***********************
+     * BASIC HELPERS
+     ***********************/
     function currentPleaNumber() {
         const m = location.pathname.match(/\/(\d{1,6})\/?$/);
         if (m) return parseInt(m[1], 10);
@@ -9,27 +50,23 @@ document.addEventListener('DOMContentLoaded', () => {
         return n ? parseInt(n[1], 10) : null;
     }
 
-    function beginFirstRevealIfNeeded() {
-        if (firstRevealStarted) return false;
-        firstRevealStarted = true;
-        revealSection(current);
-        current++;
-        return true;
-    }
-
-    const RETURN_KEY = 'plea:return';
-
-    // helper
-    function stashReturnTarget() {
-        if (PLEA_NUM) sessionStorage.setItem(RETURN_KEY, String(PLEA_NUM));
-    }
-
     let firstRevealStarted = false;
-    let uiUnlocked = false; // <— NEW: block inputs until overlay is done
+    let uiUnlocked = false;
+    let current = 0;
+    let revealing = false;
+    let timeouts = [];
+    let promptTimer = null;
+    let replayBtnMounted = false;
 
     const PLEA_NUM = currentPleaNumber();
     const KEY = PLEA_NUM ? `plea-progress:${PLEA_NUM}` : null;
+    const RETURN_KEY = 'plea:return';
 
+    function killRevealTimers() {
+        try { timeouts.forEach(clearTimeout); } catch { }
+        timeouts = [];
+        try { clearTimeout(promptTimer); } catch { }
+    }
     function readProgress() {
         if (!KEY) return null;
         try { return JSON.parse(localStorage.getItem(KEY) || 'null'); }
@@ -44,20 +81,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const p = readProgress() || {};
         writeProgress({ done: !!p.done, lastIndex: undefined });
     }
+    function clearProgressCompletely() {
+        if (KEY) { try { localStorage.removeItem(KEY); } catch { } }
+    }
+    function stashReturnTarget() { if (PLEA_NUM) sessionStorage.setItem(RETURN_KEY, String(PLEA_NUM)); }
 
-    (function addPleaHubButton() {
-        const HUB_URL = '/pleas/';
-        const ICON_SRC = '/icons/plea-hub.png';
-        const a = document.createElement('a');
-        a.href = HUB_URL;
-        a.className = 'plea-hub-btn';
-        a.setAttribute('aria-label', 'Open Plea Select');
-        const img = new Image();
-        img.src = ICON_SRC; img.alt = 'Plea Select'; img.decoding = 'async'; img.loading = 'eager'; img.draggable = false;
-        a.appendChild(img); document.body.appendChild(a);
-        a.addEventListener('click', () => { stashReturnTarget(); }, { capture: true });
-        requestAnimationFrame(() => a.classList.add('is-show'));
-    })();
+    // UI refs
+    const sections = document.querySelectorAll('.container .section');
+    const animateSections = Array.from(sections).slice(1);
+    const prompt = document.getElementById('continue-prompt');
+    const container = document.querySelector('.container');
+    const startOverlay = document.getElementById('start-overlay');
+    const startText = document.getElementById('start-text');
+    const ellipsis = document.getElementById('ellipsis');
+    container?.scrollTo?.({ top: 0, behavior: 'auto' });
+
+    // Audio
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const volumeNode = audioCtx.createGain(); volumeNode.gain.setValueAtTime(0.5, audioCtx.currentTime); volumeNode.connect(audioCtx.destination);
+    let clickBuffer = null, resumed = false, started = false, lastClickTime = 0;
 
     const cfg = (() => {
         const dataHum = document.body?.dataset?.hum;
@@ -71,29 +113,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return { HUM_SRC: hum, CLICK_THROTTLE: throttle };
     })();
 
-    const sections = document.querySelectorAll('.container .section');
-    const animateSections = Array.from(sections).slice(1);
-    const prompt = document.getElementById('continue-prompt');
-    const container = document.querySelector('.container');
-    container.scrollTo({ top: 0, behavior: 'auto' });
+    // Debug banner
+    (function printBootInfo() {
+        const end = dgroup('BOOT');
+        dlog('href:', location.href);
+        dlog('origin:', location.origin);
+        dlog('protocol:', location.protocol);
+        dlog('API_BASE:', API_BASE);
+        dlog('STATIC_ORIGINS allowed:', STATIC_ORIGINS);
+        dlog('PLEA_NUM:', PLEA_NUM);
+        dlog('KEY:', KEY);
+        dlog('#sections:', sections.length, 'animateSections:', animateSections.length);
+        dlog('progress:', readProgress());
+        end();
+    })();
 
-    const startOverlay = document.getElementById('start-overlay');
-    if (startOverlay) { startOverlay.setAttribute('tabindex', '0'); setTimeout(() => startOverlay.focus({ preventScroll: true }), 0); }
-    const startText = document.getElementById('start-text');
-    const ellipsis = document.getElementById('ellipsis');
-
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const volumeNode = audioCtx.createGain();
-    volumeNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
-    volumeNode.connect(audioCtx.destination);
-
-    let clickBuffer = null, resumed = false, started = false, lastClickTime = 0;
-
+    // Load click sound
     fetch(cfg.HUM_SRC)
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status} for audio`); return r.arrayBuffer(); })
         .then(data => audioCtx.decodeAudioData(data))
-        .then(buf => { clickBuffer = buf; })
-        .catch(err => console.error('Audio load failed:', err));
+        .then(buf => { clickBuffer = buf; dlog('[audio] loaded'); })
+        .catch(err => derr('Audio load failed:', err));
 
     requestAnimationFrame(() => startText?.classList.add('visible'));
 
@@ -106,57 +146,489 @@ document.addEventListener('DOMContentLoaded', () => {
         src.buffer = clickBuffer; src.connect(volumeNode); src.start();
     }
 
-    // wrap every char in spans
+    // wrap every char
     animateSections.forEach(section => {
         const raw = section.textContent;
         section.textContent = '';
         Array.from(raw).forEach(ch => {
-            if (ch === ' ') {
-                section.appendChild(document.createTextNode(' '));
-            } else {
-                const span = document.createElement('span');
-                span.textContent = ch;
-                span.className = 'char';
-                section.appendChild(span);
-            }
+            if (ch === ' ') section.appendChild(document.createTextNode(' '));
+            else { const span = document.createElement('span'); span.textContent = ch; span.className = 'char'; section.appendChild(span); }
         });
     });
 
-    let current = 0;
-    let revealing = false;
-    let timeouts = [];
-    let promptTimer = null;
+    // hub button
+    (function addPleaHubButton() {
+        const HUB_URL = '/pleas/';
+        const ICON_SRC = '/icons/plea-hub.png';
+        const a = document.createElement('a');
+        a.href = HUB_URL; a.className = 'plea-hub-btn'; a.setAttribute('aria-label', 'Open Plea Select');
+        const img = new Image(); img.src = ICON_SRC; img.alt = 'Plea Select'; img.decoding = 'async'; img.loading = 'eager'; img.draggable = false;
+        a.appendChild(img); document.body.appendChild(a);
+        a.addEventListener('click', () => { stashReturnTarget(); }, { capture: true });
+        requestAnimationFrame(() => a.classList.add('is-show'));
+    })();
 
-    const hidePrompt = () => {
-        clearTimeout(promptTimer);
-        if (prompt) prompt.classList.remove('visible');
-    };
+    // prompt helpers
+    const hidePrompt = () => { clearTimeout(promptTimer); if (prompt) prompt.classList.remove('visible'); };
+    const schedulePrompt = idx => { clearTimeout(promptTimer); const delay = idx === 0 ? 2500 : 6000; promptTimer = setTimeout(() => prompt.classList.add('visible'), delay); };
 
-    const schedulePrompt = idx => {
-        clearTimeout(promptTimer);
-        const delay = idx === 0 ? 2500 : 6000;
-        promptTimer = setTimeout(() => prompt.classList.add('visible'), delay);
-    };
-
-    // ===== progress-aware helpers =====
+    // progress
     const progress0 = readProgress();
     const PROGRESS_LOCKED_DONE = !!progress0?.done;
     const RESUME_INDEX = (!PROGRESS_LOCKED_DONE && Number.isFinite(progress0?.lastIndex))
         ? Math.max(0, Math.min(animateSections.length, progress0.lastIndex | 0))
         : 0;
 
+    // --- comments loader with diagnostics
+    const COMMENT_PATHS = [
+        `${location.origin}/web/comments.js`,
+        `/web/comments.js`,
+        `${location.origin}/comments.js`,
+        `/comments.js`,
+    ];
+
+    function loadCommentsLib() {
+        if (window.DP && typeof window.DP.mountComments === 'function') {
+            console.log('[comments] already on window.DP');
+            return Promise.resolve('already_loaded');
+        }
+
+        // Remove any previously injected tags so the browser can’t reuse them
+        document.querySelectorAll('script[data-dp-comments]').forEach(n => n.remove());
+
+        return new Promise((resolve, reject) => {
+            let i = 0;
+            const bust = 'v=' + Date.now();
+
+            function tryNext() {
+                if (i >= COMMENT_PATHS.length) {
+                    console.error('[comments] Could not load from any path:', COMMENT_PATHS);
+                    return reject(new Error('comments_js_load_failed'));
+                }
+                const url = COMMENT_PATHS[i++];
+                const s = document.createElement('script');
+                s.async = true;
+                s.dataset.dpComments = '1';
+                s.src = url + (url.includes('?') ? '&' : '?') + bust; // <- cache buster
+                s.onload = () => { console.info('[comments] loaded:', s.src); resolve(url); };
+                s.onerror = () => { console.warn('[comments] failed:', s.src); s.remove(); tryNext(); };
+                document.head.appendChild(s);
+            }
+            tryNext();
+        });
+    }
+
+
+    function debugBadge(msg, sub = '') {
+        let el = document.getElementById('dp-debug-badge');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'dp-debug-badge';
+            Object.assign(el.style, {
+                position: 'fixed', left: '12px', bottom: '12px', zIndex: 99999,
+                padding: '8px 10px', background: '#7f1d1d', color: '#fff',
+                font: '12px/1.2 system-ui, sans-serif', borderRadius: '8px',
+                boxShadow: '0 6px 20px rgba(0,0,0,.35)', maxWidth: '46ch', whiteSpace: 'pre-wrap'
+            });
+            document.body.appendChild(el);
+        }
+        el.textContent = `[comments] ${msg}${sub ? '\n' + sub : ''}`;
+    }
+
+    async function httpProbe(url, opts = {}) {
+        const t0 = performance.now();
+        const label = `[probe] ${opts.method || 'GET'} ${url}`;
+        console.groupCollapsed(label);
+        try {
+            console.log('options:', opts);
+            const res = await fetch(url, opts);
+            const text = await res.text();
+            const ms = Math.round(performance.now() - t0);
+            console.log('status:', res.status, res.statusText, `(${ms}ms)`);
+            console.log('headers:', [...res.headers.entries()]);
+            console.log('body:', text.slice(0, 400) + (text.length > 400 ? '…' : ''));
+            console.groupEnd();
+            return { ok: res.ok, status: res.status, text, json: (() => { try { return JSON.parse(text); } catch { return null; } })() };
+        } catch (err) {
+            console.groupEnd();
+            console.error(label, 'NETWORK ERROR:', err);
+            throw err;
+        }
+    }
+
+    async function mountCommentsForPlea(pleaNum) {
+        console.groupCollapsed('%cCOMMENTS: mount (fallback if empty)', 'color:#3b82f6;font-weight:600');
+        try {
+            // 1) Load vendor lib (if present) + init
+            await loadCommentsLib().catch(() => { });
+            if (window.DP?.init) window.DP.init({ apiBase: API_BASE });
+
+            // 2) Host below the plea
+            const containerEl = document.querySelector('.container') || document.body;
+            document.querySelectorAll('#dp-comments-host, #dp-comments-wrap').forEach(n => n.remove());
+            const wrap = document.createElement('div');
+            wrap.id = 'dp-comments-wrap';
+            wrap.className = containerEl.className || 'container';
+            containerEl.insertAdjacentElement('afterend', wrap);
+            const host = document.createElement('div');
+            host.id = 'dp-comments-host';
+            wrap.appendChild(host);
+
+            // 3) CSS: narrow column + pager centering + one-page scroll
+            if (!document.getElementById('dp-comments-fb-css')) {
+                const s = document.createElement('style');
+                s.id = 'dp-comments-fb-css';
+                s.textContent = `
+#dp-comments-host{
+  --dp-header-size:22px; --dp-comment-header-size:13px; --dp-content-size:17px;
+  --dp-actions-size:14px; --dp-viewmore-size:15px; --dp-post-size:15px; --dp-composer-size:16px;
+  --dp-gap-header-body:10px; --dp-gap-body-actions:14px; --dp-gap-between-items:22px; --dp-max-width:640px;
+}
+#dp-comments-wrap{display:block;width:100%;clear:both;margin-top:28px;grid-column:1/-1;}
+#dp-comments-host{display:block;width:100%;}
+#dp-comments-host .dp-comments,
+#dp-comments-host .dp-c-panel,
+#dp-comments-host .dp-list,
+#dp-comments-host .dp-item,
+#dp-comments-host .dp-c-composer,
+#dp-comments-host .dp-fb,
+#dp-comments-host .dp-fb-list{max-width:var(--dp-max-width);margin:0 auto;}
+#dp-comments-host, #dp-comments-host *{
+  font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,sans-serif!important;color:#fff!important;
+}
+#dp-comments-host .dp-c-panel{background:transparent!important;border:1px solid rgba(255,255,255,.12)!important;padding:12px;}
+#dp-comments-host .dp-item{border-top:1px solid rgba(255,255,255,.12);padding-top:12px;margin-top:var(--dp-gap-between-items);}
+#dp-comments-host .dp-c-title{font-size:var(--dp-header-size); text-align:center;}
+#dp-comments-host .dp-meta{font-size:var(--dp-comment-header-size);text-align:center;margin-bottom:var(--dp-gap-header-body);}
+#dp-comments-host .dp-body{font-size:var(--dp-content-size);margin-top:0;}
+#dp-comments-host .dp-actions{margin-top:var(--dp-gap-body-actions);display:flex;justify-content:center;gap:8px;font-size:var(--dp-actions-size);}
+#dp-comments-host .dp-actions .dp-btn{font-size:inherit;}
+#dp-comments-host .dp-c-composer textarea{width:100%;font-size:var(--dp-composer-size);}
+#dp-comments-host .dp-post{font-size:var(--dp-post-size);}
+#dp-comments-host .dp-pager{display:flex!important;justify-content:center!important;align-items:center!important;width:100%!important;text-align:center!important;margin-top:12px!important;gap:0!important;}
+#dp-comments-host .dp-pager > *{float:none!important;margin:0!important;}
+#dp-comments-host .dp-pager .dp-prev{display:none!important;}
+/* Fallback UI */
+#dp-comments-host .dp-fb-item{border-top:1px solid rgba(255,255,255,.12);padding-top:12px;margin-top:var(--dp-gap-between-items);}
+#dp-comments-host .dp-fb-head{font-size:var(--dp-comment-header-size);text-align:center;margin-bottom:var(--dp-gap-header-body);opacity:.9}
+#dp-comments-host .dp-fb-body{font-size:var(--dp-content-size);}
+#dp-comments-host .dp-fb-actions{margin-top:var(--dp-gap-body-actions);display:flex;justify-content:center;gap:10px;font-size:var(--dp-actions-size);opacity:.9}
+#dp-comments-host .dp-fb-replies{margin-top:10px;border-left:2px solid rgba(255,255,255,.15);padding-left:12px}
+#dp-comments-host .dp-fb-reply{margin-top:12px;opacity:.95}
+#dp-comments-host .dp-fb-pager{display:flex;justify-content:center;margin-top:14px}
+#dp-comments-host .dp-fb-next{font-size:var(--dp-viewmore-size);padding:6px 10px;border:1px solid rgba(255,255,255,.2);background:transparent;color:#fff;border-radius:8px;cursor:pointer}
+.container{overflow:visible!important;height:auto!important;max-height:none!important;}
+html,body{height:auto;overflow-y:auto;}
+      `;
+                document.head.appendChild(s);
+            }
+
+            // 4) Try vendor widget first (if present)
+            let usedFallback = false;
+            async function tryVendor() {
+                if (!window.DP?.mountComments) return false;
+                console.log('[comments][vendor] mounting…');
+                const maybePromise = window.DP.mountComments(pleaNum, host);
+                try { await Promise.resolve(maybePromise); } catch { }
+                // try to expand if it's collapsed
+                const toggle = host.querySelector?.('.dp-c-toggle');
+                if (toggle && toggle.getAttribute('aria-expanded') !== 'true') {
+                    toggle.click?.();
+                }
+                // wait a tick to render
+                await new Promise(r => setTimeout(r, 200));
+                const items = host.querySelectorAll?.('.dp-item');
+                const lists = host.querySelectorAll?.('.dp-list, .dp-replies, .dp-thread');
+                console.log('[comments][vendor] items:', items?.length || 0, 'lists:', lists?.length || 0);
+                if ((items?.length || 0) > 0) {
+                    // center vendor pager if present
+                    host.querySelectorAll?.('.dp-pager')?.forEach(p => {
+                        p.style.display = 'flex'; p.style.justifyContent = 'center'; p.style.alignItems = 'center';
+                        const btn = p.querySelector('.dp-next, .dp-loadmore, button, a');
+                        if (btn) { btn.style.margin = '0 auto'; btn.style.display = 'inline-flex'; btn.textContent = btn.textContent?.trim() || 'View more'; }
+                    });
+                    return true;
+                }
+                return false;
+            }
+
+            // 5) Fallback renderer (uses your API directly)
+            async function fetchList(page = 1, page_size = 10) {
+                const url = `${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments?sort=hottest&page=${page}&page_size=${page_size}`;
+                const res = await diagFetch(url, { credentials: 'include' });
+                const items = Array.isArray(res?.items) ? res.items : (Array.isArray(res) ? res : []);
+                return { items, total: res?.total ?? items.length, page, page_size };
+            }
+            async function fetchReplies(parentId) {
+                // try common patterns
+                const candidates = [
+                    `${API_BASE}/comments/${encodeURIComponent(parentId)}/replies`,
+                    `${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments?parent_id=${encodeURIComponent(parentId)}`,
+                    `${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments/${encodeURIComponent(parentId)}/replies`,
+                ];
+                for (const u of candidates) {
+                    try {
+                        const r = await diagFetch(u, { credentials: 'include' });
+                        const arr = Array.isArray(r?.items) ? r.items : (Array.isArray(r) ? r : null);
+                        if (arr) return arr;
+                    } catch { }
+                }
+                return [];
+            }
+            function el(tag, cls, txt) {
+                const n = document.createElement(tag);
+                if (cls) n.className = cls;
+                if (txt != null) n.textContent = txt;
+                return n;
+            }
+            async function renderFallback() {
+                usedFallback = true;
+                console.warn('[comments][fallback] vendor rendered nothing — switching to fallback UI.');
+                const root = el('div', 'dp-fb');
+                root.appendChild(el('h3', 'dp-c-title', 'Comments'));
+                const listEl = el('div', 'dp-fb-list');
+                root.appendChild(listEl);
+                const pager = el('div', 'dp-fb-pager');
+                const nextBtn = el('button', 'dp-fb-next', 'View more');
+                pager.appendChild(nextBtn);
+                root.appendChild(pager);
+                host.innerHTML = '';
+                host.appendChild(root);
+
+                let page = 1, page_size = 10, total = 0, loaded = 0;
+
+                async function addPage() {
+                    const { items, total: t, page: p } = await fetchList(page, page_size);
+                    total = t; page = p;
+                    items.forEach(async (c) => {
+                        const it = el('article', 'dp-fb-item');
+                        const head = el('div', 'dp-fb-head', `#${c.id ?? '?'} • ${new Date(c.created_at || Date.now()).toLocaleString()} • replies: ${c.reply_count ?? 0}`);
+                        const body = el('div', 'dp-fb-body', c.body || '');
+                        const actions = el('div', 'dp-fb-actions', `▲ ${c.likes ?? 0}  ▼ ${c.dislikes ?? 0}`);
+                        it.append(head, body, actions);
+
+                        const repWrap = el('div', 'dp-fb-replies');
+                        it.appendChild(repWrap);
+
+                        // fetch replies if any
+                        const rc = Number(c.reply_count ?? 0);
+                        if (rc > 0) {
+                            repWrap.appendChild(el('div', 'dp-fb-reply', 'Loading replies…'));
+                            try {
+                                const reps = await fetchReplies(c.id);
+                                repWrap.innerHTML = '';
+                                if (!reps.length) {
+                                    repWrap.appendChild(el('div', 'dp-fb-reply', '(No replies returned by API)'));
+                                } else {
+                                    reps.forEach(r => {
+                                        const rr = el('div', 'dp-fb-reply');
+                                        rr.appendChild(el('div', 'dp-fb-head', `↳ #${r.id ?? '?'} • ${new Date(r.created_at || Date.now()).toLocaleString()}`));
+                                        rr.appendChild(el('div', 'dp-fb-body', r.body || ''));
+                                        repWrap.appendChild(rr);
+                                    });
+                                }
+                                console.log('[comments][fallback] replies rendered:', reps.length, 'for parent', c.id);
+                            } catch (e) {
+                                repWrap.innerHTML = '';
+                                repWrap.appendChild(el('div', 'dp-fb-reply', '(Failed to load replies)'));
+                            }
+                        }
+                        listEl.appendChild(it);
+                        loaded++;
+                    });
+
+                    // pager visibility + centering
+                    if (loaded >= total) {
+                        pager.style.display = 'none';
+                    } else {
+                        pager.style.display = 'flex';
+                    }
+                    console.log(`[comments][fallback] page ${page} loaded ${loaded}/${total}`);
+                }
+
+                nextBtn.addEventListener('click', async () => {
+                    nextBtn.disabled = true;
+                    try { page += 1; await addPage(); } finally { nextBtn.disabled = false; }
+                });
+
+                await addPage();
+            }
+
+            // 6) Run vendor; if empty => fallback
+            const ok = await tryVendor();
+            if (!ok) await renderFallback();
+
+            // 7) Expose minimal debug
+            window.DP_DEBUG = { host, usedFallback: () => usedFallback };
+            console.log('[comments] ready. usedFallback =', usedFallback);
+        } catch (e) {
+            console.error('Comments mount failed:', e);
+        } finally {
+            console.groupEnd();
+        }
+    }
+
+    (function dpCommentsHardPatch() {
+        const hostId = 'dp-comments-host';
+
+        // 2a) Highest-specificity CSS with !important to beat injected styles
+        const STYLE_ID = 'dp-center-pager-and-debug';
+        if (!document.getElementById(STYLE_ID)) {
+            const s = document.createElement('style');
+            s.id = STYLE_ID;
+            s.textContent = `
+#${hostId} .dp-pager,
+#${hostId} .dp-fb-pager{
+  display:grid !important;
+  place-items:center !important;
+  width:100% !important;
+  text-align:center !important;
+  margin-top:12px !important;
+}
+#${hostId} .dp-pager > *,
+#${hostId} .dp-fb-pager > *{
+  float:none !important;
+  margin:0 auto !important;
+  display:inline-flex !important;
+}
+#${hostId} .dp-next,
+#${hostId} .dp-loadmore,
+#${hostId} .dp-fb-next{
+  margin:0 auto !important;
+  display:inline-flex !important;
+  font-size:inherit !important;
+}
+`;
+            document.head.appendChild(s);
+        }
+
+        // 2b) JS that force-centers any (re)inserted pager button
+        function centerPagers(root) {
+            const pagers = root.querySelectorAll?.('.dp-pager, .dp-fb-pager');
+            pagers.forEach(p => {
+                p.style.display = 'grid';
+                p.style.placeItems = 'center';
+                p.style.width = '100%';
+                [...p.children].forEach(ch => {
+                    ch.style.float = 'none';
+                    ch.style.margin = '0 auto';
+                    ch.style.display = 'inline-flex';
+                });
+                const btn = p.querySelector('.dp-next, .dp-loadmore, .dp-fb-next, button, a');
+                if (btn && !(/\S/.test(btn.textContent))) btn.textContent = 'View more';
+            });
+        }
+
+        // 2c) Replies debug logger
+        async function apiProbeReplies(API_BASE, pleaNum) {
+            try {
+                const res = await fetch(`${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments?sort=hottest&page=1&page_size=10`, { credentials: 'include' });
+                const txt = await res.text(); let json;
+                try { json = JSON.parse(txt); } catch { }
+                const items = json?.items || [];
+                const rc = items.map(c => ({ id: c.id, reply_count: c.reply_count }));
+                console.log('[comments][api] top-level:', rc);
+            } catch (e) {
+                console.warn('[comments][api] probe failed:', e);
+            }
+        }
+
+        function logRepliesPresence(root, reason) {
+            const containers = root.querySelectorAll('.dp-replies, .dp-thread, .dp-replies-inner');
+            const toggles = root.querySelectorAll('.dp-toggle-replies, .dp-reply-toggle, [data-action="toggle-replies"], [class*="view-repl"]');
+            const items = root.querySelectorAll('.dp-reply, [data-reply-id]');
+            const visible = [...containers].filter(el => getComputedStyle(el).display !== 'none');
+            console.log('[comments][replies-debug]', { reason, toggles: toggles.length, containers: containers.length, visible: visible.length, items: items.length });
+        }
+
+        // 2d) Run against current DOM and keep running on mutations
+        function boot() {
+            const host = document.getElementById(hostId);
+            if (!host) { setTimeout(boot, 100); return; }
+            centerPagers(host);
+            logRepliesPresence(host, 'initial');
+
+            const mo = new MutationObserver(muts => {
+                let touched = false;
+                for (const m of muts) { if (m.addedNodes && m.addedNodes.length) { touched = true; break; } }
+                if (!touched) return;
+                centerPagers(host);
+                logRepliesPresence(host, 'mutation');
+            });
+            mo.observe(host, { childList: true, subtree: true });
+
+            // Extra: also center a moment after vendor paints
+            setTimeout(() => { centerPagers(host); logRepliesPresence(host, 't200'); }, 200);
+            setTimeout(() => { centerPagers(host); logRepliesPresence(host, 't1000'); }, 1000);
+        }
+
+        // 2e) Kick off (and expose tiny helper)
+        boot();
+        window.__DP_FORCE_CENTER = () => {
+            const host = document.getElementById(hostId);
+            if (host) { centerPagers(host); logRepliesPresence(host, 'manual'); }
+        };
+
+        // Optional: call API probe once (adjust API_BASE / PLEA_NUM if you want)
+        try {
+            const PLEA_NUM = (location.pathname.match(/\/(\d{1,6})\/?$/) || [])[1];
+            const API_BASE = (document.querySelector('meta[name="dp:api"]')?.content) || 'http://localhost:3000/api';
+            if (PLEA_NUM) apiProbeReplies(API_BASE, PLEA_NUM);
+        } catch { }
+    })();
+
+
+    // Connectivity diagnostics — prints EXACT failures
+    async function diagnoseConnectivity(pleaNum) {
+        const end = dgroup('DIAGNOSTICS');
+        try {
+            if (location.protocol === 'file:') {
+                derr('Serving from file:// will break fetch and CORS. Use a static server (e.g., http://localhost:5500).');
+            }
+
+            dlog('static origin:', location.origin, 'expected among:', STATIC_ORIGINS);
+            if (!STATIC_ORIGINS.includes(location.origin)) {
+                dwarn('Your static origin is not in STATIC_ORIGINS. If API CORS blocks, add it to server CORS_ORIGIN.');
+            }
+
+            // Ping API index
+            await diagFetch(`${API_BASE.replace('/api', '')}/api`, { credentials: 'include' });
+
+            // Grab CSRF (cookie + token)
+            await diagFetch(`${API_BASE.replace('/api', '')}/api/csrf`, { credentials: 'include' });
+
+            // Try comments endpoint
+            await diagFetch(`${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments?sort=hottest&page=1&page_size=1`, { credentials: 'include' });
+        } finally { end(); }
+    }
+
+    /***********************
+     * REVEAL ENGINE
+     ***********************/
+    function beginFirstRevealIfNeeded() {
+        if (firstRevealStarted || current >= animateSections.length) return false;
+        firstRevealStarted = true;
+        dlog('[reveal] starting at index', current);
+        revealSection(current);
+        current++;
+        return true;
+    }
+
     function markProgressAfterSection(idx) {
         if (!KEY || PROGRESS_LOCKED_DONE) return;
         const FINAL_IDX = animateSections.length - 2;
         if (idx >= FINAL_IDX) {
+            dlog('[progress] marking done');
             writeProgress({ done: true });
             return;
         }
         const next = Math.max(0, Math.min(animateSections.length, idx + 1));
+        dlog('[progress] saving lastIndex', next);
         writeProgress({ done: false, lastIndex: next });
     }
 
     function preRevealUpTo(idx) {
+        dlog('[reveal] prerender up to', idx);
         for (let i = 0; i < idx; i++) {
             const chars = animateSections[i]?.querySelectorAll('.char') || [];
             chars.forEach(c => c.classList.add('visible'));
@@ -172,6 +644,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const revealSection = idx => {
+        const end = dgroup(`[reveal] section ${idx}`);
         revealing = true;
         const chars = animateSections[idx].querySelectorAll('.char');
         const BASE_SPEED = 30, PERIOD_PAUSE = 300, COMMA_PAUSE = 150;
@@ -202,6 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (c.textContent === '.' || c.textContent === '!' || c.textContent === '?' || c.textContent === ':' || c.textContent === ';') accDelay += PERIOD_PAUSE;
             if (c.textContent === ',' || c.textContent === '"') accDelay += COMMA_PAUSE;
         });
+        end();
     };
 
     function onSectionComplete(idx) {
@@ -212,38 +686,36 @@ document.addEventListener('DOMContentLoaded', () => {
         if (idx < FINAL_IDX) {
             schedulePrompt(idx);
         } else if (idx === FINAL_IDX) {
-            try {
-                gtag('event', 'all_text_revealed', {
-                    event_category: 'engagement',
-                    event_label: 'full_text'
-                });
-            } catch { }
+            try { gtag('event', 'all_text_revealed', { event_category: 'engagement', event_label: 'full_text' }); } catch { }
+            // Mount comments + Replay
+            (async () => {
+                try {
+                    if (PLEA_NUM) await mountCommentsForPlea(PLEA_NUM);
+                } finally {
+                    mountReplayButton();
+                }
+            })();
+
+            // beacon
             fetch('https://text-reveal-worker.dupeaccmax.workers.dev/', { method: 'POST', mode: 'cors' })
                 .then(r => r.json())
-                .then(data => console.log('Beacon transmitted', data.count, 'times'))
+                .then(data => dlog('Beacon transmitted', data.count, 'times'))
                 .catch(console.error);
         }
     }
 
     async function doStartFlow() {
-        // “Connecting…”
-        startText.textContent = 'Connecting';
-        ellipsis.textContent = '';
-        for (let i = 0; i < 3; i++) {
-            await new Promise(r => setTimeout(r, 300));
-            ellipsis.textContent += '.';
-        }
+        dlog('[start] connect sequence');
+        startText.textContent = 'Connecting'; ellipsis.textContent = '';
+        for (let i = 0; i < 3; i++) { await new Promise(r => setTimeout(r, 300)); ellipsis.textContent += '.'; }
         await new Promise(r => setTimeout(r, Math.random() * 2000 + 1000));
-        startText.textContent = '';
-        ellipsis.textContent = '';
+        startText.textContent = ''; ellipsis.textContent = '';
         await new Promise(r => setTimeout(r, 1000));
         startOverlay.classList.add('hidden');
         await new Promise(r => setTimeout(r, 1000));
 
-        // UNLOCK inputs ONLY now
         uiUnlocked = true;
 
-        // resume or start fresh
         if (!PROGRESS_LOCKED_DONE && RESUME_INDEX > 0) {
             preRevealUpTo(RESUME_INDEX);
             current = RESUME_INDEX;
@@ -257,6 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         if (started) return;
         started = true;
+        dlog('[start] user input');
         if (audioCtx.state === 'suspended') audioCtx.resume().catch(console.error);
         resumed = true;
         doStartFlow();
@@ -271,27 +744,124 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     }
 
-    // inputs
+    // set/hide all text
+    function setAllVisible() {
+        animateSections.forEach(section => { section.querySelectorAll('.char').forEach(c => c.classList.add('visible')); });
+    }
+    function hideAllText() {
+        animateSections.forEach(section => { section.querySelectorAll('.char').forEach(c => c.classList.remove('visible')); });
+    }
+    function removeCommentsMount() {
+        const host = document.getElementById('dp-comments-host');
+        if (host && host.parentNode) host.parentNode.removeChild(host);
+    }
+
+    function mountReplayButton() {
+        if (replayBtnMounted) return;
+        replayBtnMounted = true;
+
+        const btn = document.createElement('button');
+        btn.id = 'dp-replay';
+        btn.textContent = 'Replay';
+        Object.assign(btn.style, {
+            position: 'fixed', right: '16px', bottom: '16px', zIndex: 9998,
+            padding: '10px 14px', borderRadius: '10px', border: '0',
+            background: '#1f2937', color: '#cbd5e1', cursor: 'pointer',
+            boxShadow: '0 6px 20px rgba(0,0,0,.35)',
+        });
+        btn.addEventListener('mouseenter', () => { btn.style.background = '#374151'; });
+        btn.addEventListener('mouseleave', () => { btn.style.background = '#1f2937'; });
+        btn.onclick = async () => {
+            dlog('[replay] clicked');
+            clearProgressCompletely();
+            removeCommentsMount();
+            hidePrompt(); hideAllText();
+            container.scrollTo({ top: 0, behavior: 'auto' });
+            firstRevealStarted = false; uiUnlocked = false; revealing = false;
+            timeouts.forEach(clearTimeout); timeouts = []; current = 0;
+
+            try {
+                startText.textContent = 'Tap to begin'; ellipsis.textContent = '';
+                startOverlay.classList.remove('hidden'); startOverlay.focus({ preventScroll: true });
+            } catch { }
+
+            replayBtnMounted = false; document.getElementById('dp-replay')?.remove();
+
+            try { if (audioCtx.state === 'running') audioCtx.suspend(); } catch { }
+
+            // re-arm once handlers
+            startOverlay.addEventListener('pointerdown', onStart, { once: true });
+            startOverlay.addEventListener('touchstart', onStart, { once: true, passive: false });
+            startOverlay.addEventListener('click', onStart, { once: true });
+
+            started = false; resumed = false;
+        };
+        document.body.appendChild(btn);
+    }
+
+    async function completeInstantly() {
+        dlog('[skip] instant-complete: forcing fully revealed');
+
+        // stop any queued work
+        killRevealTimers();
+        hidePrompt();
+
+        // hide overlay & block further “start” attempts
+        try { startOverlay.classList.add('hidden'); } catch { }
+
+        // mark state as fully finished so click/enter handlers short-circuit
+        started = true;
+        uiUnlocked = true;
+        firstRevealStarted = true;
+        revealing = false;
+        current = animateSections.length; // <- CRUCIAL: tells handlers we’re at the end
+
+        // reveal everything
+        setAllVisible();
+
+        // put viewport near bottom of content without smooth scroll bounce
+        const gutter = container.clientHeight * 0.2;
+        container.scrollTo({
+            top: Math.max(0, container.scrollHeight - container.clientHeight - gutter),
+            behavior: 'auto'
+        });
+
+        // no clicks -> no sounds, but also suspend audio engine just in case
+        try { if (audioCtx.state === 'running') await audioCtx.suspend(); } catch { }
+
+        // mount comments right away (don’t wait for a “first line revealed” event)
+        try {
+            if (PLEA_NUM) await mountCommentsForPlea(PLEA_NUM);
+        } finally {
+            mountReplayButton();
+        }
+    }
+
+
+    // Skip connect if fully read before
+    if (readProgress()?.done) {
+        setTimeout(() => { completeInstantly(); }, 0);
+    }
+
+    /***********************
+     * INPUTS
+     ***********************/
     startOverlay.addEventListener('pointerdown', onStart, { once: true });
     startOverlay.addEventListener('touchstart', onStart, { once: true, passive: false });
     startOverlay.addEventListener('click', onStart, { once: true });
 
     container.addEventListener('click', () => {
-        if (!started || !uiUnlocked) return;  // <— block until overlay done
+        if (!started || !uiUnlocked) return;
         hidePrompt();
         if (current >= animateSections.length) return;
 
-        if (!firstRevealStarted) {            // start first reveal only
-            beginFirstRevealIfNeeded();
-            return;
-        }
-        if (finishCurrentSection()) return;   // finish current if mid-reveal
+        if (!firstRevealStarted) { beginFirstRevealIfNeeded(); return; }
+        if (finishCurrentSection()) return;
 
-        revealSection(current);               // advance to next
-        current++;
+        revealSection(current); current++;
     });
 
-    // Keyboard: Esc -> hub; Enter -> start/advance
+    // Keyboard
     (() => {
         const hubHref = document.querySelector('.plea-hub-btn')?.href || '/pleas/';
         function keyHandler(e) {
@@ -299,34 +869,28 @@ document.addEventListener('DOMContentLoaded', () => {
             if (['input', 'textarea', 'select'].includes(tag) || e.target?.isContentEditable) return;
             if (e.repeat) return;
 
-            const onceFlag = '__pleaHandled';
-            if (e[onceFlag]) return;
-            e[onceFlag] = true;
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
+            const onceFlag = '__pleaHandled'; if (e[onceFlag]) return; e[onceFlag] = true;
+            e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
 
-            if (e.key === 'Escape' || e.key === 'Esc') {
-                stashReturnTarget();
-                window.location.assign(hubHref);
-                return;
-            }
+            if (e.key === 'Escape' || e.key === 'Esc') { stashReturnTarget(); window.location.assign(hubHref); return; }
             if (e.key === 'Enter') {
-                if (!started) { onStart(e); return; }     // kick off overlay flow
-                if (!uiUnlocked) return;                  // <— ignore until unlocked
+                if (!started) { onStart(e); return; }
+                if (!uiUnlocked) return;
                 hidePrompt();
                 if (current >= animateSections.length) return;
 
-                if (!firstRevealStarted) {                // start first reveal only
-                    beginFirstRevealIfNeeded();
-                    return;
-                }
-                if (finishCurrentSection()) return;       // finish current if mid-reveal
+                if (!firstRevealStarted) { beginFirstRevealIfNeeded(); return; }
+                if (finishCurrentSection()) return;
 
-                revealSection(current);                   // advance to next
-                current++;
+                revealSection(current); current++;
             }
         }
         window.addEventListener('keydown', keyHandler, { capture: true });
     })();
+
+    /***********************
+     * EXTRA: QUICK API HINTS
+     ***********************/
+    // If you still see "NetworkError", verify on the server:
+    // app.use(cors({ origin: ['http://localhost:5500','http://127.0.0.1:5500'], credentials: true }));
 });

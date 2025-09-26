@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Reset Password • DailyPlea</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+        body {
+            font-family: system-ui,Segoe UI,Roboto,Arial,sans-serif;
+            background: #0b0b0b;
+            color: #eee;
+            display: grid;
+            place-items: center;
+            min-height: 100vh;
+            margin: 0
+        }
+
+        .card {
+            width: min(92vw,480px);
+            background: #121212;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,.5);
+            padding: 20px
+        }
+
+        label {
+            display: block;
+            margin: .5rem 0 .25rem;
+            color: #cbd5e1
+        }
+
+        input {
+            width: 100%;
+            padding: .6rem;
+            border-radius: 8px;
+            border: 1px solid #374151;
+            background: #0f172a;
+            color: #e5e7eb
+        }
+
+        button {
+            margin-top: 12px;
+            width: 100%;
+            padding: .7rem;
+            border: none;
+            border-radius: 8px;
+            background: #3b82f6;
+            color: #fff;
+            cursor: pointer
+        }
+
+        .muted {
+            color: #9ca3af;
+            margin-top: .5rem
+        }
+
+        .ok {
+            color: #86efac
+        }
+
+        .err {
+            color: #fca5a5
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2 style="margin-top:0">Reset your password</h2>
+        <div class="muted">Enter your new password. The identifier and token are prefilled from the link.</div>
+        <label>Identifier (email or phone)</label>
+        <input id="id">
+        <label>Token</label>
+        <input id="token">
+        <label>New password</label>
+        <input id="pw" type="password" autocomplete="new-password" placeholder="At least 8 characters">
+        <button id="go">Reset Password</button>
+        <div id="msg" class="muted"></div>
+    </div>
+
+    <script>
+        (async () => {
+            const apiBase = 'http://localhost:3000/api';
+            const q = new URLSearchParams(location.search);
+            const id = q.get('id') || '';
+            const token = q.get('token') || '';
+            document.getElementById('id').value = id;
+            document.getElementById('token').value = token;
+
+            async function csrf() {
+                const r = await fetch(apiBase.replace('/api', '') + '/api/csrf', { credentials: 'include' });
+                const j = await r.json(); return j.token;
+            }
+            async function post(path, body) {
+                const t = await csrf();
+                const r = await fetch(apiBase + path, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'content-type': 'application/json', 'x-csrf-token': t },
+                    body: JSON.stringify(body)
+                });
+                const text = await r.text(); let j = {};
+                try { j = text ? JSON.parse(text) : {}; } catch { }
+                if (!r.ok) throw j;
+                return j;
+            }
+
+            document.getElementById('go').onclick = async () => {
+                const msg = document.getElementById('msg'); msg.className = 'muted'; msg.textContent = '';
+                try {
+                    const identifier = document.getElementById('id').value.trim();
+                    const token = document.getElementById('token').value.trim();
+                    const newPassword = document.getElementById('pw').value;
+                    await post('/auth/password/reset/confirm', { identifier, token, newPassword });
+                    msg.className = 'ok'; msg.textContent = 'Password changed. You can close this tab and log in.';
+                } catch (e) {
+                    msg.className = 'err';
+                    msg.textContent = e?.error || 'Reset failed';
+                }
+            };
+        })();
+    </script>
+</body>
+</html>
