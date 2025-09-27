@@ -14,34 +14,6 @@ migrate();
 
 const app = express();
 
-// dev inbox viewer
-try {
-    const mailbox = require('./dev-mailbox');
-    // HTML view (simple)
-    app.get('/dev-mailbox', (req, res) => {
-        const msgs = mailbox.dump ? mailbox.dump() : mailbox._messages || [];
-        const html = `
-      <h1>Dev Mailbox</h1>
-      <ul>
-        ${msgs.slice().reverse().map(m => `
-          <li>
-            <strong>${m.channel || 'email'}</strong> -> ${m.to}<br/>
-            <em>${m.subject || ''}</em><pre>${m.body || ''}</pre>
-            <small>${m.created_at || ''}</small>
-          </li>`).join('')}
-      </ul>`;
-        res.type('html').send(html);
-    });
-
-    // JSON view
-    app.get('/dev-mailbox.json', (req, res) => {
-        res.json(mailbox.dump ? mailbox.dump() : (mailbox._messages || []));
-    });
-} catch (e) {
-    console.warn('dev-mailbox not mounted:', e.message);
-}
-
-
 function listRoutes(app) {
     const out = [];
     const stack = app._router?.stack || [];

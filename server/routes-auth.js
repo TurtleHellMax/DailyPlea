@@ -3,6 +3,8 @@ const express = require('express');
 const crypto = require('crypto');
 const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
+const fs = require('fs');
+const path = require('path');
 
 const { db } = require('./db');
 const mailbox = require('./dev-mailbox'); // <- dev inbox
@@ -15,6 +17,46 @@ const {
 } = require('./security');
 
 const router = express.Router();
+
+/* ========= username helpers ========= */
+
+// load banned usernames from optional text file (one per line)
+const BANNED_FILE = path.join(__dirname, 'banned-usernames.txt');
+const BANNED_SET = new Set();
+try {
+    const txt = fs.readFileSync(BANNED_FILE, 'utf8');
+    for (const line of txt.split(/\r?\n/)) {
+        const s = line.trim().toLowerCase();
+        if (s && !s.startsWith('#')) BANNED_SET.add(s);
+    }
+} catch { /* file optional */ }
+
+// hard-reserved slugs/words that should never be usernames
+const RESERVED = new Set([
+    'admin', 'administrator', 'root', 'system', 'support', 'help', 'security', 'staff', 'moderator', 'mod',
+    'api', 'v1', 'v2', 'v3', 'auth', 'login', 'logout', 'register', 'signup', 'sign-in', 'sign-in',
+    'user', 'users', 'me', 'you', 'owner', 'null', 'undefined',
+    'comments', 'comment', 'plea', 'pleas', 'web', 'assets', 'static'
+]);
+
+const USERNAME_RE = /^[A-Za-z0-9_]{3,24}$/;
+
+function normalizeUsername(u) {
+    return String(u || '').trim();
+}
+function isUsernameFormatOk(u) {
+    return USERNAME_RE.test(u);
+}
+function isUsernameBanned(u) {
+    const lc = u.toLowerCase();
+    return BANNED_SET.has(lc) || RESERVED.has(lc);
+}
+function usernameExists(u) {
+    const row = db.prepare(
+        'SELECT 1 AS n FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1'
+    ).get(u);
+    return !!row;
+}
 
 /* ========= helpers ========= */
 
@@ -32,7 +74,8 @@ function getUserByEmailOrPhone(identifier) {
 function createSession(res, userId, req) {
     const sid = crypto.randomBytes(16).toString('hex');
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?,?,?)').run(sid, userId, expiresAt);
+    db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?,?,?)')
+        .run(sid, userId, expiresAt);
 
     const SECURE = process.env.COOKIE_SECURE === '1' || process.env.NODE_ENV === 'production';
     res.cookie('sid', sid, {
@@ -61,14 +104,12 @@ function generateSix() {
 }
 
 function issueEmailOtp(user) {
-    // 1) generate + store hash
     const code = generateSix();
     const codeHash = sha256(code);
     const exp = new Date(Date.now() + OTP_TTL_MS).toISOString();
     db.prepare('INSERT INTO email_otp (user_id, code_hash, expires_at) VALUES (?,?,?)')
         .run(user.id, codeHash, exp);
 
-    // 2) send to dev mailbox
     const dest = user.email || user.phone || 'unknown';
     mailbox.send(
         'email',
@@ -91,35 +132,75 @@ function verifyEmailOtp(userId, code) {
     return { ok: true };
 }
 
-/* ========= Register ========= */
+/* ========= Register (now REQUIRES username) ========= */
 router.post('/register', async (req, res) => {
     try {
-        const { email = null, phone = null, password } = req.body || {};
-        if ((!email && !phone) || !password) return res.status(400).json({ error: 'missing_fields' });
-        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'invalid_email' });
-        if (phone && !/^\+?[0-9]{7,15}$/.test(phone)) return res.status(400).json({ error: 'invalid_phone' });
-        if (String(password).length < 8) return res.status(400).json({ error: 'weak_password' });
+        const { email = null, phone = null, password, username } = req.body || {};
 
-        const exists = db.prepare('SELECT 1 FROM users WHERE email = ? OR phone = ?').get(email || null, phone || null);
+        // Basic field presence
+        if ((!email && !phone) || !password || !username) {
+            return res.status(400).json({ error: 'missing_fields', need: ['email_or_phone', 'password', 'username'] });
+        }
+
+        // Validate username
+        const uname = normalizeUsername(username);
+        if (!isUsernameFormatOk(uname)) {
+            return res.status(400).json({
+                error: 'invalid_username',
+                detail: 'Use 3–24 characters: letters, numbers, underscore.'
+            });
+        }
+        if (isUsernameBanned(uname)) {
+            return res.status(400).json({ error: 'username_banned' });
+        }
+        if (usernameExists(uname)) {
+            return res.status(409).json({ error: 'username_taken' });
+        }
+
+        // Validate contacts
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+            return res.status(400).json({ error: 'invalid_email' });
+        }
+        if (phone && !/^\+?[0-9]{7,15}$/.test(phone)) {
+            return res.status(400).json({ error: 'invalid_phone' });
+        }
+
+        // Password (keep existing min rule; you can strengthen later)
+        if (String(password).length < 8) {
+            return res.status(400).json({ error: 'weak_password' });
+        }
+
+        // Ensure email/phone not already in use
+        const exists = db.prepare(
+            'SELECT 1 FROM users WHERE (email = ? AND email IS NOT NULL) OR (phone = ? AND phone IS NOT NULL) LIMIT 1'
+        ).get(email || null, phone || null);
         if (exists) return res.status(409).json({ error: 'user_exists' });
 
+        // Hash + insert
         const hash = await hashPassword(password);
 
-        const insertUser = db.prepare('INSERT INTO users (email, phone) VALUES (?, ?)');
-        const insertCred = db.prepare('INSERT INTO credentials (user_id, password_hash, algo) VALUES (?,?,?)');
+        const insertUser = db.prepare(
+            'INSERT INTO users (email, phone, username, first_username) VALUES (?,?,?,?)'
+        );
+        const insertCred = db.prepare(
+            'INSERT INTO credentials (user_id, password_hash, algo) VALUES (?,?,?)'
+        );
 
-        const tx = db.transaction((em, ph, pwHash) => {
-            const r = insertUser.run(em || null, ph || null);
+        const tx = db.transaction((em, ph, un, pwHash) => {
+            const r = insertUser.run(em || null, ph || null, un, un /* first_username = initial choice */);
             insertCred.run(r.lastInsertRowid, pwHash, 'argon2id');
             return r.lastInsertRowid;
         });
 
-        const userId = tx(email, phone, hash);
+        const userId = tx(email, phone, uname, hash);
 
         createSession(res, userId, req);
-        res.json({ ok: true, userId });
+        res.json({ ok: true, userId, username: uname });
     } catch (err) {
-        if (/SQLITE_CONSTRAINT|UNIQUE/i.test(String(err))) return res.status(409).json({ error: 'user_exists' });
+        if (/SQLITE_CONSTRAINT|UNIQUE/i.test(String(err))) {
+            // could be username, email, or phone unique hits
+            return res.status(409).json({ error: 'conflict', detail: String(err.message || err) });
+        }
         console.error('REGISTER_ERROR:', err);
         res.status(500).json({ error: 'server_error', detail: String(err?.message || err) });
     }
@@ -151,7 +232,7 @@ router.post('/login', async (req, res) => {
             return res.json({ ok: true });
         }
 
-        // Else: optional dev email-2FA if enabled
+        // Optional dev email 2FA
         if (process.env.DEV_EMAIL_2FA === '1' && (user.email || user.phone)) {
             if (!totp) {
                 issueEmailOtp(user);
@@ -163,7 +244,7 @@ router.post('/login', async (req, res) => {
             return res.json({ ok: true });
         }
 
-        // No second factor required
+        // No second factor
         createSession(res, user.id, req);
         res.json({ ok: true });
     } catch (err) {
@@ -185,7 +266,10 @@ router.get('/me', (req, res) => {
     if (!sid) return res.json({ user: null });
     const sess = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sid);
     if (!sess) return res.json({ user: null });
-    const user = db.prepare('SELECT id, email, phone, role, created_at FROM users WHERE id = ?').get(sess.user_id);
+    const user = db.prepare(`
+    SELECT id, email, phone, role, username, first_username, created_at
+    FROM users WHERE id = ?
+  `).get(sess.user_id);
     res.json({ user: user || null });
 });
 

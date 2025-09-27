@@ -40,6 +40,29 @@
         console.groupEnd();
     }
 
+    /* ===================== CLIENT-SIDE VALIDATION ===================== */
+
+    const USERNAME_RE = /^[A-Za-z0-9_]{3,24}$/;
+    function validateUsername(u) {
+        const username = String(u || '').trim();
+        if (!username) return { ok: false, reason: 'Username is required.' };
+        if (!USERNAME_RE.test(username)) {
+            return { ok: false, reason: 'Username must be 3–24 chars: letters, numbers, underscore.' };
+        }
+        return { ok: true, username };
+    }
+
+    // Policy requested: >6 and <32, includes a number, a symbol, and a capital letter.
+    function validatePassword(pw) {
+        const s = String(pw || '');
+        const reasons = [];
+        if (!(s.length > 6 && s.length < 32)) reasons.push('7–31 characters');
+        if (!/[A-Z]/.test(s)) reasons.push('at least one capital letter');
+        if (!/[0-9]/.test(s)) reasons.push('at least one number');
+        if (!/[^A-Za-z0-9]/.test(s)) reasons.push('at least one symbol');
+        return { ok: reasons.length === 0, reasons };
+    }
+
     /* ===================== CSRF + API WRAPPER ===================== */
 
     async function fetchCsrf() {
@@ -203,21 +226,21 @@
         const c = byId('dp-content');
         if (!c) return;
         c.innerHTML = `
-    <h2 style="margin:0 0 8px">Welcome back</h2>
-    <label>Email or phone</label>
-    <input id="dp-id" autocomplete="username">
-    <label>Password</label>
-    <input id="dp-pw" type="password" autocomplete="current-password">
-    <div id="dp-totp-row" style="display:none">
-      <label>2FA code</label>
-      <div style="display:flex;gap:8px">
-        <input id="dp-totp" inputmode="numeric" placeholder="123456" style="flex:1">
-        <button id="dp-sendcode" type="button" title="Send code to your email/phone" style="white-space:nowrap">Send code</button>
+      <h2 style="margin:0 0 8px">Welcome back</h2>
+      <label>Email or phone</label>
+      <input id="dp-id" autocomplete="username">
+      <label>Password</label>
+      <input id="dp-pw" type="password" autocomplete="current-password">
+      <div id="dp-totp-row" style="display:none">
+        <label>2FA code</label>
+        <div style="display:flex;gap:8px">
+          <input id="dp-totp" inputmode="numeric" placeholder="123456" style="flex:1">
+          <button id="dp-sendcode" type="button" title="Send code to your email/phone" style="white-space:nowrap">Send code</button>
+        </div>
       </div>
-    </div>
-    <button id="dp-login" style="margin-top:10px">Login</button>
-    <div class="muted" style="margin-top:6px"><a href="#" id="dp-reset">Forgot password?</a></div>
-  `;
+      <button id="dp-login" style="margin-top:10px">Login</button>
+      <div class="muted" style="margin-top:6px"><a href="#" id="dp-reset">Forgot password?</a></div>
+    `;
 
         const show2fa = (hint) => {
             const row = byId('dp-totp-row'); if (row) row.style.display = '';
@@ -227,11 +250,7 @@
         byId('dp-sendcode').onclick = async () => {
             try {
                 await fetchCsrf();
-                // This endpoint is optional; with our server, code is auto-sent during login,
-                // but letting user re-trigger is handy in dev. If you didn't add an endpoint,
-                // comment this out and just call login once to trigger it.
-                const identifier = byId('dp-id').value.trim();
-                // We'll just call login with blank password to bounce; but better: hit the proper endpoint if you add it later.
+                // Dev: code is issued during login flow; this button just hints the mailbox.
                 msg('Check Dev Mailbox for the code.');
             } catch (e) {
                 msg('Could not send code.');
@@ -256,18 +275,12 @@
                 Promise.resolve((window.DP && DP.syncAfterLogin) ? DP.syncAfterLogin() : null)
                     .catch(err => console.warn('post-login sync failed:', err));
             } catch (e) {
-                // TOTP challenge (authenticator app)
                 if (e?.error === 'totp_required') { show2fa('Enter your authenticator app code.'); return; }
                 if (e?.error === 'totp_invalid') { show2fa('That authenticator code was invalid.'); return; }
-
-                // Email/SMS dev 2FA challenge
                 if (e?.error === 'email_otp_required') { show2fa('We sent a 6-digit code to your email. Enter it above.'); return; }
                 if (e?.error === 'email_otp_invalid') { show2fa('That 6-digit code was invalid. Try again.'); return; }
                 if (e?.error === 'email_otp_expired') { show2fa('That code expired. Click “Send code” and try again.'); return; }
-
-                // Other errors
-                if (e?.error) msg(`Login failed: ${e.error}`);
-                else msg('Login failed');
+                if (e?.error) msg(`Login failed: ${e.error}`); else msg('Login failed');
             }
         };
 
@@ -291,27 +304,48 @@
         if (!c) return;
         c.innerHTML = `
       <h2 style="margin:0 0 8px">Create account</h2>
+      <label>Username <span class="muted" style="font-weight:normal;color:#94a3b8">(3–24 letters, numbers, _)</span></label>
+      <input id="dp-username" placeholder="your_handle" autocomplete="off">
       <label>Email</label>
       <input id="dp-email" autocomplete="email">
       <label>Phone</label>
       <input id="dp-phone" placeholder="+15555550123">
       <label>Password</label>
-      <input id="dp-pw2" type="password" autocomplete="new-password">
+      <input id="dp-pw2" type="password" autocomplete="new-password" placeholder="Min 7, < 32, 1 capital, 1 number, 1 symbol">
       <button id="dp-reg" style="margin-top:10px">Register</button>
     `;
 
+        // live hint for password policy (optional; non-blocking)
+        const pw = byId('dp-pw2');
+        pw?.addEventListener('input', () => {
+            const v = validatePassword(pw.value);
+            if (!v.ok) {
+                msg('Password needs: ' + v.reasons.join(', ') + '.');
+            } else {
+                msg('');
+            }
+        });
+
         byId('dp-reg').onclick = async () => {
             msg('');
+            const username = byId('dp-username').value.trim();
             const email = byId('dp-email').value.trim() || null;
             const phone = byId('dp-phone').value.trim() || null;
             const password = byId('dp-pw2').value;
+
+            // Client-side checks
+            const u = validateUsername(username);
+            if (!u.ok) { msg(u.reason); return; }
+
+            const p = validatePassword(password);
+            if (!p.ok) { msg('Password needs: ' + p.reasons.join(', ') + '.'); return; }
 
             try {
                 await fetchCsrf().catch((e) => { throw { ...e, action: 'Fetch CSRF' }; });
 
                 await api('/auth/register', {
                     method: 'POST',
-                    body: JSON.stringify({ email, phone, password })
+                    body: JSON.stringify({ email, phone, password, username })
                 }).catch((e) => { throw { ...e, action: 'Register' }; });
 
                 // carry over local save to the account (best-effort)
@@ -334,16 +368,25 @@
                 msg('Account created. You are signed in.');
                 state.overlay.style.display = 'none';
                 if (window.DP && DP.syncAfterLogin) {
-                    Promise.resolve(DP.syncAfterLogin()).catch((err) => {
-                        showSpecificError('Post-register sync', {
-                            method: 'POST',
-                            path: '(custom sync)',
-                            detail: String(err?.message || err),
+                    Promise
+                        .resolve(DP.syncAfterLogin())
+                        .catch((err) => {
+                            showSpecificError('Post-register sync', {
+                                method: 'POST',
+                                path: '(custom sync)',
+                                detail: String(err?.message || err),
+                            });
                         });
-                    });
                 }
             } catch (e) {
-                // Give the exact reason
+                // Friendly errors for the new username rules
+                if (e?.error === 'invalid_username') { msg('Username must be 3–24 characters: letters, numbers, underscore.'); return; }
+                if (e?.error === 'username_banned') { msg('That username is not allowed. Pick a different one.'); return; }
+                if (e?.error === 'username_taken') { msg('That username is taken. Try another.'); return; }
+                if (e?.error === 'user_exists') { msg('Email or phone already in use.'); return; }
+                if (e?.error === 'weak_password') { msg('Password too weak. Use a stronger one.'); return; }
+
+                // Generic fallback
                 showSpecificError(e.action || 'Register', e);
             }
         };
