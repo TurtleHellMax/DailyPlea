@@ -9,86 +9,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const API_BASE = 'http://localhost:3000/api';  // change if needed
     const STATIC_ORIGINS = ['http://localhost:5500', 'http://127.0.0.1:5500'];
 
-    /* ==========================================================
-       VOTE SHIM — sends a single best-guess request
-       - Intercepts POST/PUT/PATCH /api/comments/:id/vote
-       - Converts bodies to {vote:'up'|'down'|'none'} once
-       - Preserves credentials + CSRF header; never loops on itself
-       Keep near the top of main.js (after API_BASE)
-    ========================================================== */
-    (function installVoteShim() {
-        if (window.__DP_VOTE_SHIM_SIMPLE__) return;
-        window.__DP_VOTE_SHIM_SIMPLE__ = true;
-
-        const nativeFetch = window.fetch.bind(window);
-        const CSRF_HEADER = 'X-CSRF-Token';
-
-        function getCookie(name) {
-            const m = (document.cookie || '').match(new RegExp('(?:^|; )' + name.replace(/[$()*+./?[\\\]^{|}-]/g, '\\$&') + '=([^;]*)'));
-            return m ? decodeURIComponent(m[1]) : '';
-        }
-        function getCsrf() {
-            return document.querySelector('meta[name="csrf"]')?.content || getCookie('csrf') || '';
-        }
-        function toURL(u) { try { return new URL(u, location.origin); } catch { return null; } }
-        function looksLikeVote(u) {
-            const url = toURL(u);
-            if (!url) return false;
-            const base = API_BASE.replace(/\/$/, '');
-            if (!(url.origin + url.pathname).startsWith(base)) return false;
-            return /\/comments\/\d+\/vote$/.test(url.pathname);
-        }
-        function readDir(init, urlObj) {
-            let dir = urlObj?.searchParams?.get('direction');
-            if (dir !== 'up' && dir !== 'down' && dir !== 'none') dir = null;
-            try {
-                if (!dir && init?.body) {
-                    if (typeof init.body === 'string') {
-                        try {
-                            const j = JSON.parse(init.body);
-                            if (j.vote === 'up' || j.vote === 'down' || j.vote === 'none') dir = j.vote;
-                            else if (j.direction === 'up' || j.direction === 'down' || j.direction === 'none') dir = j.direction;
-                            else if (typeof j.delta === 'number') dir = j.delta > 0 ? 'up' : (j.delta < 0 ? 'down' : 'none');
-                            else if (typeof j.value === 'number') dir = j.value > 0 ? 'up' : (j.value < 0 ? 'down' : 'none');
-                            else if (j.type === 'like') dir = 'up';
-                            else if (j.type === 'dislike') dir = 'down';
-                            else if (j.type === 'clear' || j.type === 'unvote') dir = 'none';
-                        } catch { /* ignore */ }
-                    }
-                }
-            } catch { }
-            return dir || 'up';
-        }
-
-        window.fetch = async function (input, init = {}) {
-            // bypass our own calls
-            if (init && init.__dpVoteShim) return nativeFetch(input, init);
-
-            const urlStr = typeof input === 'string' ? input : (input && input.url) || '';
-            if (!looksLikeVote(urlStr)) return nativeFetch(input, init);
-
-            const url = toURL(urlStr);
-            const dir = readDir(init, url);
-            const headers = new Headers(init?.headers || {});
-            if (!headers.has('Accept')) headers.set('Accept', 'application/json');
-            if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-            const csrf = getCsrf();
-            if (csrf && !headers.has(CSRF_HEADER)) headers.set(CSRF_HEADER, csrf);
-
-            // Single best-guess request
-            const body = JSON.stringify({ vote: dir });
-            return nativeFetch(urlStr, {
-                method: init?.method || 'POST',
-                credentials: 'include',
-                headers,
-                body,
-                __dpVoteShim: true
-            });
-        };
-
-        console.info?.('[vote-shim] simple installed');
-    })();
-
     // style-y debug printers
     function dgroup(title) { if (!DEBUG) return () => { }; console.groupCollapsed('%c' + title, 'color:#3b82f6;font-weight:600'); return () => console.groupEnd(); }
     function dlog(...a) { if (DEBUG) console.log(...a); }
@@ -260,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ? Math.max(0, Math.min(animateSections.length, progress0.lastIndex | 0))
         : 0;
 
-    // --- comments loader
+    // --- comments loader with diagnostics
     const COMMENT_PATHS = [
         `${location.origin}/web/comments.js`,
         `/web/comments.js`,
@@ -295,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Styling helpers
+    // Helpers for styling/behavior
     function openAnyAccordions(root) {
         root.querySelectorAll('details').forEach(d => d.open = true);
         const toggles = root.querySelectorAll('.dp-c-toggle, [aria-controls*="comments"], [data-action*="toggle"], .accordion-toggle, summary');
@@ -322,7 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // CSRF + current user
+    // CSRF + headers (best effort) + current user
     let __CSRF = null;
     let __ME = null;
     async function ensureCsrf() {
@@ -335,22 +255,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     async function ensureMe() {
         if (__ME) return __ME;
-        const tries = [
-            `${API_BASE.replace('/api', '')}/api/me`,
-            `${API_BASE}/me`,
-            `${API_BASE.replace('/api', '')}/me`
-        ];
-        for (const u of tries) {
-            try {
-                const j = await diagFetch(u, { credentials: 'include' });
-                if (j && (j.id || j.user?.id)) { __ME = j.user || j; break; }
-            } catch { }
-        }
+        try {
+            const j = await diagFetch(`${API_BASE}/auth/me`, { credentials: 'include' });
+            if (j && (j.id || j.user?.id)) { __ME = j.user || j; }
+        } catch { /* ignore */ }
         return __ME;
     }
-    function authHeaders(extra = {}) {
-        const h = { 'Accept': 'application/json', 'Content-Type': 'application/json', ...extra };
+    function authHeaders(extra = {}, { includeContentType = true } = {}) {
+        const h = { Accept: 'application/json', ...extra };
+        if (includeContentType) h['Content-Type'] = 'application/json';
         if (__CSRF) h['X-CSRF-Token'] = __CSRF;
+        return h;
+    }
+    function withUserHeaders(extra = {}, opts) {
+        const h = authHeaders(extra, opts);
+        if (__ME?.id != null) h['X-User-Id'] = String(__ME.id);
         return h;
     }
 
@@ -376,9 +295,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    // Normalizers
+    // Normalizers (handles multiple API shapes)
     const nId = c => c?.id ?? c?.comment_id ?? c?._id ?? null;
     const nBody = c => c?.body ?? c?.text ?? c?.content ?? '';
+    const nAuthorLocal = c => c?.author?.username ?? c?.author?.display_name ?? c?.user?.username ?? c?.user?.name ?? c?.username ?? c?.name ?? '';
     const nAuthorId = c => c?.author?.id ?? c?.user?.id ?? c?.user_id ?? c?.author_id ?? null;
     const nCreatedAtRaw = c => c?.created_at ?? c?.createdAt ?? c?.timestamp ?? null;
     const nTime = c => { const x = nCreatedAtRaw(c) || Date.now(); try { return new Date(x).toLocaleString(); } catch { return ''; } };
@@ -391,9 +311,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (v === 0 || v === null || typeof v === 'undefined') return 0;
         return 0;
     };
-    function nAuthorLocal(c) {
-        return c?.author?.username ?? c?.author?.display_name ?? c?.user?.username ?? c?.user?.name ?? c?.username ?? c?.name ?? '';
-    }
+    const nRepliesCount = c => {
+        const a = c?.reply_count ?? c?.replies_count ?? c?.children_count;
+        if (Number.isFinite(a)) return +a;
+        if (Array.isArray(c?.replies)) return c.replies.length;
+        return 0;
+    };
+
     async function resolveDisplayName(c, fallbackIndex = 0) {
         let name = nAuthorLocal(c);
         if (name && String(name).trim()) return String(name).trim();
@@ -427,10 +351,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return ageMs <= 24 * 60 * 60 * 1000; // <= 1 day
     }
 
-    // API wrappers (minimal & single-shot)
+    // API wrappers (comments + replies + compose + edit + delete)
     async function apiList(pleaNum, page = 1, page_size = 10, sort = 'hottest') {
         const url = `${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments?sort=${encodeURIComponent(sort)}&page=${page}&page_size=${page_size}`;
-        const r = await diagFetch(url, { credentials: 'include' });
+        const r = await diagFetch(url, { credentials: 'include', headers: withUserHeaders() });
         const items = Array.isArray(r?.items) ? r.items : (Array.isArray(r) ? r : []);
         const total = Number.isFinite(r?.total) ? +r.total : items.length;
         return { items, total, page, page_size };
@@ -438,50 +362,160 @@ document.addEventListener('DOMContentLoaded', () => {
     async function apiReplies(pleaNum, parentId) {
         const url = `${API_BASE}/comments/${encodeURIComponent(parentId)}/replies`;
         try {
-            const r = await diagFetch(url, { credentials: 'include' });
+            const r = await diagFetch(url, { credentials: 'include', headers: withUserHeaders() });
             const arr = Array.isArray(r?.items) ? r.items : (Array.isArray(r) ? r : []);
             return arr;
-        } catch {
-            return [];
-        }
+        } catch { return []; }
     }
     async function apiPostComment(pleaNum, body) {
         await ensureCsrf();
+        await ensureMe();
         const url = `${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments`;
-        const r = await fetch(url, { method: 'POST', credentials: 'include', headers: authHeaders(), body: JSON.stringify({ body }), __dpVoteShim: true });
+        const r = await fetch(url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: withUserHeaders(),
+            body: JSON.stringify({ body })
+        });
         if (!r.ok) throw new Error('post_comment_failed');
         return r.json().catch(() => ({}));
     }
     async function apiPostReply(pleaNum, parentId, body) {
         await ensureCsrf();
-        const url = `${API_BASE}/comments/${encodeURIComponent(parentId)}/replies`;
-        const r = await fetch(url, { method: 'POST', credentials: 'include', headers: authHeaders(), body: JSON.stringify({ body }), __dpVoteShim: true });
-        if (!r.ok) throw new Error('post_reply_failed');
-        return r.json().catch(() => ({}));
+        await ensureMe();
+
+        // Primary: modern server shape (POST /pleas/:pleaNum/comments with parent_id)
+        {
+            const url = `${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments`;
+            const r = await fetch(url, {
+                method: 'POST',
+                credentials: 'include',
+                headers: withUserHeaders(),
+                body: JSON.stringify({ body, parent_id: parentId })
+            });
+            if (r.ok) return r.json().catch(() => ({}));
+        }
+
+        // Fallback: some servers expose POST /comments/:id/replies
+        {
+            const url = `${API_BASE}/comments/${encodeURIComponent(parentId)}/replies`;
+            const r = await fetch(url, {
+                method: 'POST',
+                credentials: 'include',
+                headers: withUserHeaders(),
+                body: JSON.stringify({ body })
+            });
+            if (r.ok) return r.json().catch(() => ({}));
+        }
+
+        throw new Error('post_reply_failed');
     }
+
+    function minimalFormHeaders() {
+        // Simple headers => no preflight
+        return {
+            Accept: 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        };
+    }
+    function formQS(obj) {
+        const p = new URLSearchParams();
+        for (const [k, v] of Object.entries(obj)) if (v != null) p.append(k, v);
+        return p.toString();
+    }
+
+    async function apiEditComment(pleaNum, id, bodyText) {
+        await ensureCsrf(); // fills __CSRF
+        await ensureMe();
+
+        const idEnc = encodeURIComponent(id);
+        const url = `${API_BASE}/comments/${idEnc}`;
+        const txt = String(bodyText || '').trim();
+        if (!txt) throw new Error('edit_failed: empty body');
+
+        // Preflightless attempt: POST form + _method=PATCH + _csrf in BODY
+        const form = { _method: 'PATCH', body: txt };
+        if (__CSRF) form._csrf = __CSRF;
+
+        let r = await fetch(url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: minimalFormHeaders(),
+            body: formQS(form),
+        });
+        if (r.ok) return r.json().catch(() => ({}));
+
+        // Fallback: real PATCH JSON (may preflight)
+        r = await fetch(url, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: withUserHeaders(), // includes JSON content-type + X-CSRF-Token
+            body: JSON.stringify({ body: txt }),
+        });
+        if (r.ok) return r.json().catch(() => ({}));
+
+        throw new Error(
+            'edit_failed: ' +
+            r.status +
+            ' ' +
+            r.statusText +
+            ' :: ' +
+            (await r.text().catch(() => '')).slice(0, 200)
+        );
+    }
+
     async function apiDeleteComment(pleaNum, id) {
         await ensureCsrf();
-        const url = `${API_BASE}/comments/${encodeURIComponent(id)}`;
-        const r = await fetch(url, { method: 'DELETE', credentials: 'include', headers: authHeaders(), __dpVoteShim: true });
-        if (!(r.ok || r.status === 204)) throw new Error('delete_failed');
-        return true;
+        await ensureMe();
+
+        const idEnc = encodeURIComponent(id);
+        const url = `${API_BASE}/comments/${idEnc}`;
+
+        // Preflightless attempt: POST form + _method=DELETE + _csrf in BODY
+        const form = { _method: 'DELETE' };
+        if (__CSRF) form._csrf = __CSRF;
+
+        let r = await fetch(url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: minimalFormHeaders(),
+            body: formQS(form),
+        });
+        if (r.ok || r.status === 204) return true;
+
+        // Fallback: real DELETE (may preflight)
+        r = await fetch(url, {
+            method: 'DELETE',
+            credentials: 'include',
+            headers: authHeaders({}, { includeContentType: false }), // no Content-Type header
+        });
+        if (r.ok || r.status === 204) return true;
+
+        throw new Error(
+            'delete_failed: ' +
+            r.status +
+            ' ' +
+            r.statusText +
+            ' :: ' +
+            (await r.text().catch(() => '')).slice(0, 200)
+        );
     }
-    async function apiEditComment(pleaNum, id, bodyText) {
-        await ensureCsrf();
-        const url = `${API_BASE}/comments/${encodeURIComponent(id)}`;
-        const r = await fetch(url, { method: 'PATCH', credentials: 'include', headers: authHeaders(), body: JSON.stringify({ body: bodyText }), __dpVoteShim: true });
-        if (!r.ok) throw new Error('edit_failed');
-        return r.json().catch(() => ({}));
-    }
-    async function apiGetMyVote(pleaNum, id) {
-        // single GET-ish probe variants
+
+    /***********************
+     * VOTING (no shims; direct calls)
+     ***********************/
+    async function apiGetMyVote(pleaNum, id, fallbacksFromItem = 0) {
+        if (fallbacksFromItem === 1) return 1;
+        if (fallbacksFromItem === -1) return -1;
+
         const tries = [
+            `${API_BASE}/comments/${encodeURIComponent(id)}/my_vote`,
             `${API_BASE}/comments/${encodeURIComponent(id)}/vote`,
-            `${API_BASE}/comments/${encodeURIComponent(id)}/my_vote`
+            `${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments/${encodeURIComponent(id)}/vote`
         ];
         for (const u of tries) {
             try {
-                const j = await diagFetch(u, { credentials: 'include' });
+                const j = await diagFetch(u, { credentials: 'include', headers: withUserHeaders() });
                 if (j && (j.vote === 'up' || j.direction === 'up' || j.delta === 1 || j.value === 1 || j.liked === true)) return 1;
                 if (j && (j.vote === 'down' || j.direction === 'down' || j.delta === -1 || j.value === -1 || j.disliked === true)) return -1;
                 if (typeof j?.my_vote === 'number') return j.my_vote > 0 ? 1 : j.my_vote < 0 ? -1 : 0;
@@ -489,51 +523,208 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return 0;
     }
+
     async function apiSetMyVote(pleaNum, id, newVote) {
         await ensureCsrf();
-        const url = `${API_BASE}/comments/${encodeURIComponent(id)}/vote`;
+        await ensureMe();
+
+        const ts = () => new Date().toISOString();
         const dir = newVote > 0 ? 'up' : (newVote < 0 ? 'down' : 'none');
-        const r = await fetch(url, {
-            method: 'POST',
-            credentials: 'include',
-            headers: authHeaders(),
-            body: JSON.stringify({ vote: dir }),
-            __dpVoteShim: true
-        });
-        if (!(r.ok || r.status === 204)) throw new Error('vote_failed');
-        return true;
+        const headersJSON = withUserHeaders();
+
+        console.groupCollapsed(`%c[vote:${id}] SEND ${dir} @ ${ts()}`, 'color:#22c55e;font-weight:600');
+        console.log('me.id:', __ME?.id, 'X-User-Id header?', headersJSON['X-User-Id']);
+        console.log('payload:', { value: newVote });
+
+        // --- Primary: modern endpoint with counts + my_vote in response
+        try {
+            const u = `${API_BASE}/comments/${encodeURIComponent(id)}/vote`;
+            const j = await diagFetch(u, {
+                method: 'POST',
+                credentials: 'include',
+                headers: headersJSON,
+                body: JSON.stringify(newVote === 0 ? { vote: 'none' } : { value: newVote })
+            });
+            console.log('[server primary reply]', j);
+            if (j && (typeof j.likes !== 'undefined' || typeof j.dislikes !== 'undefined')) {
+                console.groupEnd();
+                return { ok: true, likes: +j.likes || 0, dislikes: +j.dislikes || 0, my: (typeof j.my_vote === 'number' ? j.my_vote : newVote), source: 'primary' };
+            }
+        } catch (e) {
+            console.warn('[primary] failed -> trying fallbacks', e);
+        }
+
+        // --- Fallbacks: cover old shapes
+        const urls = [
+            // generic vote endpoint
+            [`${API_BASE}/comments/${encodeURIComponent(id)}/vote`, 'POST', { vote: dir }],
+            [`${API_BASE}/comments/${encodeURIComponent(id)}/vote`, 'POST', { direction: dir }],
+            [`${API_BASE}/comments/${encodeURIComponent(id)}/vote`, 'POST', { value: newVote }],
+            // react-style
+            [`${API_BASE}/comments/${encodeURIComponent(id)}/react`, 'POST', { type: dir === 'none' ? 'clear' : (dir === 'up' ? 'like' : 'dislike') }],
+            // semantic paths
+            [`${API_BASE}/comments/${encodeURIComponent(id)}/${dir === 'up' ? 'like' : dir === 'down' ? 'dislike' : 'unvote'}`, 'POST', {}],
+        ];
+
+        for (const [u, m, body] of urls) {
+            try {
+                const j = await diagFetch(u, {
+                    method: m, credentials: 'include',
+                    headers: headersJSON,
+                    body: (m === 'POST' || m === 'PUT' || m === 'PATCH') ? JSON.stringify(body) : undefined
+                });
+                console.log('[server fallback reply]', u, m, j);
+                if (j && (typeof j.likes !== 'undefined' || typeof j.dislikes !== 'undefined')) {
+                    console.groupEnd();
+                    return { ok: true, likes: +j.likes || 0, dislikes: +j.dislikes || 0, my: (typeof j.my_vote === 'number' ? j.my_vote : newVote), source: 'fallback+counts' };
+                }
+                if (j !== null) { // empty string for 204 will still hit here
+                    console.groupEnd();
+                    return { ok: true, likes: null, dislikes: null, my: newVote, source: 'fallback' };
+                }
+            } catch { }
+        }
+
+        // --- CLEAR-specific DELETEs (common on RESTy servers)
+        if (newVote === 0) {
+            const delUrls = [
+                `${API_BASE}/comments/${encodeURIComponent(id)}/vote`,
+                `${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments/${encodeURIComponent(id)}/vote`
+            ];
+            for (const du of delUrls) {
+                try {
+                    const j = await diagFetch(du, { method: 'DELETE', credentials: 'include', headers: headersJSON });
+                    console.log('[server delete clear reply]', du, j);
+                    console.groupEnd();
+                    // We’ll verify after delete anyway
+                    return { ok: true, likes: null, dislikes: null, my: 0, source: 'delete-clear' };
+                } catch { }
+            }
+        }
+
+        console.groupEnd();
+        // Final safety: verify my_vote after whatever happened
+        const mv = await apiGetMyVote(pleaNum, id, 0);
+        return { ok: true, likes: null, dislikes: null, my: mv, source: 'verify-only' };
     }
 
-    // DOM helpers
-    function $e(tag, cls, text) {
-        const n = document.createElement(tag);
-        if (cls) n.className = cls;
-        if (text != null) n.textContent = text;
-        return n;
-    }
-    function makeComposer(ph = 'Write a comment…', onSubmit) {
-        const wrap = $e('div', 'dp-fb-composer');
-        const ta = document.createElement('textarea');
-        ta.placeholder = ph;
-        ta.rows = 3;
-        ta.style.width = '100%';
-        ta.style.resize = 'vertical';
-        const row = $e('div', 'dp-fb-composer-row');
-        const btn = $e('button', 'dp-fb-post', 'Post');
-        btn.type = 'button';
-        btn.addEventListener('click', async () => {
-            const val = ta.value.trim();
-            if (!val) return;
-            btn.disabled = true;
-            try { await onSubmit(val); ta.value = ''; } finally { btn.disabled = false; }
-        });
-        row.appendChild(btn);
-        wrap.appendChild(ta);
-        wrap.appendChild(row);
-        return { wrap, textarea: ta, button: btn };
+    function makeVoteController(args) {
+        const { id, likeBtn, dislikeBtn, onCountsChanged } = args;
+        const upsInit = ('ups0' in args) ? args.ups0 : args.initialUps;
+        const downsInit = ('downs0' in args) ? args.downs0 : args.initialDowns;
+        const myInit = ('myVote0' in args) ? args.myVote0 : args.initialMy;
+
+        const state = {
+            ups: Number(upsInit) || 0,
+            downs: Number(downsInit) || 0,
+            my: (typeof myInit === 'number') ? myInit : 0, // -1,0,1
+            resolved: (myInit === 1 || myInit === -1)
+        };
+
+        function render() {
+            if (likeBtn) {
+                likeBtn.textContent = `▲ ${state.ups}`;
+                likeBtn.classList.toggle('is-active', state.my === 1);
+                likeBtn.classList.remove('is-down');
+            }
+            if (dislikeBtn) {
+                dislikeBtn.textContent = `▼ ${state.downs}`;
+                dislikeBtn.classList.toggle('is-down', state.my === -1);
+                dislikeBtn.classList.remove('is-active');
+            }
+        }
+
+        async function ensureKnownMy() {
+            if (state.resolved) return;
+            console.groupCollapsed(`%c[vote:${id}] ensureKnownMy`, 'color:#60a5fa;font-weight:600');
+            try {
+                const v = await apiGetMyVote(PLEA_NUM, id, 0);
+                console.log('server -> my_vote =', v, ' (was:', state.my, ')');
+                if (v === 1 || v === -1 || v === 0) {
+                    state.my = v;
+                    state.resolved = true;
+                    render();
+                }
+            } finally {
+                console.groupEnd();
+            }
+        }
+
+        async function setMy(nextMy) {
+            likeBtn && (likeBtn.disabled = true);
+            dislikeBtn && (dislikeBtn.disabled = true);
+
+            await ensureKnownMy();
+            const prev = state.my;
+            if (nextMy === prev) nextMy = 0; // toggle off
+
+            console.groupCollapsed(`%c[vote:${id}] CLICK`, 'color:#22c55e;font-weight:600');
+            console.log('before:', { ups: state.ups, downs: state.downs, my: prev });
+            console.log('request:', { nextMy, me: __ME?.id });
+
+            // Temporarily only flip highlight (do NOT touch counts locally)
+            state.my = nextMy;
+            render();
+
+            try {
+                const r = await apiSetMyVote(PLEA_NUM, id, nextMy);
+                console.log('server accepted:', r);
+
+                // If server gave counts, trust them
+                if (r.likes != null && r.dislikes != null) {
+                    state.ups = r.likes;
+                    state.downs = r.dislikes;
+                } else {
+                    // No counts returned: adjust minimally using prev->r.my delta
+                    const afterMy = (typeof r.my === 'number') ? r.my : nextMy;
+                    const deltaUp = (afterMy === 1 ? 1 : 0) - (prev === 1 ? 1 : 0);
+                    const deltaDown = (afterMy === -1 ? 1 : 0) - (prev === -1 ? 1 : 0);
+                    state.ups = Math.max(0, state.ups + deltaUp);
+                    state.downs = Math.max(0, state.downs + deltaDown);
+                }
+
+                state.my = (typeof r.my === 'number') ? r.my : nextMy;
+                state.resolved = true;
+                render();
+                onCountsChanged && onCountsChanged(state);
+
+                // —— VERIFY on server after write
+                console.log('verifying with GET /my_vote …');
+                const verifyMy = await apiGetMyVote(PLEA_NUM, id, 0);
+                console.log('verify -> my_vote =', verifyMy);
+                if (verifyMy !== state.my) {
+                    console.error(`[vote:${id}] VERIFY MISMATCH — correcting local`, { local: state.my, server: verifyMy });
+                    state.my = verifyMy;
+                    render();
+                }
+            } catch (e) {
+                console.error(`[vote:${id}] ERROR`, e);
+                // revert highlight on failure
+                state.my = prev;
+                render();
+                onCountsChanged && onCountsChanged(state);
+            } finally {
+                console.log('after:', { ups: state.ups, downs: state.downs, my: state.my });
+                console.groupEnd();
+                likeBtn && (likeBtn.disabled = false);
+                dislikeBtn && (dislikeBtn.disabled = false);
+            }
+        }
+
+        likeBtn && likeBtn.addEventListener('click', () => setMy(1));
+        dislikeBtn && dislikeBtn.addEventListener('click', () => setMy(-1));
+
+        render();
+
+        // Resolve my vote immediately after mount (with logging)
+        ensureKnownMy();
+
+        return { state, render, setMy };
     }
 
-    // THEME: Voice1/Montserrat + white + active vote highlighting
+    /***********************
+     * THEME
+     ***********************/
     function injectThemeCSS() {
         if (document.getElementById('dp-comments-theme')) return;
         const s = document.createElement('style');
@@ -556,20 +747,17 @@ document.addEventListener('DOMContentLoaded', () => {
   cursor:pointer;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:6px 10px; transition:all .15s ease;
 }
 #dp-comments-host .dp-btn:hover{border-color:rgba(255,255,255,.5)}
-#dp-comments-host .dp-btn.is-like{border-color:#93c5fd}
-#dp-comments-host .dp-btn.is-dislike{border-color:#fca5a5}
-#dp-comments-host .dp-btn.is-active{background:#1f2937;box-shadow:0 0 0 1px rgba(147,197,253,.25) inset}
-#dp-comments-host .dp-btn.is-active.is-dislike{box-shadow:0 0 0 1px rgba(252,165,165,.25) inset}
+#dp-comments-host .dp-btn.is-active{background:#1f2937;border-color:#93c5fd;box-shadow:0 0 0 1px rgba(147,197,253,.25) inset}
+#dp-comments-host .dp-btn.is-down{background:#1f2937;border-color:#fca5a5;box-shadow:0 0 0 1px rgba(252,165,165,.25) inset}
 #dp-comments-host .dp-btn[disabled], #dp-comments-host .dp-next[disabled]{opacity:.6;cursor:not-allowed}
 #dp-comments-host .dp-replies{margin-top:10px;border-left:2px solid rgba(255,255,255,.15);padding-left:12px}
 #dp-comments-host .dp-reply{margin-top:12px;opacity:.95}
 #dp-comments-host .dp-fb-pager{display:flex;justify-content:center;align-items:center;margin-top:14px}
 #dp-comments-host .dp-next{margin:0 auto;display:inline-flex}
 #dp-comments-host textarea{font:inherit;background:#0b0f19;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:8px;color:#fff}
-#dp-comments-host .dp-fb-composer-row{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
-#dp-comments-host .dp-fb-composer-row .dp-btn{border-style:dashed}
+#dp-comments-host .dp-fb-composer-row{display:flex;justify-content:flex-end;margin-top:6px}
 
-/* vendor (light DOM) max-width + fonts */
+/* vendor (light DOM) */
 #dp-comments-host .dp-comments,
 #dp-comments-host .dp-c-panel,
 #dp-comments-host .dp-list,
@@ -588,7 +776,7 @@ document.addEventListener('DOMContentLoaded', () => {
 #dp-comments-host .dp-pager > *, #dp-comments-host .dp-fb-pager > *{ float:none !important; margin:0 auto !important; display:inline-flex !important; }
 #dp-comments-host .dp-pager .dp-prev{ display:none !important; }
 
-/* body scroll like before */
+/* one-page body scroll as before */
 .container{overflow:visible!important;height:auto!important;max-height:none!important;}
 html,body{height:auto;overflow-y:auto;}
 `;
@@ -607,7 +795,7 @@ html,body{height:auto;overflow-y:auto;}
     }
 
     async function mountCommentsForPlea(pleaNum) {
-        console.groupCollapsed('%cCOMMENTS: mount', 'color:#3b82f6;font-weight:600');
+        console.groupCollapsed('%cCOMMENTS: mount (themed + fallback)', 'color:#3b82f6;font-weight:600');
         try {
             injectThemeCSS();
 
@@ -625,82 +813,20 @@ html,body{height:auto;overflow-y:auto;}
             host.id = 'dp-comments-host';
             wrap.appendChild(host);
 
-            // Try vendor first; fall back if fonts/colors are wrong or no items
+            // Try vendor first
             async function tryVendor() {
                 if (!window.DP?.mountComments) return false;
                 const maybe = window.DP.mountComments(pleaNum, host);
                 try { await Promise.resolve(maybe); } catch { }
                 setTimeout(() => { openAnyAccordions(host); ensureCenteredPagers(host); }, 50);
                 setTimeout(() => { openAnyAccordions(host); ensureCenteredPagers(host); }, 250);
+
                 const bad = computedLooksWrong(host);
                 const hasItems = host.querySelector('.dp-item, [data-comment-id]');
                 return !bad && !!hasItems;
             }
 
-            // Vote controller — single source of truth for local counts
-            function makeVoteController({ id, likeBtn, dislikeBtn, initialUps, initialDowns, initialMy }) {
-                const st = { ups: initialUps | 0, downs: initialDowns | 0, my: initialMy | 0, busy: false };
-
-                function render() {
-                    if (likeBtn) {
-                        likeBtn.textContent = `▲ ${st.ups}`;
-                        likeBtn.classList.toggle('is-like', true);
-                        likeBtn.classList.toggle('is-active', st.my === 1);
-                        likeBtn.classList.toggle('is-dislike', false);
-                    }
-                    if (dislikeBtn) {
-                        dislikeBtn.textContent = `▼ ${st.downs}`;
-                        dislikeBtn.classList.toggle('is-dislike', true);
-                        dislikeBtn.classList.toggle('is-active', st.my === -1);
-                        dislikeBtn.classList.toggle('is-like', false);
-                    }
-                }
-
-                // Apply local rule:
-                // - If I already voted, remove that vote from its count.
-                // - Then add 1 to the newly selected side (unless clearing).
-                function applyLocal(nextMy) {
-                    if (nextMy === st.my) return; // no-op
-                    if (st.my === 1) st.ups = Math.max(0, st.ups - 1);
-                    if (st.my === -1) st.downs = Math.max(0, st.downs - 1);
-                    if (nextMy === 1) st.ups += 1;
-                    if (nextMy === -1) st.downs += 1;
-                    st.my = nextMy;
-                }
-
-                async function commit(nextMy) {
-                    if (st.busy) return;
-                    st.busy = true;
-                    const snap = { ...st };
-                    applyLocal(nextMy);
-                    render();
-                    try {
-                        await apiSetMyVote(PLEA_NUM, id, nextMy);
-                    } catch {
-                        st.ups = snap.ups; st.downs = snap.downs; st.my = snap.my;
-                        render();
-                    } finally {
-                        st.busy = false;
-                    }
-                }
-
-                likeBtn?.addEventListener('click', () => {
-                    if (st.busy) return;
-                    const next = st.my === 1 ? 0 : 1;
-                    likeBtn.disabled = true; if (dislikeBtn) dislikeBtn.disabled = true;
-                    commit(next).finally(() => { likeBtn.disabled = false; if (dislikeBtn) dislikeBtn.disabled = false; });
-                });
-                dislikeBtn?.addEventListener('click', () => {
-                    if (st.busy) return;
-                    const next = st.my === -1 ? 0 : -1;
-                    dislikeBtn.disabled = true; if (likeBtn) likeBtn.disabled = true;
-                    commit(next).finally(() => { dislikeBtn.disabled = false; if (likeBtn) likeBtn.disabled = false; });
-                });
-
-                return { state: st, render, setMy: (v) => { applyLocal(v); render(); } };
-            }
-
-            // Fallback UI
+            // Full fallback UI (white text, Voice1/Montserrat) with like/dislike/reply + composer + edit/delete
             async function renderFallback() {
                 await ensureCsrf().catch(() => { });
                 const me = await ensureMe().catch(() => null);
@@ -764,8 +890,9 @@ html,body{height:auto;overflow-y:auto;}
                                     await apiEditComment(PLEA_NUM, nId(c), newText);
                                     itemBodyEl.textContent = newText;
                                     cleanup();
-                                } catch {
+                                } catch (e) {
                                     saveBtn.disabled = false;
+                                    alert(String(e?.message || e));
                                 }
                             });
                         });
@@ -781,9 +908,9 @@ html,body{height:auto;overflow-y:auto;}
                                 await apiDeleteComment(PLEA_NUM, nId(c));
                                 const art = itemBodyEl.closest('article, .dp-reply');
                                 if (art) art.remove();
-                            } catch {
+                            } catch (e) {
                                 delBtn.disabled = false;
-                                alert('Delete failed.');
+                                alert(String(e?.message || e));
                             }
                         });
                     }
@@ -817,10 +944,11 @@ html,body{height:auto;overflow-y:auto;}
 
                                 const vc = makeVoteController({
                                     id: nId(r),
-                                    likeBtn, dislikeBtn,
                                     initialUps: nUp(r),
                                     initialDowns: nDown(r),
-                                    initialMy: nMyVote(r)
+                                    initialMy: nMyVote(r),
+                                    likeBtn,
+                                    dislikeBtn
                                 });
                                 vc.render();
 
@@ -831,7 +959,6 @@ html,body{height:auto;overflow-y:auto;}
                                 }
 
                                 actions.appendChild(buildManageRow(r, bodyEl));
-
                                 mount.appendChild(it);
 
                                 // Resolve name
@@ -849,8 +976,76 @@ html,body{height:auto;overflow-y:auto;}
                     }
                 }
 
+                function makeActions(c, isReply = false, itemBodyEl) {
+                    const row = $e('div', 'dp-actions');
+                    const id = nId(c);
+
+                    const like = $e('button', 'dp-btn', `▲ ${nUp(c)}`);
+                    const dislike = $e('button', 'dp-btn', `▼ ${nDown(c)}`);
+                    row.appendChild(like);
+                    row.appendChild(dislike);
+
+                    const vc = makeVoteController({
+                        id,
+                        initialUps: nUp(c),
+                        initialDowns: nDown(c),
+                        initialMy: nMyVote(c),
+                        likeBtn: like,
+                        dislikeBtn: dislike
+                    });
+                    vc.render();
+
+                    // ensure highlight if server knows my vote
+                    if (nMyVote(c) === 0) {
+                        apiGetMyVote(PLEA_NUM, id, 0).then(v => {
+                            if (v !== 0) { vc.state.my = v; vc.render(); }
+                        }).catch(() => { });
+                    }
+
+                    if (!isReply) {
+                        const replyBtn = $e('button', 'dp-btn', 'Reply');
+                        row.appendChild(replyBtn);
+                        const replyWrap = $e('div', 'dp-replies');
+                        replyWrap.style.display = 'none';
+
+                        const replyComp = makeComposer('Write a reply…', async (text) => {
+                            await apiPostReply(pleaNum, id, text);
+                            await loadReplies(c, repliesMount, true);
+                        });
+                        replyComp.wrap.style.marginTop = '8px';
+                        const repliesMount = $e('div', 'dp-replies-list');
+                        replyWrap.appendChild(replyComp.wrap);
+                        replyWrap.appendChild(repliesMount);
+
+                        replyBtn.addEventListener('click', async () => {
+                            const vis = replyWrap.style.display !== 'none';
+                            replyWrap.style.display = vis ? 'none' : '';
+                            if (!vis && repliesMount.childElementCount === 0 && nRepliesCount(c) > 0) {
+                                await loadReplies(c, repliesMount, false);
+                            }
+                        });
+
+                        row.appendChild(replyWrap);
+                    }
+
+                    // management (edit/delete)
+                    row.appendChild(buildManageRow(c, itemBodyEl));
+
+                    return row;
+                }
+
                 async function addPage() {
                     const { items, total: t } = await apiList(pleaNum, page, page_size, 'hottest');
+                    console.groupCollapsed('%c[list] server items', 'color:#a78bfa;font-weight:600');
+                    try {
+                        console.table(items.map(c => ({
+                            id: nId(c),
+                            likes: nUp(c),
+                            dislikes: nDown(c),
+                            my_vote: nMyVote(c),
+                            user_id: nAuthorId(c)
+                        })));
+                    } finally { console.groupEnd(); }
                     total = t;
                     lastBatchLen = items.length;
 
@@ -863,39 +1058,16 @@ html,body{height:auto;overflow-y:auto;}
                         const bodyEl = $e('div', 'dp-body', nBody(c));
                         it.appendChild(bodyEl);
 
-                        const likeBtn = $e('button', 'dp-btn', `▲ ${nUp(c)}`);
-                        const dislikeBtn = $e('button', 'dp-btn', `▼ ${nDown(c)}`);
-                        const row = $e('div', 'dp-actions');
-                        row.appendChild(likeBtn);
-                        row.appendChild(dislikeBtn);
+                        // voting + reply + manage for top-level
+                        it.appendChild(makeActions(c, false, bodyEl));
 
-                        const vc = makeVoteController({
-                            id: nId(c),
-                            likeBtn, dislikeBtn,
-                            initialUps: nUp(c),
-                            initialDowns: nDown(c),
-                            initialMy: nMyVote(c)
-                        });
-                        vc.render();
-
-                        // Ensure current user's existing vote is highlighted once fetched
-                        if (nMyVote(c) === 0) {
-                            apiGetMyVote(PLEA_NUM, nId(c)).then(v => {
-                                if (v !== vc.state.my) { vc.state.my = v; vc.render(); }
-                            }).catch(() => { });
-                        }
-
-                        // Reply toggle
-                        const rc = c?.reply_count ?? c?.replies_count ?? c?.children_count ?? 0;
-                        const repliesWrap = $e('div', 'dp-replies');
-                        repliesWrap.style.display = 'none';
-                        const repliesMount = $e('div', 'dp-replies-list');
-                        repliesWrap.appendChild(repliesMount);
-
+                        const rc = nRepliesCount(c);
                         if (rc > 0) {
                             const toggle = $e('button', 'dp-btn', `View replies (${rc})`);
-                            const toggleRow = $e('div', 'dp-actions');
-                            toggleRow.appendChild(toggle);
+                            const repliesWrap = $e('div', 'dp-replies');
+                            repliesWrap.style.display = 'none';
+                            const repliesMount = $e('div', 'dp-replies-list');
+                            repliesWrap.appendChild(repliesMount);
                             toggle.addEventListener('click', async () => {
                                 const vis = repliesWrap.style.display !== 'none';
                                 repliesWrap.style.display = vis ? 'none' : '';
@@ -904,14 +1076,11 @@ html,body{height:auto;overflow-y:auto;}
                                     await loadReplies(c, repliesMount, false);
                                 }
                             });
-                            it.appendChild(toggleRow);
+                            const actionsRow = $e('div', 'dp-actions');
+                            actionsRow.appendChild(toggle);
+                            it.appendChild(actionsRow);
+                            it.appendChild(repliesWrap);
                         }
-
-                        it.appendChild(row);
-                        it.appendChild(repliesWrap);
-
-                        // Manage (edit/delete)
-                        it.appendChild(buildManageRow(c, bodyEl));
 
                         // Resolve name (async)
                         resolveDisplayName(c, anonCounter++).then(name => {
@@ -942,7 +1111,7 @@ html,body{height:auto;overflow-y:auto;}
             const okVendor = await tryVendor();
             if (!okVendor) await renderFallback();
 
-            // Defensive layout fixes
+            // Defensive: keep layout fixes applied
             openAnyAccordions(host);
             ensureCenteredPagers(host);
             setTimeout(() => { openAnyAccordions(host); ensureCenteredPagers(host); }, 200);
@@ -1006,9 +1175,14 @@ html,body{height:auto;overflow-y:auto;}
                 dwarn('Your static origin is not in STATIC_ORIGINS. If API CORS blocks, add it to server CORS_ORIGIN.');
             }
 
-            await diagFetch(`${API_BASE.replace('/api', '')}/api`, { credentials: 'include' });      // API index
-            await diagFetch(`${API_BASE.replace('/api', '')}/api/csrf`, { credentials: 'include' }); // CSRF
-            await diagFetch(`${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments?sort=hottest&page=1&page_size=1`, { credentials: 'include' }); // comments
+            // Ping API index
+            await diagFetch(`${API_BASE.replace('/api', '')}/api`, { credentials: 'include' });
+
+            // Grab CSRF (cookie + token)
+            await diagFetch(`${API_BASE.replace('/api', '')}/api/csrf`, { credentials: 'include' });
+
+            // Try comments endpoint
+            await diagFetch(`${API_BASE}/pleas/${encodeURIComponent(pleaNum)}/comments?sort=hottest&page=1&page_size=1`, { credentials: 'include' });
         } finally { end(); }
     }
 
@@ -1097,6 +1271,7 @@ html,body{height:auto;overflow-y:auto;}
             schedulePrompt(idx);
         } else if (idx === FINAL_IDX) {
             try { gtag('event', 'all_text_revealed', { event_category: 'engagement', event_label: 'full_text' }); } catch { }
+            // Mount comments + Replay
             (async () => {
                 try {
                     if (PLEA_NUM) await mountCommentsForPlea(PLEA_NUM);
@@ -1105,6 +1280,7 @@ html,body{height:auto;overflow-y:auto;}
                 }
             })();
 
+            // beacon
             fetch('https://text-reveal-worker.dupeaccmax.workers.dev/', { method: 'POST', mode: 'cors' })
                 .then(r => r.json())
                 .then(data => dlog('Beacon transmitted', data.count, 'times'))
@@ -1197,6 +1373,7 @@ html,body{height:auto;overflow-y:auto;}
 
             try { if (audioCtx.state === 'running') audioCtx.suspend(); } catch { }
 
+            // re-arm once handlers
             startOverlay.addEventListener('pointerdown', onStart, { once: true });
             startOverlay.addEventListener('touchstart', onStart, { once: true, passive: false });
             startOverlay.addEventListener('click', onStart, { once: true });
@@ -1208,21 +1385,35 @@ html,body{height:auto;overflow-y:auto;}
 
     async function completeInstantly() {
         dlog('[skip] instant-complete: forcing fully revealed');
+
+        // stop any queued work
         killRevealTimers();
         hidePrompt();
+
+        // hide overlay & block further “start” attempts
         try { startOverlay.classList.add('hidden'); } catch { }
+
+        // mark state as fully finished so click/enter handlers short-circuit
         started = true;
         uiUnlocked = true;
         firstRevealStarted = true;
         revealing = false;
-        current = animateSections.length;
+        current = animateSections.length; // <- CRUCIAL: tells handlers we’re at the end
+
+        // reveal everything
         setAllVisible();
+
+        // put viewport near bottom of content without smooth scroll bounce
         const gutter = container.clientHeight * 0.2;
         container.scrollTo({
             top: Math.max(0, container.scrollHeight - container.clientHeight - gutter),
             behavior: 'auto'
         });
+
+        // no clicks -> no sounds, but also suspend audio engine just in case
         try { if (audioCtx.state === 'running') await audioCtx.suspend(); } catch { }
+
+        // mount comments right away (don’t wait for a “first line revealed” event)
         try {
             if (PLEA_NUM) await mountCommentsForPlea(PLEA_NUM);
         } finally {
@@ -1283,5 +1474,35 @@ html,body{height:auto;overflow-y:auto;}
     /***********************
      * EXTRA: QUICK API HINTS
      ***********************/
+    // If you still see "NetworkError", verify on the server:
     // app.use(cors({ origin: ['http://localhost:5500','http://127.0.0.1:5500'], credentials: true }));
 });
+
+/* ---------- small DOM helpers ---------- */
+function $e(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+}
+function makeComposer(ph = 'Write a comment…', onSubmit) {
+    const wrap = $e('div', 'dp-fb-composer');
+    const ta = document.createElement('textarea');
+    ta.placeholder = ph;
+    ta.rows = 3;
+    ta.style.width = '100%';
+    ta.style.resize = 'vertical';
+    const row = $e('div', 'dp-fb-composer-row');
+    const btn = $e('button', 'dp-fb-post', 'Post');
+    btn.type = 'button';
+    btn.addEventListener('click', async () => {
+        const val = ta.value.trim();
+        if (!val) return;
+        btn.disabled = true;
+        try { await onSubmit(val); ta.value = ''; } finally { btn.disabled = false; }
+    });
+    row.appendChild(btn);
+    wrap.appendChild(ta);
+    wrap.appendChild(row);
+    return { wrap, textarea: ta, button: btn };
+}

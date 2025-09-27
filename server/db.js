@@ -53,10 +53,15 @@ function normalizeCommentVotesTable() {
           FOREIGN KEY(user_id)    REFERENCES users(id)    ON DELETE CASCADE
         );
         INSERT INTO comment_votes_new (comment_id, user_id, value, updated_at)
-          SELECT comment_id, user_id,
-                 COALESCE(value, vote, 0) AS value,
-                 COALESCE(updated_at, CURRENT_TIMESTAMP)
-          FROM comment_votes;
+        SELECT
+            comment_id, user_id,
+            CASE
+            WHEN value =  1 OR vote IN ('up','like','liked','1')  THEN  1
+            WHEN value = -1 OR vote IN ('down','dislike','-1')    THEN -1
+            ELSE 0
+            END AS value,
+            COALESCE(updated_at, CURRENT_TIMESTAMP)
+        FROM comment_votes;
         DROP TABLE comment_votes;
         ALTER TABLE comment_votes_new RENAME TO comment_votes;
         CREATE INDEX IF NOT EXISTS idx_comment_votes_user ON comment_votes (user_id);
@@ -188,7 +193,13 @@ function ensureUserReceivedCounters() {
   try { db.exec(`ALTER TABLE users ADD COLUMN received_dislikes INTEGER NOT NULL DEFAULT 0`); } catch {}
 }
 
-// server/db.js (replace your migrate() with this)
+function ensureIsAdminColumn() {
+    try {
+        db.exec(`ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0`);
+    } catch { } // ignore "duplicate column" errors
+}
+
+// call it from migrate() alongside the other ensure* calls
 function migrate() {
     // your existing base schema loads, etc. are fine to keep above/below if you have them
     // …
@@ -221,6 +232,8 @@ function migrate() {
     // Make sure users has counters (idempotent)
     try { db.exec(`ALTER TABLE users ADD COLUMN received_likes INTEGER NOT NULL DEFAULT 0`); } catch { }
     try { db.exec(`ALTER TABLE users ADD COLUMN received_dislikes INTEGER NOT NULL DEFAULT 0`); } catch { }
+
+    ensureIsAdminColumn();
 
     // --- Normalize comment_votes to ONLY have "value" (and NOT a legacy NOT NULL "vote") ---
     try {

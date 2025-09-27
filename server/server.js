@@ -13,6 +13,7 @@ const { db, migrate } = require('./db');
 migrate();
 
 const app = express();
+
 function listRoutes(app) {
     const out = [];
     const stack = app._router?.stack || [];
@@ -44,10 +45,14 @@ app.use(express.static(WEB_ROOT, {
 app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
-app.use(cors({
-    origin: ['http://localhost:5500', 'http://127.0.0.1:5500'],
-    credentials: true
-}));
+app.use(
+    cors({
+        origin: ['http://localhost:5500', 'http://127.0.0.1:5500'],
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-User-Id'],
+    })
+);
 app.use('/api/dev', require('./routes-dev').router);
 
 app.get('/api', (req, res) => {

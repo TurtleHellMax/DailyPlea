@@ -48,6 +48,30 @@
     // Items array from various shapes
     const pickItems = (data) => data?.items ?? data?.comments ?? data?.data ?? [];
 
+    const { db, hasColumn } = require('../db'); // hasColumn exists in your db.js
+
+    function buildAdminExpr() {
+        const cols = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+        if (cols.includes('is_admin')) return 'u.is_admin';
+        if (cols.includes('admin')) return 'u.admin';
+        if (cols.includes('role')) return "CASE WHEN u.role IN ('admin','owner','moderator') THEN 1 ELSE 0 END";
+        return '0';
+    }
+
+    function canUserEditOrDelete(commentId, actingUserId) {
+        const adminExpr = buildAdminExpr();
+        const stmt = db.prepare(`
+    SELECT
+      (c.user_id = @uid) AS is_owner,
+      ${adminExpr}       AS is_admin
+    FROM comments c
+    JOIN users u ON u.id = c.user_id
+    WHERE c.id = @cid
+  `);
+        const row = stmt.get({ uid: actingUserId, cid: commentId });
+        return !!row && (row.is_owner === 1 || row.is_admin === 1);
+    }
+
     // ---------- API ----------
     async function fetchComments(apiBase, pleaId, sort, page, pageSize) {
         const url = new URL(`${apiBase}/api/pleas/${encodeURIComponent(pleaId)}/comments`);
