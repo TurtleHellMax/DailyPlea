@@ -24,7 +24,6 @@
     }
 
     function showSpecificError(action, err) {
-        // Prefer a tight, single-line message in the UI
         const line =
             `${action} failed → ${err.method || 'GET'} ${err.path || '(unknown)'} ` +
             `[${err.status ?? 'no-status'}] ` +
@@ -32,7 +31,6 @@
             (err.detail ? ` · ${snippet(err.detail, 140)}` : '');
         msg(line);
 
-        // Full payload to console for deep dive
         console.groupCollapsed(`❌ ${action} failed`);
         console.error('Error object:', err);
         console.error('Request:', { method: err.method, url: err.url, headers: err.reqHeaders, body: err.reqBody });
@@ -40,8 +38,9 @@
         console.groupEnd();
     }
 
-    /* ===================== CLIENT-SIDE VALIDATION ===================== */
+    /* ===================== CLIENT-SIDE VALIDATION & SANITIZERS ===================== */
 
+    // Username: 3–24 alnum + underscore
     const USERNAME_RE = /^[A-Za-z0-9_]{3,24}$/;
     function validateUsername(u) {
         const username = String(u || '').trim();
@@ -52,7 +51,7 @@
         return { ok: true, username };
     }
 
-    // Policy requested: >6 and <32, includes a number, a symbol, and a capital letter.
+    // Password policy: >6 and <32; one capital; one number; one symbol
     function validatePassword(pw) {
         const s = String(pw || '');
         const reasons = [];
@@ -61,6 +60,27 @@
         if (!/[0-9]/.test(s)) reasons.push('at least one number');
         if (!/[^A-Za-z0-9]/.test(s)) reasons.push('at least one symbol');
         return { ok: reasons.length === 0, reasons };
+    }
+
+    // Email / phone sanitizers (mirror server rules)
+    function sanitizeEmail(x) {
+        const s = String(x || '').trim();
+        return s ? s : '';
+    }
+    function isEmail(x) {
+        return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(x || ''));
+    }
+    function sanitizePhone(x) {
+        if (!x) return '';
+        let s = String(x).trim();
+        const hasPlus = s.startsWith('+');
+        s = s.replace(/[^\d+]/g, '');
+        if (hasPlus) s = '+' + s.replace(/[+]/g, '');
+        else s = s.replace(/[+]/g, '');
+        return s;
+    }
+    function isPhone(x) {
+        return /^\+?[0-9]{7,15}$/.test(String(x || ''));
     }
 
     /* ===================== CSRF + API WRAPPER ===================== */
@@ -101,10 +121,6 @@
         return j.token;
     }
 
-    /**
-     * api(path, { method, headers, body })
-     * Throws a rich error object with path/method/status/error/detail.
-     */
     async function api(path, opts = {}) {
         const method = (opts.method || 'GET').toUpperCase();
         const url = state.apiBase + path;
@@ -114,7 +130,6 @@
             headers['content-type'] = 'application/json';
         }
 
-        // Attach CSRF for non-GETs if caller didn't supply it
         if (method !== 'GET' && !headers['x-csrf-token']) {
             if (!state.csrf) await fetchCsrf();
             headers['x-csrf-token'] = state.csrf;
@@ -135,14 +150,12 @@
             };
         }
 
-        // Read body once; try JSON; keep raw text for diagnostics.
         let text = '';
         try { text = await res.text(); } catch { }
         let data = {};
-        try { data = text ? JSON.parse(text) : {}; } catch { /* leave as {} */ }
+        try { data = text ? JSON.parse(text) : {}; } catch { }
 
         if (!res.ok) {
-            // Normalize an error code/message from body if present
             const code = (data && (data.error || data.code)) || undefined;
             const message = (data && (data.message || data.msg)) || undefined;
 
@@ -161,7 +174,6 @@
             };
         }
 
-        // Return parsed JSON or an empty object for no-body responses
         return (text ? (data || {}) : {});
     }
 
@@ -228,7 +240,7 @@
         c.innerHTML = `
       <h2 style="margin:0 0 8px">Welcome back</h2>
       <label>Email or phone</label>
-      <input id="dp-id" autocomplete="username">
+      <input id="dp-id" autocomplete="username" placeholder="name@example.com or +15555550123">
       <label>Password</label>
       <input id="dp-pw" type="password" autocomplete="current-password">
       <div id="dp-totp-row" style="display:none">
@@ -242,6 +254,19 @@
       <div class="muted" style="margin-top:6px"><a href="#" id="dp-reset">Forgot password?</a></div>
     `;
 
+        const idInput = byId('dp-id');
+        idInput.addEventListener('blur', () => {
+            const raw = idInput.value.trim();
+            if (!raw) return;
+            if (raw.includes('@')) {
+                const e = sanitizeEmail(raw);
+                idInput.value = e;
+            } else {
+                const p = sanitizePhone(raw);
+                idInput.value = p;
+            }
+        });
+
         const show2fa = (hint) => {
             const row = byId('dp-totp-row'); if (row) row.style.display = '';
             msg(hint || 'Enter your 2FA code.');
@@ -250,7 +275,6 @@
         byId('dp-sendcode').onclick = async () => {
             try {
                 await fetchCsrf();
-                // Dev: code is issued during login flow; this button just hints the mailbox.
                 msg('Check Dev Mailbox for the code.');
             } catch (e) {
                 msg('Could not send code.');
@@ -259,9 +283,21 @@
 
         byId('dp-login').onclick = async () => {
             msg('');
-            const identifier = byId('dp-id').value.trim();
+            const rawId = idInput.value.trim();
             const password = byId('dp-pw').value;
             const totp = (byId('dp-totp')?.value || '').trim();
+
+            // sanitize/validate identifier like the server
+            let identifier = '';
+            if (rawId.includes('@')) {
+                const e = sanitizeEmail(rawId);
+                if (!isEmail(e)) { msg('Invalid email.'); return; }
+                identifier = e;
+            } else {
+                const p = sanitizePhone(rawId);
+                if (!isPhone(p)) { msg('Invalid phone number.'); return; }
+                identifier = p;
+            }
 
             try {
                 await fetchCsrf();
@@ -290,7 +326,7 @@
                 await fetchCsrf();
                 await api('/auth/password/reset/request', {
                     method: 'POST',
-                    body: JSON.stringify({ identifier: byId('dp-id').value.trim() })
+                    body: JSON.stringify({ identifier: idInput.value.trim() })
                 });
                 msg('Reset link sent to Dev Mailbox.');
             } catch {
@@ -307,15 +343,25 @@
       <label>Username <span class="muted" style="font-weight:normal;color:#94a3b8">(3–24 letters, numbers, _)</span></label>
       <input id="dp-username" placeholder="your_handle" autocomplete="off">
       <label>Email</label>
-      <input id="dp-email" autocomplete="email">
+      <input id="dp-email" autocomplete="email" placeholder="name@example.com">
       <label>Phone</label>
-      <input id="dp-phone" placeholder="+15555550123">
+      <input id="dp-phone" placeholder="+15555550123" autocomplete="tel">
       <label>Password</label>
       <input id="dp-pw2" type="password" autocomplete="new-password" placeholder="Min 7, < 32, 1 capital, 1 number, 1 symbol">
       <button id="dp-reg" style="margin-top:10px">Register</button>
     `;
 
-        // live hint for password policy (optional; non-blocking)
+        const inputEmail = byId('dp-email');
+        const inputPhone = byId('dp-phone');
+
+        inputEmail.addEventListener('blur', () => {
+            inputEmail.value = sanitizeEmail(inputEmail.value);
+        });
+        inputPhone.addEventListener('blur', () => {
+            inputPhone.value = sanitizePhone(inputPhone.value);
+        });
+
+        // live hint for password policy
         const pw = byId('dp-pw2');
         pw?.addEventListener('input', () => {
             const v = validatePassword(pw.value);
@@ -329,13 +375,25 @@
         byId('dp-reg').onclick = async () => {
             msg('');
             const username = byId('dp-username').value.trim();
-            const email = byId('dp-email').value.trim() || null;
-            const phone = byId('dp-phone').value.trim() || null;
-            const password = byId('dp-pw2').value;
+            const emailRaw = inputEmail.value;
+            const phoneRaw = inputPhone.value;
+            const email = sanitizeEmail(emailRaw);
+            const phone = sanitizePhone(phoneRaw);
+            const password = pw.value;
 
             // Client-side checks
             const u = validateUsername(username);
             if (!u.ok) { msg(u.reason); return; }
+
+            if (!email && !phone) {
+                msg('Please provide an email or a phone number.'); return;
+            }
+            if (email && !isEmail(email)) {
+                msg('Invalid email.'); return;
+            }
+            if (phone && !isPhone(phone)) {
+                msg('Invalid phone number.'); return;
+            }
 
             const p = validatePassword(password);
             if (!p.ok) { msg('Password needs: ' + p.reasons.join(', ') + '.'); return; }
@@ -345,7 +403,12 @@
 
                 await api('/auth/register', {
                     method: 'POST',
-                    body: JSON.stringify({ email, phone, password, username })
+                    body: JSON.stringify({
+                        username,
+                        email: email || null,
+                        phone: phone || null,
+                        password
+                    })
                 }).catch((e) => { throw { ...e, action: 'Register' }; });
 
                 // carry over local save to the account (best-effort)
@@ -379,14 +442,11 @@
                         });
                 }
             } catch (e) {
-                // Friendly errors for the new username rules
                 if (e?.error === 'invalid_username') { msg('Username must be 3–24 characters: letters, numbers, underscore.'); return; }
                 if (e?.error === 'username_banned') { msg('That username is not allowed. Pick a different one.'); return; }
                 if (e?.error === 'username_taken') { msg('That username is taken. Try another.'); return; }
                 if (e?.error === 'user_exists') { msg('Email or phone already in use.'); return; }
                 if (e?.error === 'weak_password') { msg('Password too weak. Use a stronger one.'); return; }
-
-                // Generic fallback
                 showSpecificError(e.action || 'Register', e);
             }
         };

@@ -34,7 +34,7 @@ try {
 // hard-reserved slugs/words that should never be usernames
 const RESERVED = new Set([
     'admin', 'administrator', 'root', 'system', 'support', 'help', 'security', 'staff', 'moderator', 'mod',
-    'api', 'v1', 'v2', 'v3', 'auth', 'login', 'logout', 'register', 'signup', 'sign-in', 'sign-in',
+    'api', 'v1', 'v2', 'v3', 'auth', 'login', 'logout', 'register', 'signup', 'sign-in',
     'user', 'users', 'me', 'you', 'owner', 'null', 'undefined',
     'comments', 'comment', 'plea', 'pleas', 'web', 'assets', 'static'
 ]);
@@ -51,11 +51,28 @@ function isUsernameBanned(u) {
     const lc = u.toLowerCase();
     return BANNED_SET.has(lc) || RESERVED.has(lc);
 }
-function usernameExists(u) {
+function usernameExistsAnywhere(u) {
+    // Case-insensitive check against BOTH current usernames and immutable slugs
     const row = db.prepare(
-        'SELECT 1 AS n FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1'
-    ).get(u);
+        `SELECT 1 AS n FROM users
+     WHERE LOWER(username) = LOWER(?) OR LOWER(first_username) = LOWER(?)
+     LIMIT 1`
+    ).get(u, u);
     return !!row;
+}
+
+/* ========= password policy (server-side) =========
+   7–31 chars, at least one uppercase, one number, and one symbol
+-------------------------------------------------- */
+function validatePassword(pw) {
+    const s = String(pw || '');
+    if (s.length < 7 || s.length > 31) {
+        return { ok: false, reason: 'length', detail: 'Password must be 7–31 characters.' };
+    }
+    if (!/[A-Z]/.test(s)) return { ok: false, reason: 'uppercase', detail: 'Add at least one uppercase letter.' };
+    if (!/[0-9]/.test(s)) return { ok: false, reason: 'number', detail: 'Add at least one number.' };
+    if (!/[^A-Za-z0-9]/.test(s)) return { ok: false, reason: 'symbol', detail: 'Add at least one symbol.' };
+    return { ok: true };
 }
 
 /* ========= helpers ========= */
@@ -132,7 +149,7 @@ function verifyEmailOtp(userId, code) {
     return { ok: true };
 }
 
-/* ========= Register (now REQUIRES username) ========= */
+/* ========= Register (REQUIRES username) ========= */
 router.post('/register', async (req, res) => {
     try {
         const { email = null, phone = null, password, username } = req.body || {};
@@ -153,7 +170,7 @@ router.post('/register', async (req, res) => {
         if (isUsernameBanned(uname)) {
             return res.status(400).json({ error: 'username_banned' });
         }
-        if (usernameExists(uname)) {
+        if (usernameExistsAnywhere(uname)) {
             return res.status(409).json({ error: 'username_taken' });
         }
 
@@ -165,14 +182,18 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ error: 'invalid_phone' });
         }
 
-        // Password (keep existing min rule; you can strengthen later)
-        if (String(password).length < 8) {
-            return res.status(400).json({ error: 'weak_password' });
+        // Password policy
+        const pw = validatePassword(password);
+        if (!pw.ok) {
+            return res.status(400).json({ error: 'weak_password', detail: pw.detail });
         }
 
         // Ensure email/phone not already in use
         const exists = db.prepare(
-            'SELECT 1 FROM users WHERE (email = ? AND email IS NOT NULL) OR (phone = ? AND phone IS NOT NULL) LIMIT 1'
+            `SELECT 1 FROM users
+       WHERE (email = ? AND email IS NOT NULL)
+          OR (phone = ? AND phone IS NOT NULL)
+       LIMIT 1`
         ).get(email || null, phone || null);
         if (exists) return res.status(409).json({ error: 'user_exists' });
 
@@ -198,7 +219,7 @@ router.post('/register', async (req, res) => {
         res.json({ ok: true, userId, username: uname });
     } catch (err) {
         if (/SQLITE_CONSTRAINT|UNIQUE/i.test(String(err))) {
-            // could be username, email, or phone unique hits
+            // could be username, first_username, email, or phone unique hits
             return res.status(409).json({ error: 'conflict', detail: String(err.message || err) });
         }
         console.error('REGISTER_ERROR:', err);
@@ -334,6 +355,10 @@ router.post('/password/reset/confirm', async (req, res) => {
     ).get(user.id, tokenHash);
     if (!row) return res.status(400).json({ error: 'bad_token' });
     if (new Date(row.expires_at) < new Date()) return res.status(400).json({ error: 'token_expired' });
+
+    // Enforce password policy on reset too
+    const pw = validatePassword(newPassword);
+    if (!pw.ok) return res.status(400).json({ error: 'weak_password', detail: pw.detail });
 
     const hash = await hashPassword(newPassword);
     db.prepare('UPDATE credentials SET password_hash = ? WHERE user_id = ?').run(hash, user.id);

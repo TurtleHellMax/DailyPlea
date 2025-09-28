@@ -1,0 +1,241 @@
+/* ===== User Profile Hard Black/White Theme (Voice1) — Thicker Borders ===== */
+
+/* Font */
+@font-face {
+    font-family: 'Voice1';
+    src: url('../fonts/Voice1.woff2') format('woff2'), url('../fonts/Voice1.woff') format('woff'), url('../fonts/Voice1.ttf') format('truetype');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+:root {
+    --bw: 3px;
+    --thumb-bw: 2px;
+}
+
+html, body {
+    background: #000 !important;
+    color: #fff !important;
+    font-family: 'Voice1', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+}
+
+.card {
+    box-shadow: none !important;
+}
+
+/* Square panels with thicker white borders */
+.card,
+.preview,
+.pill,
+.controls .ctl,
+.editor .stage {
+    background: #000 !important;
+    border: var(--bw) solid #fff !important;
+    border-radius: 0 !important;
+}
+
+/* Avatar keeps circle, thicker white outline */
+.avatar {
+    background: #000 !important;
+    border: var(--bw) solid #fff !important;
+    border-radius: 50% !important;
+}
+
+label, .title h1, .title .muted, .muted {
+    color: #fff !important;
+}
+
+:root {
+    --hub-native: 21;
+    --hub-scale: 3;
+    --hub-gap: 20px; /* a bit more breathing room */
+    --sbw: 0px; /* JS will update this; default to 0 */
+}
+
+@media (max-width: 480px) {
+    :root {
+        --hub-scale: 2;
+    }
+}
+
+@media (min-width: 1024px) {
+    :root {
+        --hub-scale: 4;
+    }
+}
+
+.plea-hub-btn {
+    position: fixed;
+    top: calc(var(--hub-gap) + env(safe-area-inset-top));
+    right: calc(var(--hub-gap) + env(safe-area-inset-right) + var(--sbw, 0px));
+    width: calc(var(--hub-native) * var(--hub-scale) * 1px);
+    height: calc(var(--hub-native) * var(--hub-scale) * 1px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: transparent;
+    border-radius: 0;
+    text-decoration: none;
+    z-index: 10050;
+    opacity: 0; /* will fade to .5 */
+    transition: opacity .3s ease;
+    pointer-events: auto;
+    touch-action: manipulation;
+    overflow: hidden;
+}
+
+    .plea-hub-btn.is-show {
+        opacity: .5;
+    }
+
+    .plea-hub-btn:hover,
+    .plea-hub-btn:focus-visible {
+        opacity: .8;
+    }
+
+    .plea-hub-btn:active {
+        opacity: 1;
+    }
+
+    .plea-hub-btn img {
+        width: 100%;
+        height: 100%;
+        display: block;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        image-rendering: -moz-crisp-edges;
+        -ms-interpolation-mode: nearest-neighbor;
+    }
+
+/* Inputs/fields: use Voice1 + thick borders + square corners */
+input[type="text"],
+input[type="email"],
+input[type="tel"],
+input[type="password"],
+textarea,
+select {
+    width: 100%;
+    background: #000 !important;
+    color: #fff !important;
+    border: var(--bw) solid #fff !important;
+    border-radius: 0 !important;
+    outline: none !important;
+    font-family: 'Voice1', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+    font-size: 1rem;
+}
+
+    /* Placeholder in Voice1 as well */
+    input::placeholder,
+    textarea::placeholder {
+        color: #bbb;
+        opacity: 1;
+        font-family: 'Voice1', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+    }
+
+/* (Optional) keep Safari autofill readable on black */
+input:-webkit-autofill {
+    -webkit-text-fill-color: #fff !important;
+    -webkit-box-shadow: 0 0 0px 1000px #000 inset !important;
+}
+
+button,
+.actions button,
+input,
+select,
+textarea,
+label,
+.pill {
+    font-family: 'Voice1', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+    font-weight: 400 !important; /* avoid fallback bold that can break custom faces */
+    font-style: normal !important;
+    font-variation-settings: normal;
+}
+
+/* Force hard-black placeholders before any drawing happens */
+#drop,
+.editor .stage,
+#stage, /* the <canvas> */
+.preview .thumb,
+#hdr-avatar {
+    background: #000 !important;
+    border-color: #fff !important;
+}
+
+    /* Hide empty <img> so you don't see UA fallbacks */
+    .avatar img[src=""],
+    .preview .thumb img[src=""],
+    .avatar img:not([src]),
+    .preview .thumb img:not([src]) {
+        display: none !important;
+    }
+
+/* Buttons: square, thicker borders */
+button {
+    -webkit-appearance: none;
+    appearance: none;
+    background: #000 !important;
+    color: #fff !important;
+    border: var(--bw) solid #fff !important;
+    border-radius: 0 !important;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+    button.secondary,
+    button.danger {
+        background: #000 !important;
+    }
+
+    button:hover {
+        background: #111 !important;
+    }
+
+/* Range slider: simple white on black, thicker thumb border */
+input[type="range"] {
+    background: transparent !important;
+}
+
+    input[type="range"]::-webkit-slider-runnable-track {
+        background: #222;
+        height: 4px;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 14px;
+        height: 14px;
+        background: #000;
+        border: var(--thumb-bw) solid #fff;
+        border-radius: 0;
+        margin-top: -5px;
+    }
+
+    input[type="range"]::-moz-range-track {
+        background: #222;
+        height: 4px;
+    }
+
+    input[type="range"]::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        background: #000;
+        border: var(--thumb-bw) solid #fff;
+        border-radius: 0;
+    }
+
+/* Canvas/stage */
+.stage canvas {
+    background: #000 !important;
+}
+
+/* Messages */
+.msg.ok {
+    color: #22c55e !important;
+}
+
+.msg.err {
+    color: #f87171 !important;
+}

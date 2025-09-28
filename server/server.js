@@ -42,7 +42,11 @@ app.use(express.static(WEB_ROOT, {
         if (filePath.endsWith('.css')) res.type('text/css; charset=utf-8');
     }
 }));
-app.use(helmet());
+app.use(helmet({
+    contentSecurityPolicy: false,              // disable strict CSP in dev (we use inline scripts & data URLs)
+    crossOriginResourcePolicy: { policy: "cross-origin" }, // allow images/resources across localhost:3000/5500
+    crossOriginEmbedderPolicy: false,          // avoids COEP headaches with canvas in dev
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(
@@ -91,14 +95,11 @@ app.use((req, res, next) => {
     next();
 });
 
-
 app.get('/api/csrf', (req, res) => {
     const t = issueCsrfToken();
     res.cookie('csrf', t, { httpOnly: false, sameSite: 'lax', secure: false });
     res.json({ token: t });
 });
-
-
 
 app.set('trust proxy', true); // keep this
 
@@ -113,7 +114,6 @@ const authLimiter = rateLimit({
 
 app.use('/api/auth', authLimiter);
 
-
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.use('/web', express.static('web', {
@@ -126,11 +126,18 @@ app.use('/web', express.static('web', {
 app.use('/api/auth', require('./routes-auth').router);
 app.use('/api', require('./routes-saves').router);
 app.use('/api', require('./routes-social').router);
+app.use('/api', require('./routes-users').router);
 app.use('/api/admin', require('./routes-admin').router);
 
 // (optional) if you want /pleas/78 to work without a .html extension:
 app.get('/pleas/:id', (req, res, next) => {
     const f = path.join(WEB_ROOT, 'pleas', `${req.params.id}.html`);
+    res.sendFile(f, err => err ? next() : undefined);
+});
+
+// serve the user profile shell (same idea as /pleas/:id)
+app.get('/user/:slug', (req, res, next) => {
+    const f = path.join(WEB_ROOT, 'web', 'user.html'); // <repo>/web/user.html
     res.sendFile(f, err => err ? next() : undefined);
 });
 

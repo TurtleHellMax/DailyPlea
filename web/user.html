@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>User Profile</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0b0f14;
+            --panel: #121926;
+            --muted: #9aa4b2;
+            --text: #e5eef9;
+            --primary: #3b82f6;
+            --danger: #f87171;
+            --ok: #22c55e;
+            --border: #1f2a37;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+            background: linear-gradient(180deg, #0b0f14, #0a0e13 60%, #090d12);
+            color: var(--text);
+        }
+
+        .container {
+            max-width: 980px;
+            margin: 24px auto;
+            padding: 0 16px;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            margin-bottom: 20px;
+        }
+
+        .avatar {
+            width: 88px;
+            height: 88px;
+            flex: 0 0 auto;
+            border-radius: 50%;
+            background: #0e1622;
+            border: 1px solid var(--border);
+            overflow: hidden;
+            display: grid;
+            place-items: center;
+        }
+
+            .avatar img {
+                max-width: 100%;
+                max-height: 100%;
+                display: block;
+            }
+
+        .title h1 {
+            margin: 0 0 6px;
+            font-weight: 700;
+            font-size: 22px;
+        }
+
+        .title .muted {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,.25);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            color: #b9c3cf;
+            margin-bottom: 6px;
+        }
+
+        input[type="text"], input[type="email"], input[type="tel"], input[type="password"] {
+            width: 100%;
+            background: #0d1520;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 10px 12px;
+            border-radius: 10px;
+            outline: none;
+        }
+
+        input:disabled {
+            opacity: .6;
+        }
+
+        .row {
+            margin-bottom: 12px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        button {
+            appearance: none;
+            border: none;
+            color: #fff;
+            background: var(--primary);
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+            button.secondary {
+                background: #1f2937;
+                color: #cbd5e1;
+            }
+
+            button.danger {
+                background: #b91c1c;
+            }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .note {
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .msg {
+            margin: 12px 0;
+            min-height: 1.2em;
+        }
+
+            .msg.ok {
+                color: var(--ok);
+            }
+
+            .msg.err {
+                color: var(--danger);
+            }
+
+        /* Photo editor */
+        .editor {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+            .editor .stage {
+                background: #0d1520;
+                border: 1px dashed #2a3646;
+                border-radius: 12px;
+                display: grid;
+                place-items: center;
+                padding: 10px;
+                position: relative;
+            }
+
+        .stage canvas {
+            width: 100%;
+            max-width: 480px;
+            background: transparent;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+            .controls .ctl {
+                background: #0d1520;
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                padding: 10px;
+            }
+
+            .controls input[type="range"] {
+                width: 100%;
+            }
+
+        .file-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .pill {
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #0d1520;
+            border: 1px solid var(--border);
+        }
+
+        .preview {
+            display: grid;
+            grid-template-columns: 88px auto;
+            gap: 12px;
+            align-items: center;
+            background: #0d1520;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+            .preview .thumb {
+                width: 88px;
+                height: 88px;
+                border-radius: 50%;
+                overflow: hidden;
+                background: #0e1622;
+                border: 1px solid var(--border);
+                display: grid;
+                place-items: center;
+            }
+
+            .preview img {
+                max-width: 100%;
+                max-height: 100%;
+                display: block;
+            }
+
+        .kbd {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            background: #0b1120;
+            padding: 0 .4em;
+            border-radius: 6px;
+            border: 1px solid #0b1730;
+            color: #c7d2fe;
+        }
+
+    </style>
+    <link rel="stylesheet" href="/web/user-profile.css?v=dev">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="avatar" id="hdr-avatar"><img id="hdr-img" alt=""></div>
+            <div class="title">
+                <h1 id="hdr-name">@<span id="hdr-username">…</span></h1>
+                <div class="muted">Profile: <span id="hdr-slug">…</span> • Joined <span id="hdr-joined">…</span></div>
+            </div>
+        </header>
+
+        <div class="grid">
+            <section class="card">
+                <h3 style="margin:0 0 10px">Account</h3>
+
+                <div class="row">
+                    <label>Username <span class="muted">(3–24 letters, numbers, _)</span></label>
+                    <input id="f-username" type="text" placeholder="your_handle">
+                </div>
+
+                <div class="row">
+                    <label>Email</label>
+                    <input id="f-email" type="email" placeholder="name@example.com" autocomplete="email">
+                </div>
+
+                <div class="row">
+                    <label>Phone</label>
+                    <input id="f-phone" type="tel" placeholder="+15555550123" autocomplete="tel">
+                </div>
+
+                <div class="row">
+                    <label>New password <span class="muted">(optional)</span></label>
+                    <input id="f-newpw" type="password" autocomplete="new-password" placeholder="Min 7, < 32, 1 capital, 1 number, 1 symbol">
+                </div>
+
+                <div class="row" id="pw-extra" style="display:none">
+                    <div class="row">
+                        <label>Confirm new password</label>
+                        <input id="f-confirm" type="password" autocomplete="new-password">
+                    </div>
+                    <div class="row">
+                        <label>Current password <span class="muted">(required to change password)</span></label>
+                        <input id="f-current" type="password" autocomplete="current-password">
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button id="btn-save">Save changes</button>
+                    <button id="btn-cancel" class="secondary" type="button">Cancel</button>
+                </div>
+                <div id="msg-account" class="msg"></div>
+            </section>
+
+            <section class="card">
+                <h3 style="margin:0 0 10px">Profile photo</h3>
+
+                <div class="preview" style="margin-bottom:10px">
+                    <div class="thumb"><img id="pf-thumb" alt=""></div>
+                    <div class="muted">PNG will be generated at up to <b>512px</b> (longest side). Final file must be ≤ <b>1&nbsp;MB</b>.</div>
+                </div>
+
+                <div class="file-row">
+                    <label class="pill">
+                        <span>Choose image</span>
+                        <input id="file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style="display:none">
+                    </label>
+                    <span class="muted">or drag & drop onto the canvas</span>
+                </div>
+
+                <div class="editor" style="margin-top:10px">
+                    <div class="stage" id="drop">
+                        <canvas id="stage" width="320" height="320"></canvas>
+                    </div>
+                    <div class="controls">
+                        <div class="ctl">
+                            <div class="muted" style="margin-bottom:6px">Zoom</div>
+                            <input id="ctl-zoom" type="range" min="0" max="1" step="0.01" value="0.5">
+                        </div>
+                        <div class="ctl">
+                            <div class="muted" style="margin-bottom:6px">Rotate</div>
+                            <input id="ctl-rot" type="range" min="-180" max="180" step="1" value="0">
+                        </div>
+                    </div>
+
+                    <div class="actions">
+                        <button id="btn-apply">Use this photo</button>
+                        <button id="btn-reset" class="secondary" type="button">Reset</button>
+                    </div>
+                    <div id="msg-photo" class="msg"></div>
+                    <div class="note">
+                        Tips: drag the image to reposition. Use zoom/rotate. Output is PNG with transparency preserved.
+                    </div>
+                </div>
+            </section>
+        </div>
+
+    </div>
+
+    <script>console.log('[user.html] loading /web/user.js');</script>
+    <script defer src="/web/user.js?v=dev"></script>
+</body>
+</html>
