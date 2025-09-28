@@ -36,10 +36,12 @@ console.log("[user.js] loaded");
     async function fetchCsrf() {
         const r = await fetch(API_BASE.replace("/api", "") + "/api/csrf", { credentials: "include" });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok || !j.token) throw new Error("csrf");
-        state.csrf = j.token;
-        return j.token;
+        const tok = j?.token ?? j?.csrfToken ?? j?.csrf ?? null;
+        if (!r.ok || !tok) throw new Error("csrf");
+        state.csrf = tok;
+        return tok;
     }
+    // replace your current api() with this
     async function api(path, opts = {}) {
         const method = (opts.method || "GET").toUpperCase();
         const headers = Object.assign({}, opts.headers || {});
@@ -50,7 +52,8 @@ console.log("[user.js] loaded");
         }
         const r = await fetch(API_BASE + path, { method, headers, credentials: "include", body: opts.body });
         const txt = await r.text();
-        const data = txt ? JSON.parse(txt) : {};
+        let data;
+        try { data = txt ? JSON.parse(txt) : {}; } catch { data = { raw: txt }; }
         if (!r.ok) {
             const err = new Error(data?.error || r.statusText);
             err.status = r.status; err.data = data; err.detail = data?.detail || txt;
@@ -159,6 +162,55 @@ console.log("[user.js] loaded");
         };
         img.onerror = () => setMsg(msgPhoto, "Could not load image");
         img.src = url;
+    }
+
+    function isOwner(profile, me, slug) {
+        if (!me) return false;
+
+        // 1) Same numeric id? (fast path)
+        const pid = Number(profile?.id);
+        const mid = Number(me?.id);
+        if (Number.isFinite(pid) && Number.isFinite(mid) && pid === mid) return true;
+
+        // 2) If profile couldn't be fetched yet, treat as owner if slug matches me
+        const s = String(slug || '').toLowerCase();
+        const u1 = String(me.username || '').toLowerCase();
+        const u0 = String(me.first_username || '').toLowerCase();
+        if (s && (s === u1 || s === u0)) return true;
+
+        return false;
+    }
+
+    // Pull a user object out of whatever shape the server returns
+    function pickUser(payload) {
+        if (!payload) return null;
+        if (payload.user && typeof payload.user === 'object') return payload.user;
+        if (payload.ok && payload.user) return payload.user;
+        if (Array.isArray(payload) && payload.length && typeof payload[0] === 'object') return payload[0];
+        if (typeof payload === 'object' && ('id' in payload || 'username' in payload || 'first_username' in payload)) return payload;
+        if (payload.items && Array.isArray(payload.items) && payload.items[0] && typeof payload.items[0] === 'object') return payload.items[0];
+        return null;
+    }
+
+    // Try multiple endpoints/shapes for old/new servers
+    async function fetchProfileBySlug(slug) {
+        const tries = [
+            `/users/by-first/${encodeURIComponent(slug)}`,
+            `/users/by_username/${encodeURIComponent(slug)}`,
+            `/users/resolve?username=${encodeURIComponent(slug)}`,
+            `/users/${encodeURIComponent(slug)}`,           // some servers accept id/slug here
+            `/users?first_username=${encodeURIComponent(slug)}` // very old list-style APIs
+        ];
+        for (const path of tries) {
+            try {
+                const j = await api(path);
+                const u = pickUser(j);
+                if (u) return u;
+            } catch (e) {
+                // keep trying next endpoint
+            }
+        }
+        return null;
     }
 
     // pan with mouse
@@ -306,7 +358,7 @@ console.log("[user.js] loaded");
     $id("btn-save").addEventListener("click", async () => {
         setMsg(msgAccount, "");
 
-        if (!state.me || state.profile.id !== state.me.id) {
+        if (!isOwner(state.profile, state.me, state.slug)) {
             setMsg(msgAccount, "You must be the owner to edit this profile.");
             return;
         }
@@ -323,11 +375,28 @@ console.log("[user.js] loaded");
         if (phone && !isPhone(phone)) { setMsg(msgAccount, "Invalid phone."); return; }
 
         const body = {};
-        if (username && username !== state.original.username) body.username = username;
-        if ((email || "") !== (state.original.email || "")) body.email = email || null;
-        if ((phone || "") !== (state.original.phone || "")) body.phone = phone || null;
+
+        // Username
+        if (username && username !== state.original.username) {
+            body.username = username;
+        }
+
+        // Only update contact fields if the input is enabled AND non-empty.
+        // (Prevents accidental NULL’ing when fields are blank/disabled.)
+        const emailEnabled = !fEmail.disabled;
+        const phoneEnabled = !fPhone.disabled;
+
+        if (emailEnabled && email && email !== state.original.email) {
+            body.email = email;
+        }
+        if (phoneEnabled && phone && phone !== state.original.phone) {
+            body.phone = phone;
+        }
+
+        // Photo
         if (state.photoDataUrl) body.profile_photo = state.photoDataUrl;
 
+        // Password
         if (newpw.length > 0) {
             if (!strongPassword(newpw)) { setMsg(msgAccount, "Password must be 7–31 chars and include a capital, a number, and a symbol."); return; }
             if (newpw !== confirm) { setMsg(msgAccount, "Password confirmation does not match."); return; }
@@ -346,18 +415,31 @@ console.log("[user.js] loaded");
                 body: JSON.stringify(body)
             });
 
-            // update local originals
-            state.original.username = res.user.username;
-            $id("hdr-username").textContent = res.user.username || res.user.first_username || state.slug;
-            if ("email" in body) state.original.email = email || "";
-            if ("phone" in body) state.original.phone = phone || "";
+            const updated = res.user || {};
+            // Merge updated user into local state so header/me stay in sync
+            if (state.me && updated.id === state.me.id) state.me = { ...state.me, ...updated };
+            if (state.profile && updated.id === state.profile.id) state.profile = { ...state.profile, ...updated };
+
+            // Update UI header name if username changed
+            $id("hdr-username").textContent =
+                (isOwner(state.profile, state.me, state.slug) && state.me?.username)
+                    ? state.me.username
+                    : (state.profile.username || state.profile.first_username || state.slug);
+
+            if ("profile_photo" in body) {
+                setAvatar(state.photoDataUrl);
+            }
+
+            // Update originals only for fields we actually sent
+            if ("username" in body) state.original.username = updated.username || state.original.username;
+            if ("email" in body) state.original.email = updated.email || "";
+            if ("phone" in body) state.original.phone = updated.phone || "";
             if ("profile_photo" in body) state.original.photo = state.photoDataUrl;
 
             fNew.value = ""; fConfirm.value = ""; fCurrent.value = "";
             pwExtra.style.display = "none";
             state.photoDataUrl = null;
             setMsg(msgAccount, "Saved!", true);
-            console.log("[user.js] profile saved");
         } catch (e) {
             const code = e?.data?.error || "";
             if (code === "username_taken") return setMsg(msgAccount, "That username is taken.");
@@ -410,9 +492,18 @@ console.log("[user.js] loaded");
     // in resetEditor(), replace the clear with paintBlank():
     function resetEditor() {
         state.img = null; state.zoom = 1; state.rot = 0; state.panX = 0; state.panY = 0;
-        zoomCtl.value = '1.0'; rotCtl.value = '0';
-        paintBlank();                 // was: ctx.clearRect(...)
-        setMsg(msgPhoto, '');
+
+        if (zoomCtl) {
+            if (zoomCtl.min === "0" && zoomCtl.max === "1") {
+                zoomCtl.value = "0.5"; // midpoint = 1× for normalized slider
+            } else {
+                zoomCtl.value = "1.0"; // direct-zoom sliders
+            }
+        }
+        if (rotCtl) rotCtl.value = "0";
+
+        paintBlank();
+        setMsg(msgPhoto, "");
     }
 
     /* ============ Load profile + me, fill header/form ============ */
@@ -421,32 +512,47 @@ console.log("[user.js] loaded");
         const parts = location.pathname.split("/").filter(Boolean);
         state.slug = decodeURIComponent(parts[parts.length - 1] || "");
         $id("hdr-slug").textContent = state.slug;
-
         console.log("[user.js] loading profile for slug:", state.slug);
 
-        const [prof, me] = await Promise.allSettled([
-            api("/users/by-first/" + encodeURIComponent(state.slug)),
-            api("/auth/me")
+        // fetch in parallel
+        const [profileUser, meRaw] = await Promise.all([
+            fetchProfileBySlug(state.slug),
+            api("/auth/me").catch(() => null)
         ]);
-        if (prof.status === "rejected") {
+
+        state.me = meRaw ? (meRaw.user || meRaw) : null;
+
+        // If server didn't return a profile, but you ARE the owner by slug, use `me` as the profile.
+        state.profile = profileUser || (isOwner(null, state.me, state.slug) ? state.me : null);
+
+        if (!state.profile) {
             setMsg(msgAccount, "Profile not found", false);
-            console.error("[user.js] profile load failed", prof.reason);
+            console.error("[user.js] profile load failed (no user for slug)");
             return;
         }
-        state.profile = prof.value.user;
-        state.me = (me.status === "fulfilled") ? (me.value.user || null) : null;
+
+        const owner = isOwner(state.profile, state.me, state.slug);
+        console.log("[user.js] ids", { profileId: state.profile?.id, meId: state.me?.id, owner });
 
         // Header
-        $id("hdr-username").textContent = state.profile.username || state.profile.first_username || state.slug;
+        const headerName = (owner && state.me?.username)
+            ? state.me.username
+            : (state.profile.username || state.profile.first_username || state.slug);
+
+        $id("hdr-username").textContent = headerName;
         $id("hdr-joined").textContent = fmtDate(state.profile.created_at);
         setAvatar(state.profile.profile_photo || "");
 
         // Form initial values
-        fUsername.value = state.profile.username || "";
+        fUsername.value = state.profile.username || (owner ? (state.me.username || "") : "");
 
-        if (state.me && state.profile.id === state.me.id) {
+        if (owner) {
             fEmail.value = state.me.email || "";
             fPhone.value = state.me.phone || "";
+            fEmail.disabled = false;
+            fPhone.disabled = false;
+            $id("f-newpw").disabled = false;
+            setMsg(msgAccount, "");
         } else {
             fEmail.value = "";
             fPhone.value = "";
@@ -462,8 +568,6 @@ console.log("[user.js] loaded");
             phone: fPhone.value,
             photo: state.profile.profile_photo || null
         };
-
-        console.log("[user.js] profile loaded; owner?", !!(state.me && state.profile.id === state.me.id));
     }
 
     /* ============ Kick off ============ */

@@ -50,6 +50,75 @@
 
     const { db, hasColumn } = require('../db'); // hasColumn exists in your db.js
 
+    // ---------- AVATARS ----------
+    // auto-inject minimal CSS so avatar lays out next to content
+    function ensureAvatarStyles() {
+        if (document.getElementById('dp-comments-avatar-css')) return;
+        const css = `
+        .comments .comment { display: grid; grid-template-columns: 32px 1fr; gap: var(--c-gap,12px); }
+        .comments .comment__avatar {
+            width: 32px; height: 32px; border-radius: 50%;
+            object-fit: cover; background: #e5e7eb; display:block;
+        }
+        .comments .comment__main { min-width: 0; } /* avoid overflow */
+        `;
+        const style = document.createElement('style');
+        style.id = 'dp-comments-avatar-css';
+        style.textContent = css;
+        document.head.appendChild(style);
+    }
+
+    const AVATAR_FALLBACK =
+        'data:image/svg+xml;utf8,' +
+        encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+    <rect width="100%" height="100%" fill="#e5e7eb"/>
+    <circle cx="32" cy="24" r="14" fill="#cbd5e1"/>
+    <rect x="10" y="40" width="44" height="16" rx="8" fill="#cbd5e1"/>
+  </svg>`);
+
+    function getAuthorUsername(c) {
+        return c?.author?.username ?? c?.user?.username ?? c?.username ?? null;
+    }
+    function getAuthorFirstUsername(c) {
+        return c?.author?.first_username ?? c?.user?.first_username ?? c?.first_username ?? null;
+    }
+    function getAuthorPhotoInline(c) {
+        return c?.author?.profile_photo ?? c?.user?.profile_photo ?? c?.profile_photo ?? c?.author?.photo ?? null;
+    }
+
+    // cache resolved avatars (username → url or null). Promises allowed to dedupe concurrent lookups.
+    const avatarCache = new Map();
+
+    async function resolveAvatarByUsername(apiBase, username) {
+        if (!username) return null;
+        const key = username.toLowerCase();
+        if (avatarCache.has(key)) return await avatarCache.get(key);
+
+        const p = (async () => {
+            try {
+                // Try by current username
+                let r = await fetch(`${apiBase}/api/users/by_username/${encodeURIComponent(username)}`, { credentials: 'include' });
+                if (r.ok) {
+                    const j = await r.json().catch(() => ({}));
+                    return j?.user?.profile_photo ?? null;
+                }
+                // Fallback resolver
+                r = await fetch(`${apiBase}/api/users/resolve?username=${encodeURIComponent(username)}`, { credentials: 'include' });
+                if (r.ok) {
+                    const j = await r.json().catch(() => ({}));
+                    return j?.user?.profile_photo ?? null;
+                }
+            } catch { /* ignore */ }
+            return null;
+        })();
+
+        avatarCache.set(key, p);
+        const url = await p;
+        avatarCache.set(key, url);
+        return url;
+    }
+
+    // ---------- (unused here but kept) admin helpers ----------
     function buildAdminExpr() {
         const cols = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
         if (cols.includes('is_admin')) return 'u.is_admin';
@@ -108,6 +177,24 @@
         const cid = getId(c);
         const replyCount = getReplyCount(c);
 
+        // avatar element (inline photo or fallback; then lazy-resolve by username)
+        const img = el('img', {
+            class: 'comment__avatar',
+            alt: '',
+            src: getAuthorPhotoInline(c) || AVATAR_FALLBACK,
+            referrerpolicy: 'no-referrer',
+            style: 'width:32px;height:32px;border-radius:50%;object-fit:cover;display:block;background:#e5e7eb;'
+        });
+
+        if (!getAuthorPhotoInline(c)) {
+            const uname = getAuthorUsername(c) || getAuthorFirstUsername(c);
+            if (uname) {
+                resolveAvatarByUsername(state.apiBase, uname).then((url) => {
+                    if (url) img.src = url;
+                });
+            }
+        }
+
         const meta = el('div', { class: 'comment__meta' },
             el('span', { class: 'comment__author' }, getAuthor(c)),
             el('span', { class: 'comment__dot' }, ' · '),
@@ -121,9 +208,8 @@
         // replies container (collapsed by default)
         const repliesWrap = el('div', { class: 'comment__replies', dataset: { loaded: 'false' } });
 
-        // actions row (always present for layout; toggle only shown if count > 0)
+        // actions row (toggle replies if any)
         const actions = el('div', { class: 'comment__actions' });
-
         if (replyCount > 0 && cid != null) {
             const toggle = el('button', {
                 class: 'btn btn-link replies-toggle',
@@ -137,7 +223,6 @@
                         toggle.textContent = `View replies (${replyCount})`;
                         return;
                     }
-                    // expand
                     repliesWrap.style.display = '';
                     repliesWrap.setAttribute('data-expanded', 'true');
                     toggle.textContent = 'Hide replies';
@@ -151,9 +236,8 @@
                             for (const rc of items) list.appendChild(renderCommentNode(rc, state));
                             repliesWrap.appendChild(list);
                             repliesWrap.setAttribute('data-loaded', 'true');
-                        } catch (err) {
+                        } catch {
                             repliesWrap.appendChild(el('div', { class: 'comment__error' }, 'Failed to load replies.'));
-                            // optional: console.error(err);
                         } finally {
                             toggle.disabled = false;
                         }
@@ -163,9 +247,9 @@
             actions.appendChild(toggle);
         }
 
-        const node = el('div', { class: 'comment', id: cid ? `c_${cid}` : null },
-            meta, body, actions, repliesWrap
-        );
+        // layout: avatar on the left, content on the right
+        const main = el('div', { class: 'comment__main' }, meta, body, actions, repliesWrap);
+        const node = el('div', { class: 'comment', id: cid ? `c_${cid}` : null }, img, main);
         return node;
     }
 
@@ -187,6 +271,9 @@
 
         const root = document.querySelector(state.rootSelector);
         if (!root) throw new Error(`Comments.mount: root "${state.rootSelector}" not found`);
+
+        // ensure avatar CSS is present
+        ensureAvatarStyles();
 
         root.classList.add('comments');
         root.innerHTML = ''; // clean mount point
@@ -216,7 +303,6 @@
                 } catch (err) {
                     moreBtn.textContent = 'Failed. Try again';
                     moreBtn.disabled = false;
-                    // optional: console.error(err);
                 }
             }
         }, 'View more comments');
@@ -238,7 +324,6 @@
             }
         } catch (err) {
             list.appendChild(el('div', { class: 'comments__error' }, 'Failed to load comments.'));
-            // optional: console.error(err);
             moreWrap.remove();
         }
     }

@@ -29,18 +29,18 @@ function addColumnIfMissing(table, defSql) {
 function ensureUsersTable() {
     db.exec(`
     CREATE TABLE IF NOT EXISTS users (
-      id                INTEGER PRIMARY KEY AUTOINCREMENT,
-      email             TEXT,
-      phone             TEXT,
-      username          TEXT,         -- current handle (nullable until set)
-      first_username    TEXT,         -- immutable slug seed (/user/:first_username)
-      profile_photo     TEXT,
-      role              TEXT NOT NULL DEFAULT 'user',
-      is_admin          INTEGER NOT NULL DEFAULT 0,
-      received_likes    INTEGER NOT NULL DEFAULT 0,
-      received_dislikes INTEGER NOT NULL DEFAULT 0,
-      created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        email             TEXT,
+        phone             TEXT,
+        username          TEXT,         -- current handle (nullable until set)
+        first_username    TEXT,         -- immutable slug seed (/user/:first_username)
+        profile_photo     TEXT,
+        role              TEXT NOT NULL DEFAULT 'user',
+        is_admin          INTEGER NOT NULL DEFAULT 0,
+        received_likes    INTEGER NOT NULL DEFAULT 0,
+        received_dislikes INTEGER NOT NULL DEFAULT 0,
+        created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email   ON users(email)           WHERE email           IS NOT NULL;
@@ -52,9 +52,32 @@ function ensureUsersTable() {
     CREATE TRIGGER trg_users_updated_at
     AFTER UPDATE ON users
     FOR EACH ROW BEGIN
-      UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+        UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
     END;
-  `);
+    `);
+    db.exec(`
+      DROP TRIGGER IF EXISTS trg_users_first_un_set_on_insert;
+      CREATE TRIGGER trg_users_first_un_set_on_insert
+      AFTER INSERT ON users
+      FOR EACH ROW
+      WHEN NEW.first_username IS NULL AND NEW.username IS NOT NULL
+      BEGIN
+        UPDATE users
+          SET first_username = NEW.username
+          WHERE id = NEW.id AND first_username IS NULL;
+      END;
+
+      DROP TRIGGER IF EXISTS trg_users_first_un_backfill_on_username_update;
+      CREATE TRIGGER trg_users_first_un_backfill_on_username_update
+      AFTER UPDATE OF username ON users
+      FOR EACH ROW
+      WHEN NEW.first_username IS NULL AND NEW.username IS NOT NULL
+      BEGIN
+        UPDATE users
+          SET first_username = COALESCE(first_username, NEW.username)
+          WHERE id = NEW.id AND first_username IS NULL;
+      END;
+    `);
 
     // Safety adds on old DBs
     const want = [

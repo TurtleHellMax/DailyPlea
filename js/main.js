@@ -274,36 +274,361 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // User cache to resolve names
-    const USER_CACHE = new Map();
-    async function fetchUserById(id) {
-        if (!id) return null;
-        if (USER_CACHE.has(id)) return USER_CACHE.get(id);
-        const urls = [
-            `${API_BASE}/users/${encodeURIComponent(id)}`,
-            `${API_BASE.replace('/api', '')}/api/users/${encodeURIComponent(id)}`
-        ];
-        for (const u of urls) {
-            try {
-                const j = await diagFetch(u, { credentials: 'include' });
-                if (j && (j.id || j.username || j.name || j.display_name)) {
-                    USER_CACHE.set(id, j);
-                    return j;
-                }
-            } catch { }
+    // ---------- USERNAME-ONLY PROFILE RESOLUTION (no ID-based fetches) ----------
+
+    // strictly for *display* fallbacks — does NOT get used to navigate anywhere
+    // (safe to keep for odd backends that only return names, not usernames)
+    function firstUsernameOf(u) {
+        if (!u) return null;
+        const direct = [
+            u.first_username, u.firstUsername, u.first_username_slug,
+            u.initial_username, u.signup_username, u.username_at_signup,
+            u.slug, u.handle, u.username0, u.first
+        ].find(v => v && String(v).trim());
+        if (direct) return String(direct).trim();
+
+        const arrays = [u.usernames, u.username_history, u.previous_usernames, u.aliases, u.handles];
+        for (const arr of arrays) {
+            if (Array.isArray(arr) && arr.length) {
+                const sorted = [...arr].sort((a, b) => {
+                    const ta = new Date((a && (a.created_at || a.at)) || 0).getTime();
+                    const tb = new Date((b && (b.created_at || b.at)) || 0).getTime();
+                    return ta - tb;
+                });
+                const pick = sorted[0];
+                const val = typeof pick === 'string'
+                    ? pick
+                    : (pick.username || pick.name || pick.handle || pick.slug);
+                if (val) return String(val).trim();
+            }
         }
-        USER_CACHE.set(id, null);
         return null;
     }
 
-    // Normalizers (handles multiple API shapes)
+    const isUsername = s => /^[A-Za-z0-9_]{3,24}$/i.test(String(s || '').trim());
+    const looksLikeHtml = s => typeof s === 'string' && /<html|<!doctype|<pre>|<\/html>/i.test(s);
+
+    // Try to extract the *current* username from a comment payload (author/user fields only)
+    function nAuthorCurrentUsername(c) {
+        const a = c?.author, u = c?.user;
+        const candidates = [
+            a?.username, u?.username, c?.username,
+            a?.handle, u?.handle
+        ];
+        const got = candidates.find(v => v && isUsername(v));
+        return got ? String(got).trim() : null;
+    }
+
+    // Fetch first_username using only the *current* username
+    async function fetchFirstOfUsername(uname) {
+        if (!isUsername(uname)) return null;
+
+        console.groupCollapsed('%c[first-of] via username', 'color:#f59e0b;font-weight:600');
+        console.log('username =', uname);
+
+        // 1) smallest payload
+        const tries = [
+            `${API_BASE}/users/by_username/${encodeURIComponent(uname)}`,
+            `${API_BASE}/users/resolve?username=${encodeURIComponent(uname)}`
+        ];
+
+        for (const url of tries) {
+            try {
+                const j = await diagFetch(url, { credentials: 'include', headers: authHeaders() });
+                console.log('checked:', url, '→', j);
+
+                if (typeof j === 'string') {
+                    if (!looksLikeHtml(j) && isUsername(j)) {
+                        console.log('hit: string body first_username =', j);
+                        console.groupEnd();
+                        return j.trim();
+                    }
+                    // HTML error page — ignore
+                    continue;
+                }
+
+                const first =
+                    j?.first_username ||
+                    j?.user?.first_username ||
+                    j?.firstUsername ||
+                    j?.user?.firstUsername ||
+                    null;
+
+                if (first && isUsername(first)) {
+                    console.log('hit: object.first_username =', first);
+                    console.groupEnd();
+                    return String(first).trim();
+                }
+            } catch (e) {
+                console.warn('resolver failed', url, e);
+            }
+        }
+        console.warn('no first_username found for', uname);
+        console.groupEnd();
+        return null;
+    }
+
+    // Full resolver: prefer any already-present first_username on the local author object,
+    // otherwise look up by current username over the API.
+    async function resolveFirstByUsername(comment) {
+        const local = comment?.author || comment?.user || null;
+
+        // 0) local hint (if backend already includes first_username in author)
+        const localFirst = firstUsernameOf(local);
+        if (localFirst && isUsername(localFirst)) return localFirst.trim();
+
+        // 1) derive current username from the comment payload
+        const uname = nAuthorCurrentUsername(comment);
+        if (!uname) return null;
+
+        // 2) fetch from server by username (never by id)
+        return await fetchFirstOfUsername(uname);
+    }
+
+    // Human-friendly display name (tries author.username/display_name, then "User#N" fallback).
+    async function resolveDisplayName(c, fallbackIndex = 0) {
+        // Prefer presentable local fields
+        const a = c?.author, u = c?.user;
+        const display =
+            a?.display_name || u?.display_name ||
+            a?.username || u?.username ||
+            c?.username || c?.name || '';
+
+        if (String(display).trim()) return String(display).trim();
+        return `User#${fallbackIndex || 0}`;
+    }
+
+    // Build link text + (maybe) href; href only when we have first_username
+    async function authorLinkData(c, fallbackIndex = 0) {
+        const display = await resolveDisplayName(c, fallbackIndex);
+        let first = firstUsernameOf(c?.author || c?.user);
+        if (!first) {
+            // Try to resolve now from current username
+            first = await resolveFirstByUsername(c);
+        }
+        const href = first ? `/user/${encodeURIComponent(first)}` : null;
+
+        // DEBUG
+        console.groupCollapsed('%c[author-link] resolve', 'color:#f59e0b;font-weight:600');
+        console.log({
+            commentId: (c?.id ?? c?.comment_id ?? c?._id ?? null),
+            currentUsername: nAuthorCurrentUsername(c),
+            localFirst: firstUsernameOf(c?.author || c?.user),
+            decidedFirst: first,
+            href
+        });
+        console.groupEnd();
+
+        return { display: String(display).trim(), href };
+    }
+
+    function setAuthorLine(headEl, comment, fallbackIndex = 0) {
+        headEl.textContent = '';
+
+        // --- shared click handler (for both name + avatar)
+        async function goProfile(ev, el) {
+            ev.stopPropagation();
+            if (el.getAttribute('href')) {           // already have href → go
+                ev.preventDefault();
+                window.location.assign(el.href);
+                return;
+            }
+            ev.preventDefault();                     // late resolve by username → first_username
+            const first = await resolveFirstByUsername(comment);
+            if (first && isUsername(first)) {
+                const url = new URL(`/user/${encodeURIComponent(first)}`, location.origin).toString();
+                window.location.assign(url);
+            } else {
+                alert('Could not open profile — first username not available.');
+            }
+        }
+
+        // --- avatar (clickable)
+        const avatarLink = document.createElement('a');
+        avatarLink.className = 'dp-avatar-link';
+        avatarLink.rel = 'noopener noreferrer';
+        avatarLink.dataset.username = nAuthorCurrentUsername(comment) || '';
+        avatarLink.addEventListener('click', (ev) => goProfile(ev, avatarLink));
+
+        const img = document.createElement('img');
+        img.className = 'dp-avatar is-fallback';
+        img.alt = '';
+        img.width = 28; img.height = 28;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.src = AVATAR_FALLBACK;
+        avatarLink.appendChild(img);
+        headEl.appendChild(avatarLink);
+
+        // upgrade avatar src asynchronously
+        resolveAvatarForComment(comment).then((url) => {
+            if (url) { img.src = url; img.classList.remove('is-fallback'); }
+        }).catch(() => { /* keep fallback */ });
+
+        // --- name link + time
+        authorLinkData(comment, fallbackIndex).then(({ display, href }) => {
+            // name (clickable)
+            const nameLink = document.createElement('a');
+            nameLink.className = 'dp-author';
+            nameLink.textContent = display;
+            if (href) {
+                nameLink.href = href;
+                avatarLink.href = href;                // <— make avatar link to the same profile
+            }
+            nameLink.rel = 'noopener noreferrer';
+            nameLink.dataset.username = nAuthorCurrentUsername(comment) || '';
+            nameLink.addEventListener('click', (ev) => goProfile(ev, nameLink));
+
+            // improve a11y title/label once we know display text
+            avatarLink.title = `View ${display}'s profile`;
+            avatarLink.setAttribute('aria-label', `View ${display}'s profile`);
+
+            const sep = document.createTextNode(' \u2022 ');
+            const t = document.createElement('span');
+            t.className = 'dp-time';
+            t.textContent = nTime(comment);
+
+            headEl.appendChild(nameLink);
+            headEl.appendChild(sep);
+            headEl.appendChild(t);
+        }).catch(() => {
+            headEl.textContent = `${nAuthorLocal(comment) || 'User'} • ${nTime(comment)}`;
+        });
+    }
+
+    // --- AVATAR helpers ---------------------------------------------------------
+    const AVATAR_FALLBACK =
+        'data:image/svg+xml;utf8,' + encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+       <rect width="100%" height="100%" fill="#e5e7eb"/>
+       <circle cx="32" cy="24" r="14" fill="#cbd5e1"/>
+       <rect x="10" y="40" width="44" height="16" rx="8" fill="#cbd5e1"/>
+     </svg>`
+        );
+
+    function inlineAvatarOf(c) {
+        return c?.author?.profile_photo
+            ?? c?.user?.profile_photo
+            ?? c?.profile_photo
+            ?? c?.author?.photo
+            ?? null;
+    }
+
+    const AVATAR_CACHE = new Map();
+
+    async function resolveAvatarByUsername(uname) {
+        if (!uname) return null;
+        const key = 'u:' + uname.toLowerCase();
+        if (AVATAR_CACHE.has(key)) return await AVATAR_CACHE.get(key);
+
+        const p = (async () => {
+            try {
+                const j = await diagFetch(`${API_BASE}/users/by_username/${encodeURIComponent(uname)}`, {
+                    credentials: 'include', headers: authHeaders()
+                });
+                const url = j?.user?.profile_photo ?? j?.profile_photo ?? null;
+                if (url) return url;
+            } catch { }
+            try {
+                const j2 = await diagFetch(`${API_BASE}/users/resolve?username=${encodeURIComponent(uname)}`, {
+                    credentials: 'include', headers: authHeaders()
+                });
+                return j2?.user?.profile_photo ?? null;
+            } catch { }
+            return null;
+        })();
+
+        AVATAR_CACHE.set(key, p);
+        const r = await p; AVATAR_CACHE.set(key, r);
+        return r;
+    }
+
+    async function resolveAvatarByFirst(first) {
+        if (!first) return null;
+        const key = 'f:' + first.toLowerCase();
+        if (AVATAR_CACHE.has(key)) return await AVATAR_CACHE.get(key);
+
+        const p = (async () => {
+            try {
+                const j = await diagFetch(`${API_BASE}/users/by-first/${encodeURIComponent(first)}`, {
+                    credentials: 'include', headers: authHeaders()
+                });
+                const url = j?.user?.profile_photo ?? null;
+                if (url) return url;
+            } catch { }
+            try {
+                const j2 = await diagFetch(`${API_BASE}/users/${encodeURIComponent(first)}`, {
+                    credentials: 'include', headers: authHeaders()
+                });
+                return j2?.user?.profile_photo ?? null;
+            } catch { }
+            return null;
+        })();
+
+        AVATAR_CACHE.set(key, p);
+        const r = await p; AVATAR_CACHE.set(key, r);
+        return r;
+    }
+
+    async function resolveAvatarForComment(c) {
+        // 1) Inline on the comment?
+        const inline = inlineAvatarOf(c);
+        if (inline) return inline;
+
+        // 2) Try current username
+        const uname = nAuthorCurrentUsername(c);
+        if (uname) {
+            const viaU = await resolveAvatarByUsername(uname);
+            if (viaU) return viaU;
+        }
+
+        // 3) Try first_username (local or resolved)
+        const firstLocal = firstUsernameOf(c?.author || c?.user);
+        if (firstLocal) {
+            const viaF = await resolveAvatarByFirst(firstLocal);
+            if (viaF) return viaF;
+        }
+
+        const first = await resolveFirstByUsername(c);
+        if (first) {
+            const viaF2 = await resolveAvatarByFirst(first);
+            if (viaF2) return viaF2;
+        }
+
+        return null;
+    }
+
+    // ---------- Normalizers (handles multiple API shapes) ----------
     const nId = c => c?.id ?? c?.comment_id ?? c?._id ?? null;
     const nBody = c => c?.body ?? c?.text ?? c?.content ?? '';
-    const nAuthorLocal = c => c?.author?.username ?? c?.author?.display_name ?? c?.user?.username ?? c?.user?.name ?? c?.username ?? c?.name ?? '';
-    const nAuthorId = c => c?.author?.id ?? c?.user?.id ?? c?.user_id ?? c?.author_id ?? null;
+
+    // Local string-ish name (best-effort; display only)
+    const nAuthorLocal = c =>
+        c?.author?.username ??
+        c?.author?.display_name ??
+        c?.user?.username ??
+        c?.user?.name ??
+        c?.username ??
+        c?.name ??
+        '';
+
+    // Author numeric ID if present (used only for perms / equality — not for navigation)
+    const nAuthorId = c =>
+        c?.author?.id ??
+        c?.user?.id ??
+        c?.user_id ??
+        c?.author_id ??
+        null;
+
     const nCreatedAtRaw = c => c?.created_at ?? c?.createdAt ?? c?.timestamp ?? null;
-    const nTime = c => { const x = nCreatedAtRaw(c) || Date.now(); try { return new Date(x).toLocaleString(); } catch { return ''; } };
+    const nTime = c => {
+        const x = nCreatedAtRaw(c) || Date.now();
+        try { return new Date(x).toLocaleString(); } catch { return ''; }
+    };
+
     const nUp = c => Number(c?.likes ?? c?.up ?? c?.upvotes ?? 0) || 0;
     const nDown = c => Number(c?.dislikes ?? c?.down ?? c?.downvotes ?? 0) || 0;
+
     const nMyVote = c => {
         const v = c?.my_vote ?? c?.user_vote ?? c?.vote_by_me ?? c?.liked_by_me ?? c?.disliked_by_me;
         if (v === 'up' || v === 1 || v === true) return 1;
@@ -311,25 +636,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (v === 0 || v === null || typeof v === 'undefined') return 0;
         return 0;
     };
+
     const nRepliesCount = c => {
         const a = c?.reply_count ?? c?.replies_count ?? c?.children_count;
         if (Number.isFinite(a)) return +a;
         if (Array.isArray(c?.replies)) return c.replies.length;
         return 0;
     };
-
-    async function resolveDisplayName(c, fallbackIndex = 0) {
-        let name = nAuthorLocal(c);
-        if (name && String(name).trim()) return String(name).trim();
-        const uid = nAuthorId(c);
-        if (uid != null) {
-            const u = await fetchUserById(uid);
-            const n = u?.username || u?.display_name || u?.name;
-            if (n && String(n).trim()) return String(n).trim();
-            return `User#${uid}`;
-        }
-        return `User#${fallbackIndex || 0}`;
-    }
 
     // Permissions
     function isOwner(c, me) {
@@ -776,6 +1089,24 @@ document.addEventListener('DOMContentLoaded', () => {
 #dp-comments-host .dp-pager > *, #dp-comments-host .dp-fb-pager > *{ float:none !important; margin:0 auto !important; display:inline-flex !important; }
 #dp-comments-host .dp-pager .dp-prev{ display:none !important; }
 
+#dp-comments-host .dp-head { user-select: text !important; }
+#dp-comments-host .dp-author {
+  text-decoration: none;
+  cursor: pointer;
+  user-select: text !important;
+}
+#dp-comments-host .dp-author:hover { text-decoration: underline; }
+#dp-comments-host .dp-head{
+  display:flex; align-items:center; justify-content:center; gap:8px;
+}
+#dp-comments-host .dp-avatar{
+  width:28px; height:28px; border-radius:50%;
+  object-fit:cover; background:#1f2937; flex:0 0 28px;
+}
+#dp-comments-host .dp-avatar.is-fallback{ filter:grayscale(.15); opacity:.9; }
+#dp-comments-host .dp-avatar-link{display:inline-flex;border-radius:50%;text-decoration:none}
+#dp-comments-host .dp-avatar-link:focus-visible{outline:2px solid #93c5fd;outline-offset:2px}
+
 /* one-page body scroll as before */
 .container{overflow:visible!important;height:auto!important;max-height:none!important;}
 html,body{height:auto;overflow-y:auto;}
@@ -962,11 +1293,7 @@ html,body{height:auto;overflow-y:auto;}
                                 mount.appendChild(it);
 
                                 // Resolve name
-                                resolveDisplayName(r, anonCounter++).then(name => {
-                                    head.textContent = `${name} • ${nTime(r)}`;
-                                }).catch(() => {
-                                    head.textContent = `User#${nAuthorId(r) ?? 0} • ${nTime(r)}`;
-                                });
+                                setAuthorLine(head, r, anonCounter++);
                             }
                         }
                         mount.__loaded = true;
@@ -1083,12 +1410,7 @@ html,body{height:auto;overflow-y:auto;}
                         }
 
                         // Resolve name (async)
-                        resolveDisplayName(c, anonCounter++).then(name => {
-                            head.textContent = `${name} • ${nTime(c)}`;
-                        }).catch(() => {
-                            const uid = nAuthorId(c);
-                            head.textContent = `${uid != null ? 'User#' + uid : 'User#0'} • ${nTime(c)}`;
-                        });
+                        setAuthorLine(head, c, anonCounter++);
 
                         list.appendChild(it);
                         loaded++;

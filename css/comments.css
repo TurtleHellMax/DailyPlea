@@ -100,3 +100,18 @@
     border: 1px solid var(--c-border);
     border-radius: 999px;
 }
+
+.comments .comment__top {
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    gap: var(--c-gap);
+    align-items: start;
+}
+
+.comments .comment__avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #e5e7eb;
+}

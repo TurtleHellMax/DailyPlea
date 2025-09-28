@@ -17,7 +17,7 @@ function resolveUid(req) {
     return row ? row.user_id : 0;
 }
 
-// Use the same filename and semantics as routes-auth.js
+// banned/reserved names
 const BANNED_PATH = path.join(__dirname, 'banned-usernames.txt');
 function loadBannedSet() {
     try {
@@ -41,10 +41,7 @@ const RESERVED_SET = new Set([
 ]);
 
 const USERNAME_RE = /^[A-Za-z0-9_]{3,24}$/;
-
-function usernameValid(u) {
-    return USERNAME_RE.test(String(u || '').trim());
-}
+function usernameValid(u) { return USERNAME_RE.test(String(u || '').trim()); }
 function usernameBanned(u) {
     const lu = String(u || '').trim().toLowerCase();
     return BANNED_SET.has(lu) || RESERVED_SET.has(lu);
@@ -58,6 +55,8 @@ function usernameTakenAnywhere(u, exceptUserId = 0) {
     ).get(exceptUserId | 0, u, u);
     return !!row;
 }
+function emailValid(e) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(e || '')); }
+function phoneValid(p) { return /^\+?[0-9]{7,15}$/.test(String(p || '')); }
 
 // server-side password policy (same as routes-auth)
 function validatePassword(pw) {
@@ -69,68 +68,93 @@ function validatePassword(pw) {
     return { ok: true };
 }
 
-function emailValid(e) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(e || '')); }
-function phoneValid(p) { return /^\+?[0-9]{7,15}$/.test(String(p || '')); }
+// scrub public fields (no IDs, no email/phone)
+function scrubPublic(u, meId = 0) {
+    if (!u) return null;
+    return {
+        username: u.username || null,
+        first_username: u.first_username || null,
+        profile_photo: u.profile_photo || null,
+        received_likes: u.received_likes | 0,
+        received_dislikes: u.received_dislikes | 0,
+        created_at: u.created_at,
+        updated_at: u.updated_at,
+        is_me: !!(u.__owner_id && u.__owner_id === meId) // internal marker carried by queries below
+    };
+}
+
+/* ---------------- queries ---------------- */
+
+const Q_PUBLIC_BY_FIRST = `
+  SELECT
+    username,
+    first_username,
+    profile_photo,
+    received_likes,
+    received_dislikes,
+    created_at,
+    updated_at
+  FROM users
+  WHERE LOWER(first_username) = LOWER(?)
+  LIMIT 1
+`;
+
+const Q_PUBLIC_BY_USERNAME = `
+  SELECT
+    username,
+    first_username,
+    profile_photo,
+    received_likes,
+    received_dislikes,
+    created_at,
+    updated_at
+  FROM users
+  WHERE LOWER(username) = LOWER(?)
+  LIMIT 1
+`;
 
 /* ---------------- routes ---------------- */
 
 /**
  * GET /api/users/:slug
  * Public profile by first_username (case-insensitive)
+ * Kept for compatibility with your existing frontend.
  */
 router.get('/users/:slug', (req, res) => {
     const slug = String(req.params.slug || '').trim();
     if (!slug) return res.status(400).json({ error: 'bad_slug' });
 
-    const u = db.prepare(`
-    SELECT id, username, first_username, profile_photo,
-           created_at, received_likes, received_dislikes
-    FROM users
-    WHERE LOWER(first_username) = LOWER(?)
-    LIMIT 1
-  `).get(slug);
+    const meId = resolveUid(req);
+    const row = db.prepare(Q_PUBLIC_BY_FIRST).get(slug);
+    if (!row) return res.status(404).json({ error: 'not_found' });
 
-    if (!u) return res.status(404).json({ error: 'not_found' });
-    res.json({ user: u });
+    // Add ephemeral owner marker to compute is_me without returning ids
+    const ownerId = db.prepare('SELECT id FROM users WHERE LOWER(first_username)=LOWER(?)').get(slug)?.id || 0;
+    const user = scrubPublic({ ...row, __owner_id: ownerId }, meId);
+    return res.json({ ok: true, user });
 });
 
 /**
  * GET /api/users/by-first/:slug
- * Same as above but explicitly named; scrubs PII for non-owners
+ * Same as above, explicit name.
  */
 router.get('/users/by-first/:slug', (req, res) => {
     const slug = String(req.params.slug || '').trim();
     if (!slug) return res.status(400).json({ error: 'bad_slug' });
 
-    const u = db.prepare(`
-    SELECT id, username, first_username, email, phone, profile_photo,
-           created_at, received_likes, received_dislikes, is_admin
-    FROM users
-    WHERE LOWER(first_username) = LOWER(?)
-    LIMIT 1
-  `).get(slug);
+    const meId = resolveUid(req);
+    const row = db.prepare(Q_PUBLIC_BY_FIRST).get(slug);
+    if (!row) return res.status(404).json({ error: 'not_found' });
 
-    if (!u) return res.status(404).json({ error: 'not_found' });
-
-    const me = resolveUid(req);
-    const is_me = me === u.id;
-
-    const scrubbed = {
-        id: u.id,
-        username: u.username,
-        first_username: u.first_username,
-        profile_photo: u.profile_photo,
-        created_at: u.created_at,
-        received_likes: u.received_likes,
-        received_dislikes: u.received_dislikes,
-        is_me
-    };
-    res.json({ ok: true, user: scrubbed });
+    const ownerId = db.prepare('SELECT id FROM users WHERE LOWER(first_username)=LOWER(?)').get(slug)?.id || 0;
+    const user = scrubPublic({ ...row, __owner_id: ownerId }, meId);
+    return res.json({ ok: true, user });
 });
 
 /**
  * PATCH /api/users/by-first/:slug
- * Edit profile (owner or admin). Accepts { username?, email?, phone?, profile_photo?, password?, current_password? }
+ * Edit profile (owner or admin).
+ * Accepts { username?, email?, phone?, profile_photo?, password?, current_password? }
  */
 router.patch('/users/by-first/:slug', requireAuth, async (req, res) => {
     const slug = String(req.params.slug || '').trim();
@@ -151,14 +175,10 @@ router.patch('/users/by-first/:slug', requireAuth, async (req, res) => {
 
     // username validation (if provided)
     if (username !== undefined) {
-        if (username === null || username === '') {
-            return res.status(400).json({ error: 'invalid_username' });
-        }
+        if (username === null || username === '') return res.status(400).json({ error: 'invalid_username' });
         if (!usernameValid(username)) return res.status(400).json({ error: 'invalid_username' });
         if (usernameBanned(username)) return res.status(400).json({ error: 'username_banned' });
-        if (usernameTakenAnywhere(username, target.id)) {
-            return res.status(409).json({ error: 'username_taken' });
-        }
+        if (usernameTakenAnywhere(username, target.id)) return res.status(409).json({ error: 'username_taken' });
     }
 
     // email/phone format (if provided)
@@ -185,7 +205,7 @@ router.patch('/users/by-first/:slug', requireAuth, async (req, res) => {
     }
 
     try {
-        const out = db.transaction(() => {
+        const updatedPublic = db.transaction(() => {
             // Uniqueness checks for email/phone when changing
             if (email !== undefined) {
                 const dupEmail = db.prepare(
@@ -201,21 +221,49 @@ router.patch('/users/by-first/:slug', requireAuth, async (req, res) => {
             }
 
             // Update users (only provided fields)
-            if (username !== undefined || email !== undefined || profile_photo !== undefined || phone !== undefined) {
-                db.prepare(`
-          UPDATE users
-             SET username = COALESCE(?, username),
-                 email = CASE WHEN ? IS NULL OR ? = '' THEN NULL ELSE ? END,
-                 phone = CASE WHEN ? IS NULL OR ? = '' THEN NULL ELSE ? END,
-                 profile_photo = COALESCE(?, profile_photo)
-           WHERE id = ?
-        `).run(
-                    username ?? null,
-                    email, email, email,
-                    phone, phone, phone,
-                    profile_photo ?? null,
-                    target.id
-                );
+            // Update users (only provided fields)
+            const sets = [];
+            const params = [];
+
+            // username
+            if (username !== undefined) {
+                sets.push('username = ?');
+                params.push(username);
+            }
+
+            // email (tri-state: missing=keep, ''|null=clear, value=set)
+            if (email !== undefined) {
+                if (email === null || email === '') {
+                    sets.push('email = NULL');
+                } else {
+                    sets.push('email = ?');
+                    params.push(email);
+                }
+            }
+
+            // phone (tri-state)
+            if (phone !== undefined) {
+                if (phone === null || phone === '') {
+                    sets.push('phone = NULL');
+                } else {
+                    sets.push('phone = ?');
+                    params.push(phone);
+                }
+            }
+
+            // profile photo (let empty/null clear)
+            if (profile_photo !== undefined) {
+                if (profile_photo === null || profile_photo === '') {
+                    sets.push('profile_photo = NULL');
+                } else {
+                    sets.push('profile_photo = ?');
+                    params.push(profile_photo);
+                }
+            }
+
+            if (sets.length) {
+                db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`)
+                    .run(...params, target.id);
             }
 
             // Update password if requested
@@ -227,22 +275,73 @@ router.patch('/users/by-first/:slug', requireAuth, async (req, res) => {
         `).run(target.id, newPwdHash);
             }
 
-            return db.prepare(`
-        SELECT id, username, first_username, profile_photo, created_at,
-               received_likes, received_dislikes
+            // Return fresh public row (no id)
+            const pub = db.prepare(`
+        SELECT username, first_username, profile_photo,
+               received_likes, received_dislikes, created_at, updated_at
         FROM users WHERE id = ?
       `).get(target.id);
+
+            return pub;
         })();
 
-        const meId = resolveUid(req);
-        res.json({ ok: true, user: { ...out, is_me: meId === target.id } });
+        const user = scrubPublic({ ...updatedPublic, __owner_id: target.id }, req.userId);
+        return res.json({ ok: true, user });
     } catch (e) {
         if (e && (e.message === 'email_taken' || e.message === 'phone_taken')) {
             return res.status(409).json({ error: e.message });
         }
         console.error('PROFILE_UPDATE_ERR', e);
-        res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+        return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
     }
+});
+
+/**
+ * GET /api/users/by_username/:username
+ * Public read by *current* username (case-insensitive)
+ * Used by the comment author link resolver.
+ */
+router.get('/users/by_username/:username', (req, res) => {
+    const uname = String(req.params.username || '').trim();
+    if (!uname) return res.status(400).json({ error: 'missing_username' });
+
+    const meId = resolveUid(req);
+    const row = db.prepare(Q_PUBLIC_BY_USERNAME).get(uname);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+
+    const ownerId = db.prepare('SELECT id FROM users WHERE LOWER(username)=LOWER(?)').get(uname)?.id || 0;
+    const user = scrubPublic({ ...row, __owner_id: ownerId }, meId);
+    return res.json({ ok: true, user });
+});
+
+/**
+ * GET /api/users/resolve?username=foo
+ * Same as above but query param style.
+ */
+router.get('/users/resolve', (req, res) => {
+    const uname = String(req.query.username || '').trim();
+    if (!uname) return res.status(400).json({ error: 'missing_username' });
+
+    const meId = resolveUid(req);
+    const row = db.prepare(Q_PUBLIC_BY_USERNAME).get(uname);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+
+    const ownerId = db.prepare('SELECT id FROM users WHERE LOWER(username)=LOWER(?)').get(uname)?.id || 0;
+    const user = scrubPublic({ ...row, __owner_id: ownerId }, meId);
+    return res.json({ ok: true, user });
+});
+
+/**
+ * GET /api/users/first_of/:username
+ * Ultra-light resolver (only first_username) by current username (case-insensitive).
+ * Optional, but handy if you ever want a minimal payload.
+ */
+router.get('/users/first_of/:username', (req, res) => {
+    const uname = String(req.params.username || '').trim();
+    if (!uname) return res.status(400).json({ error: 'missing_username' });
+    const row = db.prepare(`SELECT first_username FROM users WHERE LOWER(username)=LOWER(?) LIMIT 1`).get(uname);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true, first_username: row.first_username });
 });
 
 module.exports = { router };

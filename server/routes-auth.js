@@ -101,15 +101,46 @@ function createSession(res, userId, req) {
     });
 }
 
+function isExpired(iso) { return new Date(iso) < new Date(); }
+
 function requireAuth(req, res, next) {
     const sid = req.cookies.sid;
     if (!sid) return res.status(401).json({ error: 'not_authenticated' });
+
     const sess = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sid);
     if (!sess) return res.status(401).json({ error: 'invalid_session' });
+    if (isExpired(sess.expires_at)) {
+        try { db.prepare('DELETE FROM sessions WHERE id = ?').run(sid); } catch { }
+        res.clearCookie('sid', { path: '/' });
+        return res.status(401).json({ error: 'session_expired' });
+    }
+
     try { db.prepare('UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?').run(sid); } catch { }
     req.userId = sess.user_id;
     next();
 }
+
+router.get('/me', (req, res) => {
+    const sid = req.cookies && req.cookies.sid;
+    if (!sid) return res.json({ ok: true, user: null });
+
+    const sess = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sid);
+    if (!sess || isExpired(sess.expires_at)) {
+        if (sess) { try { db.prepare('DELETE FROM sessions WHERE id = ?').run(sid); } catch { } }
+        res.clearCookie('sid', { path: '/' });
+        return res.json({ ok: true, user: null });
+    }
+
+    const row = db.prepare(`
+    SELECT
+      u.id, u.username, u.first_username, u.email, u.phone,
+      u.profile_photo, u.is_admin, u.created_at, u.updated_at
+    FROM users u WHERE u.id = ?
+    LIMIT 1
+  `).get(sess.user_id);
+
+    return res.json({ ok: true, user: row || null });
+});
 
 /* ========= Email OTP (dev 2FA) ========= */
 
@@ -147,6 +178,13 @@ function verifyEmailOtp(userId, code) {
     if (new Date(row.expires_at) < new Date()) return { ok: false, reason: 'email_otp_expired' };
     db.prepare('UPDATE email_otp SET used_at = CURRENT_TIMESTAMP WHERE id = ?').run(row.id);
     return { ok: true };
+}
+
+function selectPublicUser(id) {
+    return db.prepare(`
+    SELECT id, username, first_username, email, phone, profile_photo, is_admin, created_at, updated_at
+    FROM users WHERE id = ? LIMIT 1
+  `).get(id);
 }
 
 /* ========= Register (REQUIRES username) ========= */
@@ -214,9 +252,8 @@ router.post('/register', async (req, res) => {
         });
 
         const userId = tx(email, phone, uname, hash);
-
         createSession(res, userId, req);
-        res.json({ ok: true, userId, username: uname });
+        res.json({ ok: true, user: selectPublicUser(userId) });
     } catch (err) {
         if (/SQLITE_CONSTRAINT|UNIQUE/i.test(String(err))) {
             // could be username, first_username, email, or phone unique hits
@@ -267,7 +304,7 @@ router.post('/login', async (req, res) => {
 
         // No second factor
         createSession(res, user.id, req);
-        res.json({ ok: true });
+        res.json({ ok: true, user: selectPublicUser(user.id) });
     } catch (err) {
         console.error('LOGIN_ERROR:', err);
         res.status(500).json({ error: 'server_error', detail: String(err?.message || err) });
@@ -283,15 +320,30 @@ router.post('/logout', (req, res) => {
 });
 
 router.get('/me', (req, res) => {
-    const sid = req.cookies.sid;
-    if (!sid) return res.json({ user: null });
-    const sess = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sid);
-    if (!sess) return res.json({ user: null });
-    const user = db.prepare(`
-    SELECT id, email, phone, role, username, first_username, created_at
-    FROM users WHERE id = ?
-  `).get(sess.user_id);
-    res.json({ user: user || null });
+    const sid = req.cookies && req.cookies.sid;
+    if (!sid) return res.json({ ok: true, user: null });
+
+    const row = db.prepare(`
+    SELECT
+      u.id,
+      u.username,
+      u.first_username,
+      u.email,
+      u.phone,
+      u.profile_photo,
+      u.is_admin,
+      u.created_at,
+      u.updated_at
+    FROM sessions s
+    JOIN users u ON u.id = s.user_id
+    WHERE s.id = ?
+    LIMIT 1
+  `).get(sid);
+
+    if (!row) return res.json({ ok: true, user: null });
+
+    // Always return { user: { … } } with username present
+    res.json({ ok: true, user: row });
 });
 
 /* ========= TOTP 2FA (authenticator app) ========= */
@@ -340,6 +392,28 @@ router.post('/password/reset/request', (req, res) => {
     );
 
     res.json({ ok: true });
+});
+
+router.get('/me', (req, res) => {
+    const sid = req.cookies && req.cookies.sid;
+    if (!sid) return res.json({ ok: true, user: null });
+
+    const sess = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sid);
+    if (!sess || isExpired(sess.expires_at)) {
+        if (sess) { try { db.prepare('DELETE FROM sessions WHERE id = ?').run(sid); } catch { } }
+        res.clearCookie('sid', { path: '/' });
+        return res.json({ ok: true, user: null });
+    }
+
+    const row = db.prepare(`
+    SELECT
+      u.id, u.username, u.first_username, u.email, u.phone,
+      u.profile_photo, u.is_admin, u.created_at, u.updated_at
+    FROM users u WHERE u.id = ?
+    LIMIT 1
+  `).get(sess.user_id);
+
+    return res.json({ ok: true, user: row || null });
 });
 
 router.post('/password/reset/confirm', async (req, res) => {
