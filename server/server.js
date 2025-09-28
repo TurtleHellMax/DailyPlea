@@ -136,8 +136,14 @@ app.get('/pleas/:id', (req, res, next) => {
 });
 
 // serve the user profile shell (same idea as /pleas/:id)
+app.get('/user/:slug/edit', (req, res, next) => {
+    const f = path.join(WEB_ROOT, 'web', 'user.html'); // editor shell
+    res.sendFile(f, err => err ? next() : undefined);
+});
+
+// VIEW page (separate, lightweight display shell)
 app.get('/user/:slug', (req, res, next) => {
-    const f = path.join(WEB_ROOT, 'web', 'user.html'); // <repo>/web/user.html
+    const f = path.join(WEB_ROOT, 'web', 'user-view.html'); // new viewer shell
     res.sendFile(f, err => err ? next() : undefined);
 });
 

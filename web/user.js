@@ -410,10 +410,26 @@ console.log("[user.js] loaded");
 
         try {
             await fetchCsrf();
-            const res = await api("/users/by-first/" + encodeURIComponent(state.slug), {
-                method: "PATCH",
-                body: JSON.stringify(body)
-            });
+            let res;
+            try {
+                res = await api(`/users/by-first/${encodeURIComponent(state.slug)}`, {
+                    method: "PATCH",
+                    body: JSON.stringify(body)
+                });
+            } catch (e1) {
+                try {
+                    res = await api(`/users/by_username/${encodeURIComponent(state.slug)}`, {
+                        method: "PATCH",
+                        body: JSON.stringify(body)
+                    });
+                } catch (e2) {
+                    // last-resort: some servers accept /users/:idOrSlug
+                    res = await api(`/users/${encodeURIComponent(state.slug)}`, {
+                        method: "PATCH",
+                        body: JSON.stringify(body)
+                    });
+                }
+            }
 
             const updated = res.user || {};
             // Merge updated user into local state so header/me stay in sync
@@ -506,11 +522,26 @@ console.log("[user.js] loaded");
         setMsg(msgPhoto, "");
     }
 
+    function extractSlugFromPath(path) {
+        // strip trailing slash
+        const p = path.replace(/\/+$/, '');
+        // preferred: /user/<slug> or /user/<slug>/edit
+        const m = p.match(/^\/user\/([^\/?#]+)(?:\/edit)?(?:[\/?#]|$)/i);
+        if (m) return decodeURIComponent(m[1]);
+
+        // fallback: find "user" segment and take the next segment
+        const parts = p.split('/').filter(Boolean);
+        const i = parts.indexOf('user');
+        if (i !== -1 && parts[i + 1]) return decodeURIComponent(parts[i + 1]);
+
+        return '';
+    }
+
     /* ============ Load profile + me, fill header/form ============ */
     async function load() {
         // slug from /user/:slug
         const parts = location.pathname.split("/").filter(Boolean);
-        state.slug = decodeURIComponent(parts[parts.length - 1] || "");
+        state.slug = extractSlugFromPath(location.pathname);
         $id("hdr-slug").textContent = state.slug;
         console.log("[user.js] loading profile for slug:", state.slug);
 
