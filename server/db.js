@@ -32,9 +32,12 @@ function ensureUsersTable() {
         id                INTEGER PRIMARY KEY AUTOINCREMENT,
         email             TEXT,
         phone             TEXT,
-        username          TEXT,         -- current handle (nullable until set)
-        first_username    TEXT,         -- immutable slug seed (/user/:first_username)
+        username          TEXT,
+        first_username    TEXT,
         profile_photo     TEXT,
+        /* NEW: bios */
+        bio_html          TEXT,        -- sanitized rich text (preferred)
+        bio               TEXT,        -- legacy/plain fallback
         role              TEXT NOT NULL DEFAULT 'user',
         is_admin          INTEGER NOT NULL DEFAULT 0,
         received_likes    INTEGER NOT NULL DEFAULT 0,
@@ -54,35 +57,15 @@ function ensureUsersTable() {
     FOR EACH ROW BEGIN
         UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
     END;
-    `);
-    db.exec(`
-      DROP TRIGGER IF EXISTS trg_users_first_un_set_on_insert;
-      CREATE TRIGGER trg_users_first_un_set_on_insert
-      AFTER INSERT ON users
-      FOR EACH ROW
-      WHEN NEW.first_username IS NULL AND NEW.username IS NOT NULL
-      BEGIN
-        UPDATE users
-          SET first_username = NEW.username
-          WHERE id = NEW.id AND first_username IS NULL;
-      END;
-
-      DROP TRIGGER IF EXISTS trg_users_first_un_backfill_on_username_update;
-      CREATE TRIGGER trg_users_first_un_backfill_on_username_update
-      AFTER UPDATE OF username ON users
-      FOR EACH ROW
-      WHEN NEW.first_username IS NULL AND NEW.username IS NOT NULL
-      BEGIN
-        UPDATE users
-          SET first_username = COALESCE(first_username, NEW.username)
-          WHERE id = NEW.id AND first_username IS NULL;
-      END;
-    `);
+  `);
 
     // Safety adds on old DBs
     const want = [
         `email TEXT`, `phone TEXT`, `username TEXT`, `first_username TEXT`,
-        `profile_photo TEXT`, `role TEXT NOT NULL DEFAULT 'user'`,
+        `profile_photo TEXT`,
+        `bio_html TEXT`,                    // <-- add
+        `bio TEXT`,                         // <-- add
+        `role TEXT NOT NULL DEFAULT 'user'`,
         `is_admin INTEGER NOT NULL DEFAULT 0`,
         `received_likes INTEGER NOT NULL DEFAULT 0`,
         `received_dislikes INTEGER NOT NULL DEFAULT 0`,

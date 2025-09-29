@@ -28,6 +28,8 @@ console.log("[user.js] loaded");
         photoDataUrl: null,
     };
 
+    let bioSaveKey = "bio_html";
+
     // ==== BIO constants ====
     const FONT_STACK_TARGET = "'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif";
     const BIO_ALLOWED_TAGS = new Set(["B", "STRONG", "I", "EM", "SPAN", "BR"]);
@@ -120,6 +122,13 @@ console.log("[user.js] loaded");
         ctx.lineWidth = 2;
         ctx.strokeRect(1, 1, cw - 2, ch - 2);
         ctx.restore();
+    }
+
+    function firstNonEmpty(...vals) {
+        for (const v of vals) {
+            if (typeof v === "string" && v.trim() !== "") return v;
+        }
+        return "";
     }
 
     function paintBlank() {
@@ -335,7 +344,10 @@ console.log("[user.js] loaded");
 
         if (bioEdit) {
             const cleaned = sanitizeBioHTML(bioEdit.innerHTML);
-            if (cleaned !== (state.originalBioHTML || "")) body.bio_html = cleaned;
+            // Be maximally compatible with the API by sending both fields.
+            body.bio_html = cleaned;
+            body.bio = cleaned;
+            console.log("[user.js] saving bio via both bio_html & bio, len:", cleaned.length);
         }
 
         if (Object.keys(body).length === 0) {
@@ -357,6 +369,22 @@ console.log("[user.js] loaded");
             }
 
             const updated = res.user || {};
+
+            const savedHtml = firstNonEmpty(body.bio_html, body.bio, "");
+            if (savedHtml) {
+                state.originalBioHTML = savedHtml;
+                state.bioHTML = savedHtml;
+
+                if (!state.profile) state.profile = {};
+                // Keep in-memory profile consistent regardless of what the backend prefers
+                state.profile.bio_html = savedHtml;
+                state.profile.bio = savedHtml;
+
+                if (bioEdit) bioEdit.innerHTML = savedHtml;
+                if (bioPrev) { bioPrev.innerHTML = savedHtml; applyPreviewClamp(); checkBioFits(); }
+                setBioMessage("Bio saved.", true);
+            }
+
             if (state.me && updated.id === state.me.id) state.me = { ...state.me, ...updated };
             if (state.profile && updated.id === state.profile.id) state.profile = { ...state.profile, ...updated };
 
@@ -366,7 +394,6 @@ console.log("[user.js] loaded");
                     : (state.profile.username || state.profile.first_username || state.slug);
 
             if ("profile_photo" in body) setAvatar(state.photoDataUrl);
-            if ("bio_html" in body) state.originalBioHTML = body.bio_html;
 
             if ("username" in body) state.original.username = updated.username || state.original.username;
             if ("email" in body) state.original.email = updated.email || "";
@@ -633,10 +660,8 @@ console.log("[user.js] loaded");
 
         if (!fits) {
             setBioMessage(`Bio exceeds ${BIO_MAX_LINES} lines. Trim text or reduce size.`);
-            if (btnSave) btnSave.disabled = true;
         } else {
             setBioMessage("");
-            if (btnSave) btnSave.disabled = false;
         }
         return fits;
     }
@@ -669,6 +694,33 @@ console.log("[user.js] loaded");
                 next.remove();
             }
         });
+    }
+
+    // Fill editor + preview from last saved bio (if any)
+    function prefillBioFromSaved() {
+        // Choose key by actual content, not mere presence
+        const hasHtml = typeof state.profile?.bio_html === "string" && state.profile.bio_html.trim() !== "";
+        const hasPlain = typeof state.profile?.bio === "string" && state.profile.bio.trim() !== "";
+        bioSaveKey = hasHtml ? "bio_html" : (hasPlain ? "bio" : "bio_html");
+
+        const raw = firstNonEmpty(state.profile?.bio_html, state.profile?.bio, "");
+        const cleaned = sanitizeBioHTML(raw);
+
+        state.originalBioHTML = cleaned;
+        state.bioHTML = cleaned;
+
+        if (bioEdit) {
+            bioEdit.innerHTML = cleaned;
+            placeCaretInsideEnd(bioEdit);
+        }
+        if (bioPrev) {
+            bioPrev.innerHTML = cleaned;
+            applyPreviewClamp();
+            checkBioFits();
+        }
+
+        console.log("[user.js] bio prefill: using key", bioSaveKey, "len:", cleaned.length);
+        setBioMessage(cleaned ? "Loaded saved bio." : "No saved bio yet.");
     }
 
     /* ============ Load profile + me, fill header/form ============ */
@@ -715,14 +767,7 @@ console.log("[user.js] loaded");
             if (bioEdit) { bioEdit.contentEditable = "false"; bioEdit.setAttribute("aria-readonly", "true"); }
         }
 
-        const incomingBio = state.profile.bio_html || state.profile.bio || "";
-        state.originalBioHTML = sanitizeBioHTML(incomingBio);
-
-        if (bioEdit) bioEdit.innerHTML = state.originalBioHTML;
-        if (bioPrev) {
-            bioPrev.innerHTML = state.originalBioHTML;
-            requestAnimationFrame(() => { applyPreviewClamp(); checkBioFits(); });
-        }
+        prefillBioFromSaved();
 
         state.original = {
             username: fUsername?.value || "",

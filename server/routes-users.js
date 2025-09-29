@@ -69,27 +69,31 @@ function validatePassword(pw) {
 }
 
 // scrub public fields (no IDs, no email/phone)
+// add to scrubPublic()
 function scrubPublic(u, meId = 0) {
     if (!u) return null;
     return {
         username: u.username || null,
         first_username: u.first_username || null,
         profile_photo: u.profile_photo || null,
+        bio_html: u.bio_html ?? null,     // <-- add
+        bio: u.bio ?? null,               // <-- add
         received_likes: u.received_likes | 0,
         received_dislikes: u.received_dislikes | 0,
         created_at: u.created_at,
         updated_at: u.updated_at,
-        is_me: !!(u.__owner_id && u.__owner_id === meId) // internal marker carried by queries below
+        is_me: !!(u.__owner_id && u.__owner_id === meId)
     };
 }
 
-/* ---------------- queries ---------------- */
-
+// add columns to both queries:
 const Q_PUBLIC_BY_FIRST = `
   SELECT
     username,
     first_username,
     profile_photo,
+    bio_html,              -- <-- add
+    bio,                   -- <-- add
     received_likes,
     received_dislikes,
     created_at,
@@ -104,6 +108,8 @@ const Q_PUBLIC_BY_USERNAME = `
     username,
     first_username,
     profile_photo,
+    bio_html,              -- <-- add
+    bio,                   -- <-- add
     received_likes,
     received_dislikes,
     created_at,
@@ -171,7 +177,7 @@ router.patch('/users/by-first/:slug', requireAuth, async (req, res) => {
     const amAdmin = !!me?.is_admin;
     if (!amOwner && !amAdmin) return res.status(403).json({ error: 'forbidden' });
 
-    const { username, email, profile_photo, password, current_password, phone } = req.body || {};
+    const { username, email, profile_photo, password, current_password, phone, bio_html, bio } = req.body || {};
 
     // username validation (if provided)
     if (username !== undefined) {
@@ -261,6 +267,20 @@ router.patch('/users/by-first/:slug', requireAuth, async (req, res) => {
                 }
             }
 
+            // Bio (tri-state & dual-field: bio_html and bio kept in sync)
+            if (bio_html !== undefined || bio !== undefined) {
+                const val = (bio_html !== undefined ? bio_html : bio);
+                if (val === null || val === '') {
+                    sets.push('bio_html = NULL');
+                    sets.push('bio = NULL');
+                } else {
+                    sets.push('bio_html = ?');
+                    params.push(String(val));
+                    sets.push('bio = ?');
+                    params.push(String(val));
+                }
+            }
+
             if (sets.length) {
                 db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`)
                     .run(...params, target.id);
@@ -277,10 +297,11 @@ router.patch('/users/by-first/:slug', requireAuth, async (req, res) => {
 
             // Return fresh public row (no id)
             const pub = db.prepare(`
-        SELECT username, first_username, profile_photo,
-               received_likes, received_dislikes, created_at, updated_at
-        FROM users WHERE id = ?
-      `).get(target.id);
+      SELECT username, first_username, profile_photo,
+             bio_html, bio,                       -- <-- add
+             received_likes, received_dislikes, created_at, updated_at
+      FROM users WHERE id = ?
+    `).get(target.id);
 
             return pub;
         })();
