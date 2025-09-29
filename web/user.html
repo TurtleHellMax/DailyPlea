@@ -80,8 +80,18 @@
 
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 16px;
+        }
+
+        @media (max-width: 860px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card.full {
+            grid-column: 1 / -1;
         }
 
         label {
@@ -252,6 +262,76 @@
             color: #c7d2fe;
         }
 
+        /* Shared field chrome (matches your inputs) */
+        .field-box {
+            background: #0d1520;
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 10px 12px;
+        }
+
+        /* Bio editor: same look as inputs */
+        #bio-edit {
+            font-family: 'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+            line-height: 1.25;
+            font-size: 16px;
+            color: var(--text);
+            background: #0d1520;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px;
+            outline: none;
+            /* multiline entry */
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-y: auto;
+            min-height: 72px; /* comfy text area */
+        }
+
+        /* Preview: same look as inputs, fixed line width, 3 lines tall */
+        :root {
+            --bio-line-width: 640px;
+        }
+        /* tweak to match the user-view width */
+        #bio-preview {
+            font-family: 'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+            line-height: 1.25;
+            font-size: 16px;
+            color: var(--text);
+            background: #0d1520;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px;
+            margin-top: 10px;
+            width: min(var(--bio-line-width), 100%);
+            white-space: pre-wrap;
+            word-break: break-word;
+            /* natural height */
+            display: block;
+            overflow: visible;
+            max-height: none;
+        }
+
+        /* Tiny toolbar look */
+        .bio-toolbar {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .bio-toolbar button, .bio-toolbar select {
+            background: #111826;
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 6px 10px;
+            cursor: pointer;
+        }
+
+        .bio-toolbar button:hover {
+            border-color: #2a3646;
+        }
     </style>
     <link rel="stylesheet" href="/web/user-profile.css?v=dev">
 </head>
@@ -347,6 +427,34 @@
                         Tips: drag the image to reposition. Use zoom/rotate. Output is PNG with transparency preserved.
                     </div>
                 </div>
+            </section>
+
+            <section class="card full">
+                <h3 style="margin:0 0 10px">Bio</h3>
+
+                <label for="bio-edit">
+                    Write your bio <span class="muted">(bold, italic, size)</span>
+                </label>
+
+                <div id="bio-edit" class="bio-edit" contenteditable="true" spellcheck="false"></div>
+
+                <div class="bio-toolbar">
+                    <button type="button" id="bio-bold" title="Bold"><b>B</b></button>
+                    <button type="button" id="bio-italic" title="Italic"><i>I</i></button>
+                    <select id="bio-size" title="Text size">
+                        <option value="1">Normal</option>
+                        <option value="0.9">Small</option>
+                        <option value="1.2">Large</option>
+                        <option value="1.4">XL</option>
+                    </select>
+                </div>
+
+                <!-- Preview directly beneath the entry field -->
+                <label class="muted" style="display:block;margin-top:10px">Preview (exactly as it will appear)</label>
+                <div id="bio-preview"></div>
+
+                <div id="msg-bio" class="msg"></div>
+                <div class="note">Max three lines in preview. (We’ll enforce overflow in JS.)</div>
             </section>
         </div>
 
