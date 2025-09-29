@@ -365,4 +365,68 @@ router.get('/users/first_of/:username', (req, res) => {
     return res.json({ ok: true, first_username: row.first_username });
 });
 
+// GET /api/users/:slug/activity?offset=0&limit=10
+// Public: lists this user's own comments, ordered by plea_num desc, then newest first.
+// Each item may include "parent" (the comment they replied to) for context.
+router.get('/users/:slug/activity', (req, res) => {
+    const slug = String(req.params.slug || '').trim();
+    if (!slug) return res.status(400).json({ error: 'bad_slug' });
+
+    // Find the target user id by first_username
+    const userRow = db.prepare(
+        `SELECT id FROM users WHERE LOWER(first_username)=LOWER(?) LIMIT 1`
+    ).get(slug);
+    if (!userRow) return res.status(404).json({ error: 'not_found' });
+
+    const targetId = userRow.id;
+
+    const offset = Math.max(0, parseInt(req.query.offset || '0', 10) || 0);
+    const limit = Math.max(1, Math.min(50, parseInt(req.query.limit || '10', 10) || 10));
+
+    const totalRow = db.prepare(`SELECT COUNT(*) AS n FROM comments WHERE user_id = ?`).get(targetId);
+    const total = totalRow?.n | 0;
+
+    // Pull a slice of this user's comments; join parent (if reply) for context
+    const rows = db.prepare(`
+    SELECT
+      c.id, c.plea_num, c.parent_id, c.body, c.likes, c.dislikes, c.created_at, c.updated_at,
+      pc.id AS parent_id_join, pc.body AS parent_body, pc.user_id AS parent_user_id, pc.created_at AS parent_created_at,
+      pu.username AS parent_username, pu.first_username AS parent_first_username
+    FROM comments c
+    LEFT JOIN comments pc ON pc.id = c.parent_id
+    LEFT JOIN users pu     ON pu.id = pc.user_id
+    WHERE c.user_id = ?
+    ORDER BY c.plea_num DESC, c.created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(targetId, limit, offset);
+
+    const items = rows.map(r => ({
+        id: r.id,
+        plea_num: r.plea_num,
+        body: r.body,
+        parent_id: r.parent_id || null,
+        likes: r.likes | 0,
+        dislikes: r.dislikes | 0,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        // include context for replies
+        parent: r.parent_id ? {
+            id: r.parent_id_join,
+            body: r.parent_body,
+            author_username: r.parent_username || null,
+            author_first_username: r.parent_first_username || null,
+            created_at: r.parent_created_at
+        } : null
+    }));
+
+    const has_more = offset + items.length < total;
+
+    // Add viewer/owner hint so client can show Edit buttons only for owner
+    const viewerId = (req.cookies && req.cookies.sid)
+        ? (db.prepare('SELECT user_id FROM sessions WHERE id = ?').get(req.cookies.sid)?.user_id || 0)
+        : 0;
+
+    res.json({ ok: true, total, offset, limit, has_more, items, is_me: viewerId === targetId });
+});
+
 module.exports = { router };

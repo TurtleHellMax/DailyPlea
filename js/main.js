@@ -1043,43 +1043,134 @@ document.addEventListener('DOMContentLoaded', () => {
         const s = document.createElement('style');
         s.id = 'dp-comments-theme';
         s.textContent = `
+/* ---------- placement / sizing ---------- */
 #dp-comments-wrap{display:block;width:100%;clear:both;margin-top:28px;grid-column:1/-1;}
 #dp-comments-host{display:block;width:100%;--dp-max-width:640px}
+
+/* ---------- global look ---------- */
 #dp-comments-host, #dp-comments-host *{
   font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,sans-serif !important;
   color:#fff !important;
 }
-#dp-comments-host .dp-shell{max-width:var(--dp-max-width);margin:0 auto;padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:transparent}
-#dp-comments-host .dp-title{text-align:center;font-size:22px;margin:0 0 10px}
-#dp-comments-host .dp-fb-list{max-width:var(--dp-max-width);margin:0 auto;display:grid;gap:18px}
-#dp-comments-host .dp-item{border-top:1px solid rgba(255,255,255,.12);padding-top:12px}
-#dp-comments-host .dp-head{font-size:13px;opacity:.9;text-align:center;margin-bottom:10px}
-#dp-comments-host .dp-body{font-size:17px;white-space:pre-wrap;line-height:1.45}
-#dp-comments-host .dp-actions{display:flex;justify-content:center;gap:10px;margin-top:12px;font-size:14px;flex-wrap:wrap}
-#dp-comments-host .dp-btn, #dp-comments-host .dp-next, #dp-comments-host .dp-fb-post{
-  cursor:pointer;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:6px 10px; transition:all .15s ease;
-}
-#dp-comments-host .dp-btn:hover{border-color:rgba(255,255,255,.5)}
-#dp-comments-host .dp-btn.is-active{background:#1f2937;border-color:#93c5fd;box-shadow:0 0 0 1px rgba(147,197,253,.25) inset}
-#dp-comments-host .dp-btn.is-down{background:#1f2937;border-color:#fca5a5;box-shadow:0 0 0 1px rgba(252,165,165,.25) inset}
-#dp-comments-host .dp-btn[disabled], #dp-comments-host .dp-next[disabled]{opacity:.6;cursor:not-allowed}
-#dp-comments-host .dp-replies{margin-top:10px;border-left:2px solid rgba(255,255,255,.15);padding-left:12px}
-#dp-comments-host .dp-reply{margin-top:12px;opacity:.95}
-#dp-comments-host .dp-fb-pager{display:flex;justify-content:center;align-items:center;margin-top:14px}
-#dp-comments-host .dp-next{margin:0 auto;display:inline-flex}
-#dp-comments-host textarea{font:inherit;background:#0b0f19;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:8px;color:#fff}
-#dp-comments-host .dp-fb-composer-row{display:flex;justify-content:flex-end;margin-top:6px}
+#dp-comments-host a{ color:#fff !important; text-decoration:none }
+#dp-comments-host a:hover{ text-decoration:underline }
 
-/* vendor (light DOM) */
+/* wrapper panel (inline, not visually framed) */
+#dp-comments-host .dp-shell{
+  max-width:var(--dp-max-width);
+  margin:0 auto;
+  padding:12px;
+  background:#000 !important;
+  border:0 !important;   /* no extra frame around the whole block */
+  border-radius:0 !important;
+  box-shadow:none !important;
+}
+
+/* title / list */
+#dp-comments-host .dp-title{text-align:center;font-size:22px;margin:0 0 10px}
+#dp-comments-host .dp-fb-list{max-width:var(--dp-max-width);margin:0 auto;display:grid;gap:12px}
+
+/* ---------- comment card (match profile: black bg, square, white border) ---------- */
+#dp-comments-host .dp-item{
+  background:#000 !important;
+  border:2px solid #fff !important;
+  border-radius:0 !important;
+  padding:12px !important;
+  margin-top:12px !important;
+}
+
+/* meta / body */
+#dp-comments-host .dp-head{
+  font-size:13px;opacity:.95;text-align:center;margin-bottom:10px;
+  user-select:text !important;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+#dp-comments-host .dp-author{text-decoration:none;cursor:pointer;user-select:text!important}
+#dp-comments-host .dp-author:hover{text-decoration:underline}
+#dp-comments-host .dp-avatar{
+  width:28px;height:28px;border-radius:50%;
+  object-fit:cover;background:#000;border:2px solid #fff;
+  flex:0 0 28px;
+}
+#dp-comments-host .dp-avatar.is-fallback{ filter:grayscale(.15); opacity:.9; }
+#dp-comments-host .dp-avatar-link{display:inline-flex;border-radius:50%;text-decoration:none}
+#dp-comments-host .dp-avatar-link:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+#dp-comments-host .dp-body{font-size:17px;white-space:pre-wrap;line-height:1.45;margin-top:0}
+
+/* actions */
+/* actions */
+#dp-comments-host .dp-actions{
+  display:flex;
+  align-items:center;                 /* <-- align heights */
+  justify-content:center;
+  gap:10px;
+  margin-top:12px;
+  font-size:14px;
+  flex-wrap:wrap;
+}
+
+/* all comment buttons share the same metrics */
+#dp-comments-host .dp-btn,
+#dp-comments-host .dp-next,
+#dp-comments-host .dp-fb-post{
+  cursor:pointer;
+  background:#000 !important;
+  color:#fff !important;
+  border:2px solid #fff !important;
+  border-radius:0 !important;
+
+  /* unified sizing */
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  box-sizing:border-box;
+  min-height:36px;                    /* <-- same height */
+  padding:0 12px;                     /* <-- same padding */
+  line-height:1;                      /* <-- no extra vertical space */
+  font-size:14px;                     /* <-- same font size */
+
+  transition:none;
+}
+
+#dp-comments-host .dp-btn:hover{ filter:brightness(1.05) }
+#dp-comments-host .dp-btn.is-active{ box-shadow:0 0 0 2px rgba(255,255,255,.18) inset }
+#dp-comments-host .dp-btn.is-down{   box-shadow:0 0 0 2px rgba(255,255,255,.10) inset }
+#dp-comments-host .dp-btn[disabled], #dp-comments-host .dp-next[disabled]{opacity:.6;cursor:not-allowed}
+
+/* replies: no left rail; each reply is its own card */
+#dp-comments-host .dp-replies{
+  margin-top:10px;padding-left:0;border-left:0 !important;
+}
+#dp-comments-host .dp-reply{
+  margin-top:12px;opacity:.95;
+  background:#000 !important;border:2px solid #fff !important;border-radius:0 !important;
+  padding:10px;
+}
+
+/* composer */
+#dp-comments-host textarea{
+  font:inherit;background:#000 !important;color:#fff !important;
+  border:2px solid #fff !important;border-radius:0 !important;padding:8px;width:100%;
+}
+#dp-comments-host .dp-fb-composer-row{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;            /* <-- add this */
+  margin-top:6px;
+}
+
+/* vendor (light DOM) equivalents */
 #dp-comments-host .dp-comments,
 #dp-comments-host .dp-c-panel,
 #dp-comments-host .dp-list,
 #dp-comments-host .dp-item,
 #dp-comments-host .dp-c-composer{max-width:var(--dp-max-width);margin:0 auto;}
-#dp-comments-host .dp-c-panel{background:transparent!important;border:1px solid rgba(255,255,255,.12)!important;padding:12px;}
+#dp-comments-host .dp-c-panel{
+  background:#000 !important;border:2px solid #fff !important;border-radius:0 !important;padding:12px;
+}
 #dp-comments-host .dp-c-title{font-size:22px;}
 #dp-comments-host .dp-meta{font-size:13px;text-align:center;margin-bottom:10px;}
-#dp-comments-host .dp-body{font-size:17px;margin-top:0;}
 #dp-comments-host .dp-actions .dp-btn{font-size:inherit;}
 
 /* pager centering */
@@ -1089,27 +1180,11 @@ document.addEventListener('DOMContentLoaded', () => {
 #dp-comments-host .dp-pager > *, #dp-comments-host .dp-fb-pager > *{ float:none !important; margin:0 auto !important; display:inline-flex !important; }
 #dp-comments-host .dp-pager .dp-prev{ display:none !important; }
 
-#dp-comments-host .dp-head { user-select: text !important; }
-#dp-comments-host .dp-author {
-  text-decoration: none;
-  cursor: pointer;
-  user-select: text !important;
-}
-#dp-comments-host .dp-author:hover { text-decoration: underline; }
-#dp-comments-host .dp-head{
-  display:flex; align-items:center; justify-content:center; gap:8px;
-}
-#dp-comments-host .dp-avatar{
-  width:28px; height:28px; border-radius:50%;
-  object-fit:cover; background:#1f2937; flex:0 0 28px;
-}
-#dp-comments-host .dp-avatar.is-fallback{ filter:grayscale(.15); opacity:.9; }
-#dp-comments-host .dp-avatar-link{display:inline-flex;border-radius:50%;text-decoration:none}
-#dp-comments-host .dp-avatar-link:focus-visible{outline:2px solid #93c5fd;outline-offset:2px}
+#dp-comments-host .dp-replies-empty { opacity:.75; font-size:14px; }
 
-/* one-page body scroll as before */
+/* page scroll remains normal */
 .container{overflow:visible!important;height:auto!important;max-height:none!important;}
-html,body{height:auto;overflow-y:auto;}
+html,body{height:auto;overflow-y:auto;background:#000;}
 `;
         document.head.appendChild(s);
     }
@@ -1170,6 +1245,8 @@ html,body{height:auto;overflow-y:auto;}
                     await apiPostComment(pleaNum, text);
                     page = 1; loaded = 0; list.innerHTML = ''; await addPage(true);
                 });
+                const row = $e('div', 'dp-fb-composer-row');
+                row.style.gap = '10px';
                 shell.appendChild(topComp.wrap);
 
                 const list = $e('div', 'dp-fb-list');
@@ -1184,14 +1261,13 @@ html,body{height:auto;overflow-y:auto;}
 
                 let page = 1, page_size = 10, total = 0, loaded = 0, lastBatchLen = 0, anonCounter = 1;
 
-                function buildManageRow(c, itemBodyEl) {
-                    const row = $e('div', 'dp-actions');
+                function buildManageButtons(c, itemBodyEl) {
+                    const frag = document.createDocumentFragment();
                     const allowEdit = canEdit(c, me);
                     const allowDelete = canDelete(c, me);
 
                     if (allowEdit) {
                         const editBtn = $e('button', 'dp-btn', 'Edit');
-                        row.appendChild(editBtn);
                         editBtn.addEventListener('click', () => {
                             const currentText = itemBodyEl.textContent || '';
                             const editor = document.createElement('textarea');
@@ -1227,11 +1303,11 @@ html,body{height:auto;overflow-y:auto;}
                                 }
                             });
                         });
+                        frag.appendChild(editBtn);
                     }
 
                     if (allowDelete) {
                         const delBtn = $e('button', 'dp-btn', 'Delete');
-                        row.appendChild(delBtn);
                         delBtn.addEventListener('click', async () => {
                             if (!confirm('Delete this comment?')) return;
                             delBtn.disabled = true;
@@ -1244,66 +1320,67 @@ html,body{height:auto;overflow-y:auto;}
                                 alert(String(e?.message || e));
                             }
                         });
+                        frag.appendChild(delBtn);
                     }
 
-                    return row;
+                    return frag;
                 }
 
                 async function loadReplies(c, mount, forceReload) {
-                    if (mount.__loaded && !forceReload) return;
+                    if (mount.__loaded && !forceReload) return mount.__count ?? 0;
                     mount.textContent = 'Loading replies…';
                     try {
                         const reps = await apiReplies(pleaNum, nId(c));
                         mount.innerHTML = '';
                         if (!reps.length) {
-                            mount.appendChild($e('div', 'dp-reply', '(No replies)'));
+                            // use a distinct class so we don't count it as a reply
+                            mount.appendChild($e('div', 'dp-replies-empty', '(No replies)'));
                         } else {
                             for (const r of reps) {
                                 const it = $e('div', 'dp-reply');
-                                const head = $e('div', 'dp-head', '…');
-                                it.appendChild(head);
-
-                                const bodyEl = $e('div', 'dp-body', nBody(r));
-                                it.appendChild(bodyEl);
+                                const head = $e('div', 'dp-head', '…'); it.appendChild(head);
+                                const bodyEl = $e('div', 'dp-body', nBody(r)); it.appendChild(bodyEl);
 
                                 const likeBtn = $e('button', 'dp-btn', `▲ ${nUp(r)}`);
                                 const dislikeBtn = $e('button', 'dp-btn', `▼ ${nDown(r)}`);
                                 const actions = $e('div', 'dp-actions');
-                                actions.appendChild(likeBtn);
-                                actions.appendChild(dislikeBtn);
-                                it.appendChild(actions);
+                                actions.appendChild(likeBtn); actions.appendChild(dislikeBtn); it.appendChild(actions);
 
                                 const vc = makeVoteController({
                                     id: nId(r),
                                     initialUps: nUp(r),
                                     initialDowns: nDown(r),
                                     initialMy: nMyVote(r),
-                                    likeBtn,
-                                    dislikeBtn
+                                    likeBtn, dislikeBtn
                                 });
                                 vc.render();
-
                                 if (nMyVote(r) === 0) {
                                     apiGetMyVote(PLEA_NUM, nId(r)).then(v => {
                                         if (v !== vc.state.my) { vc.state.my = v; vc.render(); }
                                     }).catch(() => { });
                                 }
 
-                                actions.appendChild(buildManageRow(r, bodyEl));
+                                actions.appendChild(buildManageButtons(r, bodyEl));
                                 mount.appendChild(it);
-
-                                // Resolve name
                                 setAuthorLine(head, r, anonCounter++);
                             }
                         }
                         mount.__loaded = true;
+                        mount.__count = reps.length;
+                        return reps.length;
                     } catch {
                         mount.innerHTML = '';
                         mount.appendChild($e('div', 'dp-reply', '(Failed to load replies)'));
+                        mount.__loaded = false;
+                        mount.__count = 0;
+                        return 0;
                     }
                 }
 
                 function makeActions(c, isReply = false, itemBodyEl) {
+                    const block = document.createElement('div');
+                    block.className = 'dp-actions-block';
+
                     const row = $e('div', 'dp-actions');
                     const id = nId(c);
 
@@ -1321,44 +1398,67 @@ html,body{height:auto;overflow-y:auto;}
                         dislikeBtn: dislike
                     });
                     vc.render();
-
-                    // ensure highlight if server knows my vote
                     if (nMyVote(c) === 0) {
                         apiGetMyVote(PLEA_NUM, id, 0).then(v => {
                             if (v !== 0) { vc.state.my = v; vc.render(); }
                         }).catch(() => { });
                     }
 
+                    // Reply composer ONLY (no replies list here)
+                    let composerWrap = null;
                     if (!isReply) {
                         const replyBtn = $e('button', 'dp-btn', 'Reply');
                         row.appendChild(replyBtn);
-                        const replyWrap = $e('div', 'dp-replies');
-                        replyWrap.style.display = 'none';
 
                         const replyComp = makeComposer('Write a reply…', async (text) => {
-                            await apiPostReply(pleaNum, id, text);
-                            await loadReplies(c, repliesMount, true);
-                        });
-                        replyComp.wrap.style.marginTop = '8px';
-                        const repliesMount = $e('div', 'dp-replies-list');
-                        replyWrap.appendChild(replyComp.wrap);
-                        replyWrap.appendChild(repliesMount);
+                            await apiPostReply(PLEA_NUM, id, text);
 
-                        replyBtn.addEventListener('click', async () => {
-                            const vis = replyWrap.style.display !== 'none';
-                            replyWrap.style.display = vis ? 'none' : '';
-                            if (!vis && repliesMount.childElementCount === 0 && nRepliesCount(c) > 0) {
-                                await loadReplies(c, repliesMount, false);
+                            const art = itemBodyEl.closest('article');
+                            const dp = art && art.__dp;
+
+                            if (dp) {
+                                dp.toggle.style.display = 'inline-flex';
+                                dp.repliesWrap.style.display = '';
+                                const n = await loadReplies(c, dp.repliesList, true);
+                                dp.toggle.textContent = 'Hide replies';
+                            }
+
+                            const repliesWrap = art?.querySelector(':scope > .dp-replies');
+                            const repliesList = repliesWrap?.querySelector('.dp-replies-list');
+                            if (repliesWrap && repliesList && repliesWrap.style.display !== 'none') {
+                                await loadReplies(c, repliesList, true);
+                            }
+
+                            // --- close the composer after posting
+                            replyComp.textarea.value = '';
+                            replyComp.wrap.style.display = 'none';
+                        }, {
+                            showCancel: true,
+                            onCancel: () => {
+                                replyComp.textarea.value = '';
+                                replyComp.wrap.style.display = 'none';
                             }
                         });
 
-                        row.appendChild(replyWrap);
+                        replyComp.wrap.classList.add('dp-reply-composer');
+                        replyComp.wrap.style.marginTop = '8px';
+                        replyComp.wrap.style.display = 'none';
+                        composerWrap = replyComp.wrap;
+
+                        // Reply button now ONLY opens + focuses (no toggle)
+                        replyBtn.addEventListener('click', () => {
+                            composerWrap.style.display = '';
+                            replyComp.textarea.focus();
+                        });
                     }
 
-                    // management (edit/delete)
-                    row.appendChild(buildManageRow(c, itemBodyEl));
+                    // Edit/Delete on the SAME row
+                    row.appendChild(buildManageButtons(c, itemBodyEl));
 
-                    return row;
+                    block.appendChild(row);
+                    if (composerWrap) block.appendChild(composerWrap); // below the row
+
+                    return block;
                 }
 
                 async function addPage() {
@@ -1389,25 +1489,49 @@ html,body{height:auto;overflow-y:auto;}
                         it.appendChild(makeActions(c, false, bodyEl));
 
                         const rc = nRepliesCount(c);
-                        if (rc > 0) {
-                            const toggle = $e('button', 'dp-btn', `View replies (${rc})`);
-                            const repliesWrap = $e('div', 'dp-replies');
-                            repliesWrap.style.display = 'none';
-                            const repliesMount = $e('div', 'dp-replies-list');
-                            repliesWrap.appendChild(repliesMount);
-                            toggle.addEventListener('click', async () => {
-                                const vis = repliesWrap.style.display !== 'none';
-                                repliesWrap.style.display = vis ? 'none' : '';
-                                toggle.textContent = vis ? `View replies (${rc})` : 'Hide replies';
-                                if (!vis && repliesMount.childElementCount === 0) {
-                                    await loadReplies(c, repliesMount, false);
-                                }
-                            });
-                            const actionsRow = $e('div', 'dp-actions');
-                            actionsRow.appendChild(toggle);
-                            it.appendChild(actionsRow);
-                            it.appendChild(repliesWrap);
+
+                        // Always create a toggle + container, hide toggle if 0 for now
+                        const toggle = $e('button', 'dp-btn', 'View replies (0)');
+                        const repliesWrap = $e('div', 'dp-replies');
+                        repliesWrap.style.display = 'none';
+                        const repliesMount = $e('div', 'dp-replies-list');
+                        repliesWrap.appendChild(repliesMount);
+
+                        const actionsRow = $e('div', 'dp-actions');
+                        actionsRow.appendChild(toggle);
+                        it.appendChild(actionsRow);
+                        it.appendChild(repliesWrap);
+
+                        // stash refs on the article for later (reply composer will use these)
+                        it.__dp = { toggle, repliesWrap, repliesList: repliesMount };
+
+                        // helper to set button label based on visibility + count
+                        function setToggleLabel(count) {
+                            const open = repliesWrap.style.display !== 'none';
+                            toggle.textContent = open ? 'Hide replies' : `View replies (${count})`;
                         }
+
+                        // initial state
+                        if (rc > 0) {
+                            toggle.style.display = 'inline-flex';
+                            setToggleLabel(rc);
+                        } else {
+                            toggle.style.display = 'none';
+                            setToggleLabel(0);
+                        }
+
+                        // click to open/close and keep count accurate
+                        toggle.addEventListener('click', async () => {
+                            const open = repliesWrap.style.display !== 'none';
+                            if (open) {
+                                repliesWrap.style.display = 'none';
+                                setToggleLabel(repliesMount.__count || 0);
+                            } else {
+                                repliesWrap.style.display = '';
+                                const n = await loadReplies(c, repliesMount, false);
+                                setToggleLabel(n); // will show "Hide replies" while open
+                            }
+                        });
 
                         // Resolve name (async)
                         setAuthorLine(head, c, anonCounter++);
@@ -1807,24 +1931,46 @@ function $e(tag, cls, text) {
     if (text != null) n.textContent = text;
     return n;
 }
-function makeComposer(ph = 'Write a comment…', onSubmit) {
+function makeComposer(ph = 'Write a comment…', onSubmit, opts = {}) {
+    const { showCancel = false, onCancel = null } = opts;
+
     const wrap = $e('div', 'dp-fb-composer');
     const ta = document.createElement('textarea');
     ta.placeholder = ph;
     ta.rows = 3;
     ta.style.width = '100%';
     ta.style.resize = 'vertical';
+
     const row = $e('div', 'dp-fb-composer-row');
+
+    // optional Cancel
+    let cancelBtn = null;
+    if (showCancel) {
+        cancelBtn = $e('button', 'dp-btn', 'Cancel');
+        cancelBtn.type = 'button';
+        cancelBtn.addEventListener('click', () => {
+            if (typeof onCancel === 'function') onCancel({ textarea: ta, wrap, postButton: btn });
+        });
+        row.appendChild(cancelBtn);
+    }
+
+    // Post
     const btn = $e('button', 'dp-fb-post', 'Post');
     btn.type = 'button';
     btn.addEventListener('click', async () => {
         const val = ta.value.trim();
         if (!val) return;
         btn.disabled = true;
-        try { await onSubmit(val); ta.value = ''; } finally { btn.disabled = false; }
+        try {
+            await onSubmit(val);
+            ta.value = '';
+        } finally {
+            btn.disabled = false;
+        }
     });
+
     row.appendChild(btn);
     wrap.appendChild(ta);
     wrap.appendChild(row);
-    return { wrap, textarea: ta, button: btn };
+    return { wrap, textarea: ta, button: btn, cancelButton: cancelBtn };
 }
