@@ -15,6 +15,7 @@
             --danger: #f87171;
             --ok: #22c55e;
             --border: #1f2a37;
+            --bw: 2px;
         }
 
         * {
@@ -331,6 +332,23 @@
 
         .bio-toolbar button:hover {
             border-color: #2a3646;
+        }
+
+        #bio-edit,
+        #bio-preview {
+            background: #000 !important;
+            border: var(--bw) solid #fff !important;
+            border-radius: 0 !important;
+        }
+
+            #bio-edit:focus {
+                outline: none !important;
+                box-shadow: none !important;
+            }
+
+        /* Profile picture preview (the round thumb) — thicker white border */
+        .preview .thumb {
+            border: var(--bw) solid #fff !important;
         }
     </style>
     <link rel="stylesheet" href="/web/user-profile.css?v=dev">
