@@ -2,13 +2,22 @@
 (() => {
     'use strict';
 
+    /* ===================== CONFIG / DEBUG ===================== */
+    const DEBUG = true;
+
+    const TAG = '[authOverlay]';
+    const log = (...a) => { if (DEBUG) console.log(TAG, ...a); };
+    const warn = (...a) => { if (DEBUG) console.warn(TAG, ...a); };
+    const group = (name) => { if (!DEBUG) return () => { }; console.groupCollapsed(`${TAG} ${name}`); return () => console.groupEnd(); };
+
     const state = {
         apiBase: 'http://localhost:3000/api',
         csrf: null,
         overlay: null,
+        openedAt: 0,                 // <— NEW
     };
 
-    /* ===================== UTIL & DEBUG ===================== */
+    /* ===================== UTIL ===================== */
 
     const byId = (id) => document.getElementById(id);
 
@@ -31,16 +40,15 @@
             (err.detail ? ` · ${snippet(err.detail, 140)}` : '');
         msg(line);
 
-        console.groupCollapsed(`❌ ${action} failed`);
+        console.groupCollapsed(`❌ ${TAG} ${action} failed`);
         console.error('Error object:', err);
         console.error('Request:', { method: err.method, url: err.url, headers: err.reqHeaders, body: err.reqBody });
         console.error('Response:', { status: err.status, statusText: err.statusText, headers: err.resHeaders, data: err.data, text: err.text });
         console.groupEnd();
     }
 
-    /* ===================== CLIENT-SIDE VALIDATION & SANITIZERS ===================== */
+    /* ===================== VALIDATION / SANITIZERS ===================== */
 
-    // Username: 3–24 alnum + underscore
     const USERNAME_RE = /^[A-Za-z0-9_]{3,24}$/;
     function validateUsername(u) {
         const username = String(u || '').trim();
@@ -51,7 +59,6 @@
         return { ok: true, username };
     }
 
-    // Password policy: >6 and <32; one capital; one number; one symbol
     function validatePassword(pw) {
         const s = String(pw || '');
         const reasons = [];
@@ -62,7 +69,6 @@
         return { ok: reasons.length === 0, reasons };
     }
 
-    // Email / phone sanitizers (mirror server rules)
     function sanitizeEmail(x) {
         const s = String(x || '').trim();
         return s ? s : '';
@@ -87,6 +93,7 @@
 
     async function fetchCsrf() {
         const url = state.apiBase.replace('/api', '') + '/api/csrf';
+        log('fetchCsrf →', url);
         const r = await fetch(url, { credentials: 'include' }).catch((e) => {
             throw {
                 name: 'NetworkError',
@@ -118,6 +125,7 @@
             };
         }
         state.csrf = j.token;
+        log('fetchCsrf ok');
         return j.token;
     }
 
@@ -136,11 +144,13 @@
         }
 
         const reqInfo = { method, url, reqHeaders: headers, reqBody: opts.body, path };
+        const end = group(`api ${method} ${path}`);
 
         let res;
         try {
             res = await fetch(url, { method, credentials: 'include', headers, body: opts.body });
         } catch (e) {
+            end();
             throw {
                 ...reqInfo,
                 name: 'NetworkError',
@@ -155,10 +165,11 @@
         let data = {};
         try { data = text ? JSON.parse(text) : {}; } catch { }
 
+        log('status:', res.status, res.statusText);
         if (!res.ok) {
             const code = (data && (data.error || data.code)) || undefined;
             const message = (data && (data.message || data.msg)) || undefined;
-
+            end();
             throw {
                 ...reqInfo,
                 name: 'HttpError',
@@ -173,36 +184,344 @@
                 detail: snippet(text || message, 300),
             };
         }
-
+        end();
         return (text ? (data || {}) : {});
+    }
+
+    /* ===================== OVERLAY THEME (overwrite-proof) ===================== */
+
+    // put near the top (after state/log helpers)
+    const scrollLock = { onWheel: null, onTouchMove: null, onKey: null, onTouchStart: null };
+
+    function lockScroll(modal) {
+        if (!modal) return;
+        document.body.classList.add('dp-noscroll');
+
+        const canScroll = (el) => el && el.scrollHeight > el.clientHeight;
+
+        // WHEEL: manual scrolling inside modal, block background
+        scrollLock.onWheel = (e) => {
+            // find nearest scrollable inside modal
+            let t = e.target;
+            while (t && t !== modal && t instanceof HTMLElement && !canScroll(t)) t = t.parentElement;
+            const scroller = (t && modal.contains(t) && canScroll(t)) ? t : modal;
+
+            const dy = e.deltaY || 0;
+            const top = scroller.scrollTop;
+            const max = scroller.scrollHeight - scroller.clientHeight;
+            const atTop = top <= 0;
+            const atBottom = top >= max - 1;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            if ((dy < 0 && atTop) || (dy > 0 && atBottom) || max <= 0) return; // no room to scroll
+            scroller.scrollTop = Math.min(max, Math.max(0, top + dy));
+        };
+        window.addEventListener('wheel', scrollLock.onWheel, { passive: false, capture: true });
+
+        // TOUCH: same idea as wheel
+        let lastY = 0;
+        scrollLock.onTouchStart = (e) => { const t = e.touches && e.touches[0]; if (t) lastY = t.clientY; };
+        window.addEventListener('touchstart', scrollLock.onTouchStart, { passive: true, capture: true });
+
+        scrollLock.onTouchMove = (e) => {
+            let t = modal.contains(e.target) ? e.target : modal;
+            while (t && t !== modal && t instanceof HTMLElement && !(t.scrollHeight > t.clientHeight)) t = t.parentElement;
+            const scroller = (t && modal.contains(t)) ? t : modal;
+
+            const touch = e.touches ? e.touches[0] : null;
+            if (!touch) return;
+            const dy = lastY ? lastY - touch.clientY : 0;
+            lastY = touch.clientY;
+
+            const top = scroller.scrollTop;
+            const max = scroller.scrollHeight - scroller.clientHeight;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            if ((dy < 0 && top <= 0) || (dy > 0 && top >= max) || max <= 0) return;
+            scroller.scrollTop = Math.min(max, Math.max(0, top + dy));
+        };
+        window.addEventListener('touchmove', scrollLock.onTouchMove, { passive: false, capture: true });
+
+        // KEYBOARD: space/pgup/pgdn/arrows/home/end
+        scrollLock.onKey = (e) => {
+            const keys = [' ', 'Spacebar', 'Space', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
+            if (!keys.includes(e.key)) return;
+
+            const scroller = modal;
+            const page = scroller.clientHeight * 0.9;
+            let delta = 0;
+
+            if (e.key === 'ArrowDown') delta = 60;
+            if (e.key === 'ArrowUp') delta = -60;
+            if (e.key === 'PageDown' || e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') delta = page;
+            if (e.key === 'PageUp') delta = -page;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (e.key === 'Home') scroller.scrollTop = 0;
+            else if (e.key === 'End') scroller.scrollTop = scroller.scrollHeight;
+            else scroller.scrollTop = Math.min(scroller.scrollHeight, Math.max(0, scroller.scrollTop + delta));
+        };
+        window.addEventListener('keydown', scrollLock.onKey, { capture: true });
+
+        log('scroll lock engaged');
+    }
+
+    function unlockScroll() {
+        document.body.classList.remove('dp-noscroll');
+        if (scrollLock.onWheel) window.removeEventListener('wheel', scrollLock.onWheel, { capture: true });
+        if (scrollLock.onTouchMove) window.removeEventListener('touchmove', scrollLock.onTouchMove, { capture: true });
+        if (scrollLock.onTouchStart) window.removeEventListener('touchstart', scrollLock.onTouchStart, { capture: true });
+        if (scrollLock.onKey) window.removeEventListener('keydown', scrollLock.onKey, { capture: true });
+        scrollLock.onWheel = scrollLock.onTouchMove = scrollLock.onTouchStart = scrollLock.onKey = null;
+        log('scroll lock released');
+    }
+
+    function upsertAuthOverlayTheme() {
+        let s = document.getElementById('dp-auth-overlay-theme');
+        if (!s) {
+            s = document.createElement('style');
+            s.id = 'dp-auth-overlay-theme';
+            s.textContent = `
+/* ===== Auth Overlay — overwrite-proof ===== */
+#dp-overlay, #dp-overlay * {
+  box-sizing: border-box !important;
+  font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
+  color:#fff !important;
+}
+
+/* Body scroll lock */
+body.dp-noscroll { overflow: hidden !important; }
+
+/* Backdrop + container */
+#dp-overlay{
+  position:fixed !important; inset:0 !important;
+  display:none !important; align-items:center !important; justify-content:center !important;
+  background:rgba(0,0,0,.72) !important; z-index:10080 !important;
+  overscroll-behavior: contain !important;
+}
+#dp-overlay.dp-open{ display:flex !important; }
+
+/* Layering / modal surface */
+#dp-overlay .dp-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.6); z-index:0; }
+#dp-overlay .dp-modal{
+  position:relative; z-index:1; display:flex !important; flex-direction:column !important; gap:12px !important;
+  width:min(520px,92vw) !important; max-height:min(90vh,760px) !important;
+  overflow:auto !important; -webkit-overflow-scrolling: touch !important; overscroll-behavior: contain !important;
+  background:#000 !important; color:#fff !important; color-scheme: dark !important;
+  border:2px solid #fff !important; border-radius:0 !important; box-shadow:0 10px 40px rgba(0,0,0,.5) !important;
+  padding:16px 16px 18px !important;
+}
+
+/* Title / muted */
+#dp-overlay h2{ margin:0 0 8px 0 !important; font-size:22px !important; font-weight:700 !important; }
+#dp-overlay .muted{ font-size:.92em !important; opacity:.85 !important; margin-top:6px !important; color:#fff !important; }
+#dp-overlay #dp-msg{ color:#fca5a5 !important; min-height:1.2em !important; }
+
+/* Tabs */
+#dp-tabs{ display:grid !important; grid-template-columns:1fr 1fr !important; gap:10px !important; margin:4px 0 8px 0 !important; }
+#dp-tabs button{
+  background:#000 !important; color:#fff !important; border:2px solid #fff !important; border-radius:0 !important;
+  min-height:36px !important; padding:10px 12px !important; font-weight:600 !important; cursor:pointer !important;
+  transition:background-color .12s ease, color .12s ease, border-color .12s ease !important; background-image:none !important;
+}
+#dp-tabs button:hover{ background:#fff !important; color:#000 !important; border-color:#fff !important; }
+#dp-tabs button.active{ background:#fff !important; color:#000 !important; border-color:#fff !important; }
+
+/* Close */
+#dp-overlay .dp-close{
+  position:absolute !important; right:10px !important; top:8px !important;
+  width:32px !important; height:32px !important; line-height:28px !important;
+  background:#000 !important; color:#fff !important; border:2px solid #fff !important; border-radius:0 !important;
+  cursor:pointer !important; text-align:center !important; font-size:18px !important; padding:0 !important;
+}
+#dp-overlay .dp-close:hover{ background:#fff !important; color:#000 !important; }
+
+/* Form rhythm */
+#dp-content{ display:grid !important; grid-auto-rows:auto !important; row-gap:12px !important; }
+#dp-overlay label{ margin:0 !important; font-size:14px !important; opacity:.95 !important; }
+#dp-overlay label .req{ color:#fff !important; }
+#dp-overlay label + input{ margin-top:6px !important; }
+#dp-overlay input + label{ margin-top:12px !important; }
+
+/* >>> Inputs — FORCE black bg + matching border (very strong selectors) */
+#dp-overlay .dp-modal input[type="text" i],
+#dp-overlay .dp-modal input[type="email" i],
+#dp-overlay .dp-modal input[type="tel" i],
+#dp-overlay .dp-modal input[type="password" i],
+#dp-overlay .dp-modal input:not([type]),
+#dp-overlay .dp-modal input{
+  width:100% !important; min-height:40px !important; padding:10px 12px !important;
+  background:#000 !important; background-color:#000 !important; background-image:none !important;
+  color:#fff !important; caret-color:#fff !important;
+  border:2px solid #fff !important; border-radius:0 !important;
+  outline:none !important; box-shadow:none !important;
+  -webkit-appearance:none !important; appearance:none !important;
+  background-clip: padding-box !important;
+}
+#dp-overlay .dp-modal input::placeholder{ color:rgba(255,255,255,.75) !important; }
+#dp-overlay .dp-modal input:focus-visible{ outline:2px solid #fff !important; outline-offset:2px !important; }
+
+/* WebKit autofill */
+#dp-overlay .dp-modal input:-webkit-autofill,
+#dp-overlay .dp-modal input:-webkit-autofill:hover,
+#dp-overlay .dp-modal input:-webkit-autofill:focus{
+  -webkit-box-shadow: 0 0 0 1000px #000 inset !important;
+  box-shadow: 0 0 0 1000px #000 inset !important;
+  -webkit-text-fill-color:#fff !important; caret-color:#fff !important; border:2px solid #fff !important;
+}
+/* Firefox autofill */
+#dp-overlay .dp-modal input:-moz-autofill,
+#dp-overlay .dp-modal input:-moz-autofill-preview{
+  box-shadow: 0 0 0 1000px #000 inset !important;
+  -moz-text-fill-color:#fff !important; color:#fff !important;
+}
+
+/* Checkbox row */
+#dp-overlay .dp-check{ display:flex !important; align-items:center !important; gap:8px !important; }
+#dp-overlay .dp-check input[type="checkbox"]{
+  width:16px !important; height:16px !important; margin:0 !important;
+  appearance:auto !important; accent-color:#000 !important;
+  background:#000 !important; border:2px solid #fff !important; border-radius:0 !important;
+}
+
+/* Buttons */
+#dp-overlay button, #dp-overlay .dp-btn{
+  background:#000 !important; color:#fff !important; border:2px solid #fff !important; border-radius:0 !important;
+  min-height:36px !important; padding:10px 12px !important; font-weight:600 !important;
+  cursor:pointer !important; background-image:none !important;
+  transition:background-color .12s ease, color .12s ease, border-color .12s ease !important;
+}
+#dp-overlay button:hover, #dp-overlay .dp-btn:hover{ background:#fff !important; color:#000 !important; }
+#dp-overlay button:active, #dp-overlay .dp-btn:active{ background:#000 !important; color:#fff !important; }
+#dp-overlay button:focus-visible{ outline:2px solid #fff !important; outline-offset:2px !important; }
+#dp-overlay .dp-btn-full{ width:100% !important; }
+
+/* Actions area (Register + terms) — centered */
+#dp-overlay .dp-actions{
+  display:flex !important; flex-direction:column !important; align-items:stretch !important;
+  gap:8px !important; margin-top:4px !important; text-align:center !important;
+}
+#dp-overlay .dp-terms{ text-align:center !important; }
+#dp-overlay .dp-inline{ display:flex !important; align-items:center !important; justify-content:space-between !important; gap:12px !important; flex-wrap:wrap !important; }
+
+/* Links */
+#dp-overlay a{ color:#fff !important; text-decoration:none !important; user-select:text !important; }
+#dp-overlay a:hover{ text-decoration:underline !important; }
+`;
+            document.head.appendChild(s);
+        }
+        ensureAuthThemeLast(); // keep it on top of cascade
+    }
+
+    // Put this near the top-level helpers
+    function attachAsteriskMask(visibleInput, hiddenInput) {
+        const vis = (typeof visibleInput === 'string') ? document.getElementById(visibleInput) : visibleInput;
+        const hid = (typeof hiddenInput === 'string') ? document.getElementById(hiddenInput) : hiddenInput;
+        if (!vis || !hid) return;
+
+        let real = hid.value || '';
+        const maskChar = '*'; // will render with your font's asterisk glyph
+
+        const paint = () => { vis.value = maskChar.repeat(real.length); };
+
+        const setCaret = (pos) => {
+            requestAnimationFrame(() => { try { vis.setSelectionRange(pos, pos); } catch { } });
+        };
+
+        // Keep selection snapshot for reliable edits
+        let selStart = 0, selEnd = 0;
+        vis.addEventListener('beforeinput', () => { selStart = vis.selectionStart || 0; selEnd = vis.selectionEnd || selStart; });
+
+        vis.addEventListener('paste', (e) => {
+            e.preventDefault();
+            const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+            real = real.slice(0, selStart) + text + real.slice(selEnd);
+            hid.value = real; paint(); setCaret(selStart + text.length);
+            hid.dispatchEvent(new Event('input')); // preserve your live validators
+        });
+
+        vis.addEventListener('input', (e) => {
+            const t = e.inputType || '';
+            if (t === 'insertText') {
+                const ch = e.data || '';
+                real = real.slice(0, selStart) + ch + real.slice(selEnd);
+                hid.value = real; paint(); setCaret(selStart + ch.length);
+            } else if (t === 'deleteContentBackward') {
+                if (selStart === selEnd && selStart > 0) {
+                    real = real.slice(0, selStart - 1) + real.slice(selEnd);
+                    hid.value = real; paint(); setCaret(selStart - 1);
+                } else {
+                    real = real.slice(0, selStart) + real.slice(selEnd);
+                    hid.value = real; paint(); setCaret(selStart);
+                }
+            } else if (t === 'deleteContentForward') {
+                if (selStart === selEnd) {
+                    real = real.slice(0, selStart) + real.slice(selStart + 1);
+                } else {
+                    real = real.slice(0, selStart) + real.slice(selEnd);
+                }
+                hid.value = real; paint(); setCaret(selStart);
+            } else {
+                // Fallback: re-mask without changing the stored value
+                paint();
+            }
+            hid.dispatchEvent(new Event('input'));
+        });
+
+        // Init
+        vis.autocomplete = vis.autocomplete || 'new-password';
+        vis.spellcheck = false;
+        paint();
     }
 
     /* ===================== OVERLAY UI ===================== */
 
     function ensureOverlay() {
-        if (state.overlay) return state.overlay;
+        if (state.overlay) { log('ensureOverlay: reuse existing'); return state.overlay; }
 
+        log('ensureOverlay: creating overlay DOM');
         const el = document.createElement('div');
         el.id = 'dp-overlay';
-        el.style.cssText = 'position:fixed;inset:0;display:none;z-index:9999;';
+        el.style.cssText = 'position:fixed;inset:0;z-index:10080;';
         el.innerHTML = `
-      <div class="dp-backdrop" style="position:absolute;inset:0;background:rgba(0,0,0,.6)"></div>
-      <div class="dp-modal" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,420px);background:#121212;color:#eee;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.5);padding:16px 16px 12px">
-        <button class="dp-close" title="Close" style="position:absolute;right:10px;top:8px;background:none;border:none;color:#aaa;font-size:20px;cursor:pointer">×</button>
-        <div id="dp-tabs" style="display:flex;gap:8px;margin-bottom:10px">
-          <button data-tab="login" class="active" style="flex:1;padding:8px;border:none;border-radius:8px;background:#3b82f6;color:#fff;cursor:pointer">Login</button>
-          <button data-tab="register" style="flex:1;padding:8px;border:none;border-radius:8px;background:#1f2937;color:#cbd5e1;cursor:pointer">Register</button>
-        </div>
-        <div id="dp-content"></div>
-        <div class="muted" id="dp-msg" style="color:#fca5a5;min-height:1.2em;margin-top:8px"></div>
+    <div class="dp-backdrop"></div>
+    <div class="dp-modal">
+      <button class="dp-close" title="Close" style="position:absolute;right:10px;top:8px;background:none;border:none;color:#fff;font-size:20px;cursor:pointer">×</button>
+      <div id="dp-tabs" style="display:flex;gap:8px;margin-bottom:10px">
+        <button data-tab="login" class="active">Login</button>
+        <button data-tab="register">Register</button>
       </div>
-    `;
+      <div id="dp-content"></div>
+      <div class="muted" id="dp-msg" style="min-height:1.2em;margin-top:8px"></div>
+    </div>
+  `;
         document.body.appendChild(el);
         state.overlay = el;
 
-        const close = () => { el.style.display = 'none'; };
-        el.querySelector('.dp-backdrop').addEventListener('click', close);
-        el.querySelector('.dp-close').addEventListener('click', close);
+        upsertAuthOverlayTheme();
+
+        const modal = el.querySelector('.dp-modal');
+
+        const close = (reason = 'unknown') => {
+            log('close overlay (reason:', reason, ')');
+            el.classList.remove('dp-open');
+            unlockScroll();
+        };
+
+        const backdrop = el.querySelector('.dp-backdrop');
+        backdrop.addEventListener('click', () => {
+            const dt = performance.now() - state.openedAt;
+            if (dt < 300) { log('backdrop click ignored (debounce,', Math.round(dt), 'ms)'); return; }
+            close('backdrop');
+        });
+        modal.addEventListener('click', (e) => e.stopPropagation());
+        el.querySelector('.dp-close').addEventListener('click', () => close('close-button'));
 
         const [btnLogin, btnReg] = el.querySelectorAll('#dp-tabs button');
         btnLogin.addEventListener('click', () => { setActiveTab(btnLogin, btnReg); renderLogin(); });
@@ -213,36 +532,43 @@
 
     function setActiveTab(activeBtn, otherBtn) {
         activeBtn.classList.add('active');
-        activeBtn.style.background = '#3b82f6';
-        activeBtn.style.color = '#fff';
         otherBtn.classList.remove('active');
-        otherBtn.style.background = '#1f2937';
-        otherBtn.style.color = '#cbd5e1';
         msg('');
+        log('tab ->', activeBtn.dataset.tab || activeBtn.textContent);
     }
 
     function showOverlay(startTab = 'login') {
+        log('showOverlay startTab=', startTab);
         ensureOverlay();
-        state.overlay.style.display = 'block';
+        state.openedAt = performance.now();
+        state.overlay.classList.add('dp-open');
+
+        const modal = state.overlay.querySelector('.dp-modal');
+        lockScroll(modal); // <-- capture wheel/touch/keys for the modal only
+
+        const cs = getComputedStyle(state.overlay);
+        log('overlay display after open =', cs.display);
+
         const [btnLogin, btnReg] = state.overlay.querySelectorAll('#dp-tabs button');
-        if (startTab === 'register') {
-            setActiveTab(btnReg, btnLogin); renderRegister();
-        } else {
-            setActiveTab(btnLogin, btnReg); renderLogin();
-        }
+        if (startTab === 'register') { setActiveTab(btnReg, btnLogin); renderRegister(); }
+        else { setActiveTab(btnLogin, btnReg); renderLogin(); }
+
+        upsertAuthOverlayTheme();
     }
 
     /* ===================== VIEWS ===================== */
 
     function renderLogin() {
+        log('renderLogin');
         const c = byId('dp-content');
-        if (!c) return;
+        if (!c) { warn('renderLogin: #dp-content missing'); return; }
         c.innerHTML = `
       <h2 style="margin:0 0 8px">Welcome back</h2>
-      <label>Email or phone</label>
-      <input id="dp-id" autocomplete="username" placeholder="name@example.com or +15555550123">
+      <label><span>Email, phone, or username</span></label>
+      <input id="dp-id" autocomplete="username" placeholder="name@example.com, +15555550123, or handle">
       <label>Password</label>
-      <input id="dp-pw" type="password" autocomplete="current-password">
+      <input id="dp-pw" type="hidden" value="">
+      <input id="dp-pw-vis" type="text" autocomplete="current-password" placeholder="Min 7, < 32, 1 capital, 1 number, 1 symbol">
       <div id="dp-totp-row" style="display:none">
         <label>2FA code</label>
         <div style="display:flex;gap:8px">
@@ -250,21 +576,18 @@
           <button id="dp-sendcode" type="button" title="Send code to your email/phone" style="white-space:nowrap">Send code</button>
         </div>
       </div>
-      <button id="dp-login" style="margin-top:10px">Login</button>
+      <button id="dp-login" class="dp-btn-full" style="margin-top:10px">Login</button>
       <div class="muted" style="margin-top:6px"><a href="#" id="dp-reset">Forgot password?</a></div>
     `;
+        attachAsteriskMask('dp-pw-vis', 'dp-pw');
 
         const idInput = byId('dp-id');
         idInput.addEventListener('blur', () => {
             const raw = idInput.value.trim();
             if (!raw) return;
-            if (raw.includes('@')) {
-                const e = sanitizeEmail(raw);
-                idInput.value = e;
-            } else {
-                const p = sanitizePhone(raw);
-                idInput.value = p;
-            }
+            if (raw.includes('@')) idInput.value = sanitizeEmail(raw);
+            else if (/^\+?[\d\s().-]+$/.test(raw)) idInput.value = sanitizePhone(raw);
+            else idInput.value = raw.trim();
         });
 
         const show2fa = (hint) => {
@@ -273,12 +596,8 @@
         };
 
         byId('dp-sendcode').onclick = async () => {
-            try {
-                await fetchCsrf();
-                msg('Check Dev Mailbox for the code.');
-            } catch (e) {
-                msg('Could not send code.');
-            }
+            try { await fetchCsrf(); msg('Check Dev Mailbox for the code.'); }
+            catch { msg('Could not send code.'); }
         };
 
         byId('dp-login').onclick = async () => {
@@ -287,16 +606,19 @@
             const password = byId('dp-pw').value;
             const totp = (byId('dp-totp')?.value || '').trim();
 
-            // sanitize/validate identifier like the server
             let identifier = '';
             if (rawId.includes('@')) {
                 const e = sanitizeEmail(rawId);
                 if (!isEmail(e)) { msg('Invalid email.'); return; }
                 identifier = e;
-            } else {
+            } else if (/^\+?[\d\s().-]+$/.test(rawId)) {
                 const p = sanitizePhone(rawId);
                 if (!isPhone(p)) { msg('Invalid phone number.'); return; }
                 identifier = p;
+            } else {
+                const u = validateUsername(rawId);
+                if (!u.ok) { msg('Invalid username.'); return; }
+                identifier = u.username;
             }
 
             try {
@@ -307,9 +629,9 @@
                 await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
 
                 msg('Logged in.');
-                state.overlay.style.display = 'none';
+                state.overlay.classList.remove('dp-open');
                 Promise.resolve((window.DP && DP.syncAfterLogin) ? DP.syncAfterLogin() : null)
-                    .catch(err => console.warn('post-login sync failed:', err));
+                    .catch(err => warn('post-login sync failed:', err));
             } catch (e) {
                 if (e?.error === 'totp_required') { show2fa('Enter your authenticator app code.'); return; }
                 if (e?.error === 'totp_invalid') { show2fa('That authenticator code was invalid.'); return; }
@@ -333,70 +655,105 @@
                 msg('Reset failed.');
             }
         };
+
+        upsertAuthOverlayTheme();
+    }
+
+    function ensureAuthThemeLast() {
+        const s = document.getElementById('dp-auth-overlay-theme');
+        if (s && s !== document.head.lastElementChild) {
+            document.head.removeChild(s);
+            document.head.appendChild(s);
+        }
     }
 
     function renderRegister() {
+        log('renderRegister');
         const c = byId('dp-content');
-        if (!c) return;
+        if (!c) { warn('renderRegister: #dp-content missing'); return; }
         c.innerHTML = `
       <h2 style="margin:0 0 8px">Create account</h2>
-      <label>Username <span class="muted" style="font-weight:normal;color:#94a3b8">(3–24 letters, numbers, _)</span></label>
+
+      <label>Username <span class="req" aria-hidden="true">*</span> <span class="muted" style="font-weight:normal;">(3–24 letters, numbers, _)</span></label>
       <input id="dp-username" placeholder="your_handle" autocomplete="off">
-      <label>Email</label>
+
+      <label>Email <span class="req" aria-hidden="true">*</span></label>
       <input id="dp-email" autocomplete="email" placeholder="name@example.com">
-      <label>Phone</label>
+
+      <label>Confirm email <span class="req" aria-hidden="true">*</span></label>
+      <input id="dp-email2" autocomplete="email" placeholder="Re-enter your email">
+
+      <label>Phone (optional)</label>
       <input id="dp-phone" placeholder="+15555550123" autocomplete="tel">
-      <label>Password</label>
-      <input id="dp-pw2" type="password" autocomplete="new-password" placeholder="Min 7, < 32, 1 capital, 1 number, 1 symbol">
-      <button id="dp-reg" style="margin-top:10px">Register</button>
+
+      <label>Password <span class="req" aria-hidden="true">*</span></label>
+      <input id="dp-pw" type="hidden" value="">
+      <input id="dp-pw-vis" type="text" autocomplete="new-password" placeholder="Min 7, < 32, 1 capital, 1 number, 1 symbol">
+ 
+      <label>Confirm password <span class="req" aria-hidden="true">*</span></label>
+      <input id="dp-pw2" type="hidden" value="">
+      <input id="dp-pw2-vis" type="text" autocomplete="new-password" placeholder="Re-enter your password">
+
+      <label class="dp-check" style="margin-top:10px">
+        <input id="dp-optin" type="checkbox">
+        <span>I agree to be sent emails when new pleas are posted, and other information.</span>
+      </label>
+
+      <div class="dp-actions" style="margin-top:10px">
+        <button id="dp-reg" class="dp-btn-full">Register</button>
+        <div class="muted dp-terms" style="user-select:text">
+          By registering, you agree to the following
+          <a href="/terms-and-conditions/9-30-2025" target="_blank" rel="noopener noreferrer">terms and conditions</a>.
+        </div>
+      </div>
     `;
+        attachAsteriskMask('dp-pw-vis', 'dp-pw');
+        attachAsteriskMask('dp-pw2-vis', 'dp-pw2');
 
         const inputEmail = byId('dp-email');
+        const inputEmail2 = byId('dp-email2');
         const inputPhone = byId('dp-phone');
 
-        inputEmail.addEventListener('blur', () => {
-            inputEmail.value = sanitizeEmail(inputEmail.value);
-        });
-        inputPhone.addEventListener('blur', () => {
-            inputPhone.value = sanitizePhone(inputPhone.value);
-        });
+        inputEmail.addEventListener('blur', () => { inputEmail.value = sanitizeEmail(inputEmail.value); });
+        inputEmail2.addEventListener('blur', () => { inputEmail2.value = sanitizeEmail(inputEmail2.value); });
+        inputPhone.addEventListener('blur', () => { inputPhone.value = sanitizePhone(inputPhone.value); });
 
-        // live hint for password policy
-        const pw = byId('dp-pw2');
+        const pw = byId('dp-pw');
         pw?.addEventListener('input', () => {
             const v = validatePassword(pw.value);
-            if (!v.ok) {
-                msg('Password needs: ' + v.reasons.join(', ') + '.');
-            } else {
-                msg('');
-            }
+            if (!v.ok) msg('Password needs: ' + v.reasons.join(', ') + '.'); else msg('');
         });
 
         byId('dp-reg').onclick = async () => {
             msg('');
-            const username = byId('dp-username').value.trim();
+
+            const usernameRaw = byId('dp-username').value.trim();
             const emailRaw = inputEmail.value;
+            const email2Raw = inputEmail2.value;
             const phoneRaw = inputPhone.value;
             const email = sanitizeEmail(emailRaw);
+            const email2 = sanitizeEmail(email2Raw);
             const phone = sanitizePhone(phoneRaw);
             const password = pw.value;
+            const password2 = byId('dp-pw2').value;
+            const optin = byId('dp-optin').checked;
 
-            // Client-side checks
-            const u = validateUsername(username);
+            const u = validateUsername(usernameRaw);
             if (!u.ok) { msg(u.reason); return; }
 
-            if (!email && !phone) {
-                msg('Please provide an email or a phone number.'); return;
-            }
-            if (email && !isEmail(email)) {
-                msg('Invalid email.'); return;
-            }
-            if (phone && !isPhone(phone)) {
-                msg('Invalid phone number.'); return;
-            }
+            if (!email) { msg('Email is required.'); return; }
+            if (!isEmail(email)) { msg('Invalid email.'); return; }
+            if (!email2) { msg('Please confirm your email.'); return; }
+            if (email !== email2) { msg('Emails do not match.'); return; }
+
+            if (phone && !isPhone(phone)) { msg('Invalid phone number.'); return; }
 
             const p = validatePassword(password);
             if (!p.ok) { msg('Password needs: ' + p.reasons.join(', ') + '.'); return; }
+            if (!password2) { msg('Please confirm your password.'); return; }
+            if (password !== password2) { msg('Passwords do not match.'); return; }
+
+            if (!optin) { msg('Please check the email consent box to continue.'); return; }
 
             try {
                 await fetchCsrf().catch((e) => { throw { ...e, action: 'Fetch CSRF' }; });
@@ -404,10 +761,11 @@
                 await api('/auth/register', {
                     method: 'POST',
                     body: JSON.stringify({
-                        username,
-                        email: email || null,
+                        username: u.username,
+                        email,
                         phone: phone || null,
-                        password
+                        password,
+                        consent_emails: true
                     })
                 }).catch((e) => { throw { ...e, action: 'Register' }; });
 
@@ -429,17 +787,11 @@
                 }
 
                 msg('Account created. You are signed in.');
-                state.overlay.style.display = 'none';
+                state.overlay.classList.remove('dp-open');
                 if (window.DP && DP.syncAfterLogin) {
-                    Promise
-                        .resolve(DP.syncAfterLogin())
-                        .catch((err) => {
-                            showSpecificError('Post-register sync', {
-                                method: 'POST',
-                                path: '(custom sync)',
-                                detail: String(err?.message || err),
-                            });
-                        });
+                    Promise.resolve(DP.syncAfterLogin()).catch((err) => {
+                        showSpecificError('Post-register sync', { method: 'POST', path: '(custom sync)', detail: String(err?.message || err) });
+                    });
                 }
             } catch (e) {
                 if (e?.error === 'invalid_username') { msg('Username must be 3–24 characters: letters, numbers, underscore.'); return; }
@@ -450,17 +802,46 @@
                 showSpecificError(e.action || 'Register', e);
             }
         };
+
+        upsertAuthOverlayTheme();
     }
 
     /* ===================== EXPORTS & AUTOBIND ===================== */
 
     window.DP = window.DP || {};
-    window.DP.init = (opts = {}) => { if (opts.apiBase) state.apiBase = opts.apiBase; };
-    window.DP.openAuth = () => showOverlay('login');
-    window.DP.syncAfterLogin = window.DP.syncAfterLogin || (async () => { });
+    window.DP.init = (opts = {}) => {
+        if (opts.apiBase) state.apiBase = opts.apiBase;
+        log('DP.init', opts);
+    };
+    window.DP.openAuth = (startTab = 'login') => {
+        log('DP.openAuth called with', startTab);
+        showOverlay(startTab);
+    };
+    window.DP.syncAfterLogin = window.DP.syncAfterLogin || (async () => { log('syncAfterLogin (default noop)'); });
 
+    // Wire the page button if it exists; also add a delegated fallback
     window.addEventListener('DOMContentLoaded', () => {
+        log('DOMContentLoaded: binding triggers');
         const btn = document.getElementById('dp-login-btn');
-        if (btn) btn.addEventListener('click', () => showOverlay('login'));
+        if (btn) {
+            log('#dp-login-btn found — binding click');
+            btn.addEventListener('click', () => showOverlay('login'));
+        } else {
+            warn('#dp-login-btn not found at DOMContentLoaded');
+        }
+
+        // delegated fallback: any future element with this id
+        document.addEventListener('click', (e) => {
+            const t = e.target;
+            if (t && t.id === 'dp-login-btn') {
+                log('delegated click on #dp-login-btn');
+                showOverlay('login');
+            }
+        }, { capture: true });
+    });
+
+    // quick self-test hook
+    window.addEventListener('load', () => {
+        log('window.load: DP available =', !!window.DP);
     });
 })();

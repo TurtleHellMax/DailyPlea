@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Terms & Conditions — 2025-09-30</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <link rel="canonical" href="/terms-and-conditions/9-30-2025">
+
+    <!-- Preload your custom font (update paths if needed) -->
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/Voice1-Regular.woff2" crossorigin>
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/Voice1-Bold.woff2" crossorigin>
+
+    <style>
+        /* ===== Load your custom family ===== */
+        @font-face {
+            font-family: 'Voice1';
+            src: local('Voice1 Regular'), local('Voice1-Regular'), url('/fonts/Voice1-Regular.woff2') format('woff2'), url('/fonts/Voice1-Regular.woff') format('woff');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Voice1';
+            src: local('Voice1 Bold'), local('Voice1-Bold'), url('/fonts/Voice1-Bold.woff2') format('woff2'), url('/fonts/Voice1-Bold.woff') format('woff');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        /* ===== Site look — dark, square borders, Voice stack ===== */
+        :root {
+            --bg: #000;
+            --fg: #fff;
+            --muted: rgba(255,255,255,.85);
+            --border: #fff;
+            --accent: #fff;
+            --maxw: 900px;
+        }
+
+        html, body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--fg);
+            font-family: 'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Fade in from black (respect reduced motion) */
+        @media (prefers-reduced-motion:no-preference) {
+            body {
+                opacity: 0;
+                animation: pageFade .48s ease-out forwards;
+            }
+
+            @keyframes pageFade {
+                from {
+                    opacity: 0
+                }
+
+                to {
+                    opacity: 1
+                }
+            }
+        }
+
+        /* Page shell */
+        .wrap {
+            box-sizing: border-box;
+            margin: 0 auto;
+            padding: 24px;
+            max-width: var(--maxw);
+        }
+
+        .panel {
+            border: 2px solid var(--border);
+            border-radius: 0;
+            padding: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,.5);
+            background: var(--bg);
+        }
+
+        /* Typography */
+        h1, h2, h3 {
+            margin: 0 0 10px;
+            font-weight: 800;
+        }
+
+        h1 {
+            font-size: clamp(24px,3.2vw,34px);
+        }
+
+        h2 {
+            font-size: clamp(18px,2.4vw,22px);
+            margin-top: 22px;
+        }
+
+        h3 {
+            font-size: clamp(16px,2vw,18px);
+            margin-top: 18px;
+        }
+
+        p, li {
+            line-height: 1.55;
+        }
+
+        p {
+            margin: 10px 0;
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        hr {
+            border: 0;
+            border-top: 2px solid var(--border);
+            margin: 18px 0;
+        }
+
+        a {
+            color: var(--fg);
+            text-decoration: none;
+        }
+
+            a:hover {
+                text-decoration: underline;
+            }
+
+        /* Lists */
+        ul, ol {
+            margin: 8px 0 14px 20px;
+        }
+
+        li + li {
+            margin-top: 6px;
+        }
+
+        /* Top bar */
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin: 0 0 14px;
+        }
+
+            .topbar .brand {
+                font-weight: 800;
+                letter-spacing: .02em;
+            }
+
+            .topbar a.btn {
+                border: 2px solid var(--border);
+                padding: 8px 12px;
+                border-radius: 0;
+                font-weight: 700;
+                line-height: 1;
+                display: inline-block;
+            }
+
+                .topbar a.btn:hover {
+                    background: var(--accent);
+                    color: #000;
+                    text-decoration: none;
+                }
+
+        /* Foot */
+        .foot {
+            text-align: center;
+            margin-top: 18px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        /* Flow */
+        .panel > * + * {
+            margin-top: 12px;
+        }
+
+        .section + .section {
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="topbar">
+            <div class="brand">Terms &amp; Conditions</div>
+            <a class="btn" href="/" aria-label="Back to site">Back</a>
+        </div>
+
+        <article class="panel" role="article">
+            <header>
+                <h1>Terms &amp; Conditions</h1>
+                <div class="muted">Version: <strong>2025-09-30</strong> · Last Updated: September&nbsp;30,&nbsp;2025</div>
+            </header>
+
+            <section class="section">
+                <h2>1. Acceptance of Terms</h2>
+                <p>By registering for an account or using the Service, you agree to these Terms and any policies referenced herein (collectively, the “Agreement”). If you do not agree, do not use the Service.</p>
+            </section>
+
+            <section class="section">
+                <h2>2. The Service</h2>
+                <p>The Service enables users to post and discover “pleas” and related content, receive updates, and interact with other users. We may modify, suspend, or discontinue any part of the Service at any time.</p>
+            </section>
+
+            <section class="section">
+                <h2>3. Eligibility</h2>
+                <ul>
+                    <li>You must be at least 13 years old (or the age of digital consent in your region).</li>
+                    <li>You represent that you have the authority to enter into this Agreement.</li>
+                </ul>
+            </section>
+
+            <section class="section">
+                <h2>4. Accounts &amp; Security</h2>
+                <ul>
+                    <li>You are responsible for safeguarding your login credentials and for all activity under your account.</li>
+                    <li>Provide accurate information and keep it up to date.</li>
+                    <li>Notify us promptly of any unauthorized use or security incident.</li>
+                </ul>
+            </section>
+
+            <section class="section">
+                <h2>5. Communications &amp; Consent</h2>
+                <p>By registering, you agree to receive emails and notifications about new pleas and related Service updates (you can manage preferences in-app or by using unsubscribe options, where available).</p>
+            </section>
+
+            <section class="section">
+                <h2>6. User Content</h2>
+                <ul>
+                    <li>You retain rights to content you submit (“User Content”).</li>
+                    <li>You grant us a worldwide, non-exclusive license to host, store, reproduce, and display User Content as needed to operate the Service.</li>
+                    <li>Do not post content that is unlawful, infringing, hateful, harassing, or otherwise violates these Terms.</li>
+                </ul>
+            </section>
+
+            <section class="section">
+                <h2>7. Prohibited Conduct</h2>
+                <ul>
+                    <li>No illegal activity, spam, scraping, or unauthorized access.</li>
+                    <li>No attempts to reverse engineer or disrupt the Service.</li>
+                    <li>Respect others’ rights and follow all applicable laws.</li>
+                </ul>
+            </section>
+
+            <section class="section">
+                <h2>8. Intellectual Property</h2>
+                <p>The Service, including software, design, and trademarks, is protected by intellectual property laws. Except as permitted by this Agreement, you may not use our marks or copy our materials.</p>
+            </section>
+
+            <section class="section">
+                <h2>9. Disclaimers</h2>
+                <p class="muted">THE SERVICE IS PROVIDED “AS IS” AND “AS AVAILABLE.” TO THE MAXIMUM EXTENT PERMITTED BY LAW, WE DISCLAIM ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.</p>
+            </section>
+
+            <section class="section">
+                <h2>10. Limitation of Liability</h2>
+                <p class="muted">TO THE MAXIMUM EXTENT PERMITTED BY LAW, WE WILL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF DATA, PROFITS, OR REVENUE, ARISING FROM OR RELATED TO YOUR USE OF THE SERVICE.</p>
+            </section>
+
+            <section class="section">
+                <h2>11. Indemnification</h2>
+                <p>You will defend, indemnify, and hold us harmless from any claims, damages, liabilities, and expenses arising from your use of the Service or violation of this Agreement.</p>
+            </section>
+
+            <section class="section">
+                <h2>12. Termination</h2>
+                <p>We may suspend or terminate your access at any time if you violate this Agreement or if we discontinue the Service. Upon termination, your rights to use the Service cease immediately.</p>
+            </section>
+
+            <section class="section">
+                <h2>13. Changes to These Terms</h2>
+                <p>We may update these Terms from time to time. Material changes will be posted here with a new version date. Continued use after changes constitutes acceptance of the updated Terms.</p>
+            </section>
+
+            <section class="section">
+                <h2>14. Governing Law</h2>
+                <p>These Terms are governed by the laws of your applicable jurisdiction, without regard to conflict-of-laws rules. Venue for disputes will be an appropriate court located in our principal place of business unless otherwise required by law.</p>
+            </section>
+
+            <section class="section">
+                <h2>15. Contact</h2>
+                <p>Questions about these Terms? Contact us at <a href="mailto:support@example.com">support@example.com</a>.</p>
+            </section>
+
+            <hr>
+
+            <footer class="foot">© <span id="y"></span> Your Company. All rights reserved.</footer>
+        </article>
+    </div>
+
+    <script>
+        document.getElementById('y').textContent = new Date().getFullYear();
+    </script>
+</body>
+</html>
