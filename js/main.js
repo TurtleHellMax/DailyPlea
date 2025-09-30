@@ -1,4 +1,194 @@
 // plea page (reader) — DEBUG BUILD
+
+/* ===== DPAuthBar (reader page) ===== */
+(() => {
+    // Try to reuse a global/meta API base if present; fall back to localhost
+    const API_BASE =
+        (window.DP_API_BASE && String(window.DP_API_BASE)) ||
+        document.querySelector('meta[name="dp:api_base"]')?.content ||
+        'http://localhost:3000/api';
+
+    const ASSET_BASE =
+        (window.DP_ASSET_BASE && String(window.DP_ASSET_BASE)) ||
+        document.querySelector('meta[name="dp:asset_base"]')?.content ||
+        '/web';
+
+    const OVERLAY_JS = ASSET_BASE + '/authOverlay.js';
+    const OVERLAY_CSS = ASSET_BASE + '/authOverlay.css';
+
+    /* --- tiny helpers with unique names to avoid collisions --- */
+    function dpabLoadStyle(href) {
+        try {
+            const l = document.createElement('link');
+            l.rel = 'stylesheet'; l.href = href; document.head.appendChild(l);
+        } catch { }
+    }
+    function dpabLoadScript(src) {
+        return new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = src; s.defer = true;
+            s.onload = res; s.onerror = () => rej(new Error('Failed to load ' + src));
+            document.head.appendChild(s);
+        });
+    }
+
+    async function dpabGetMe() {
+        try {
+            const r = await fetch(API_BASE + '/auth/me', { credentials: 'include' });
+            return r.ok ? r.json() : { user: null };
+        } catch { return { user: null }; }
+    }
+
+    function dpabInjectStyles() {
+        if (document.getElementById('dp-authbar-style')) return;
+        const s = document.createElement('style');
+        s.id = 'dp-authbar-style';
+        s.textContent = `
+#dp-authbar{
+  position:fixed; top:12px; left:12px; z-index:10060;
+  display:flex; align-items:center; gap:10px;
+  background:transparent; color:#fff; padding:0; border:none; border-radius:0;
+  font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
+  line-height:1;
+}
+#dp-authprefix{ opacity:.95; }
+#dp-authlink{
+  display:inline-flex; align-items:center; gap:8px;
+  color:#fff; text-decoration:none; cursor:pointer; outline:none;
+}
+#dp-authlink:hover{ text-decoration:underline; }
+#dp-authlink:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+#dp-authname{ font-weight:600; }
+#dp-authavatar{
+  width:26px; height:26px; display:block;
+  border-radius:50%; object-fit:cover; background:#000; border:2px solid #fff;
+}
+/* hide an optional (future) logout button here; you said you'll move it later */
+#dp-logout-btn{ display:none; }
+`;
+        document.head.appendChild(s);
+    }
+
+    const AUTHBAR_AVATAR_FALLBACK =
+        'data:image/svg+xml;utf8,' + encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+         <rect width="100%" height="100%" fill="#000"/>
+         <circle cx="32" cy="24" r="14" fill="#fff"/>
+         <rect x="10" y="40" width="44" height="16" rx="8" fill="#fff"/>
+       </svg>`
+        );
+
+    async function resolveProfileHrefFor(user) {
+        const first = (user?.first_username || user?.firstUsername || '').trim();
+        if (first) return `/user/${encodeURIComponent(first)}`;
+
+        const uname = (user?.username || '').trim();
+        if (!uname) return null;
+
+        const tries = [
+            `${API_BASE}/users/by_username/${encodeURIComponent(uname)}`,
+            `${API_BASE}/users/resolve?username=${encodeURIComponent(uname)}`
+        ];
+        for (const url of tries) {
+            try {
+                const r = await fetch(url, { credentials: 'include', headers: { Accept: 'application/json' } });
+                const j = await r.json().catch(() => ({}));
+                const fx =
+                    j?.first_username || j?.user?.first_username ||
+                    j?.firstUsername || j?.user?.firstUsername || null;
+                if (fx && String(fx).trim()) return `/user/${encodeURIComponent(String(fx).trim())}`;
+            } catch { }
+        }
+        return `/user/${encodeURIComponent(uname)}`;
+    }
+
+    function dpabMount() {
+        dpabInjectStyles();
+        if (document.getElementById('dp-authbar')) return;
+
+        const bar = document.createElement('div');
+        bar.id = 'dp-authbar';
+        bar.innerHTML = `
+      <span id="dp-authprefix" aria-hidden="true">User:</span>
+      <a id="dp-authlink" href="#"></a>
+      <button id="dp-logout-btn" type="button">Sign out</button>
+    `;
+        document.body.appendChild(bar);
+
+        const authLink = bar.querySelector('#dp-authlink');
+
+        // When logged out, clicking "User Login" opens overlay
+        authLink.addEventListener('click', (e) => {
+            if (authLink.getAttribute('data-state') === 'logged-out') {
+                e.preventDefault();
+                if (window.DP && DP.openAuth) DP.openAuth();
+                else alert('Login UI not loaded — check ' + OVERLAY_JS);
+            }
+        });
+
+        // Hook overlay post-login
+        window.DP = window.DP || {};
+        const prev = DP.syncAfterLogin;
+        DP.syncAfterLogin = async () => {
+            try { if (prev) await prev(); } finally { await dpabRefresh(); }
+        };
+    }
+
+    async function dpabRefresh() {
+        const bar = document.getElementById('dp-authbar');
+        if (!bar) return;
+
+        const prefixEl = bar.querySelector('#dp-authprefix');
+        const authLink = bar.querySelector('#dp-authlink');
+
+        const { user } = await dpabGetMe();
+
+        if (user) {
+            const uname = (user.username || user.first_username || 'me').trim();
+            const pfp = (user.profile_photo || user.photo || '').trim() || AUTHBAR_AVATAR_FALLBACK;
+            const href = await resolveProfileHrefFor(user);
+
+            prefixEl.style.display = '';
+            authLink.setAttribute('data-state', 'logged-in');
+            authLink.setAttribute('href', href || '#');
+            authLink.innerHTML = `
+        <img id="dp-authavatar" alt="" src="${pfp}">
+        <span id="dp-authname">${uname}</span>
+      `;
+            authLink.onclick = null; // let the anchor navigate normally
+        } else {
+            prefixEl.style.display = 'none';
+            authLink.setAttribute('data-state', 'logged-out');
+            authLink.setAttribute('href', '#');
+            authLink.textContent = 'User Login';
+        }
+    }
+
+    async function dpabEnsure() {
+        // Load overlay bits (best-effort)
+        try { dpabLoadStyle(OVERLAY_CSS); } catch { }
+        let overlayOk = true;
+        try { await dpabLoadScript(OVERLAY_JS); } catch (e) { overlayOk = false; console.warn(e.message); }
+
+        // Initialize overlay if present
+        window.DP = window.DP || {};
+        if (overlayOk && DP.init) DP.init({ apiBase: API_BASE });
+
+        // Mount and paint
+        dpabMount();
+        await dpabRefresh();
+    }
+
+    // Expose in case you want to call refresh manually
+    window.DPAuthBar = { ensure: dpabEnsure, refresh: dpabRefresh };
+
+    // Auto-boot on this page
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => { dpabEnsure(); }, { once: true });
+    } else {
+        dpabEnsure();
+    }
+})();
 document.addEventListener('DOMContentLoaded', () => {
     console.log('PLEA BUILD', new Date().toISOString());
 
@@ -1200,10 +1390,80 @@ html,body{height:auto;overflow-y:auto;background:#000;}
         return isBlack || wrongFont;
     }
 
+    function injectCommentsButtonPolish() {
+        if (document.getElementById('dp-comments-btn-polish')) return;
+        const s = document.createElement('style');
+        s.id = 'dp-comments-btn-polish';
+        s.textContent = `
+/* Vars for vote highlights */
+#dp-comments-host{
+  --vote-like-bg:#ffffff;
+  --vote-like-fg:#000000;
+  --vote-dislike-bg:#e6e6e6;
+  --vote-dislike-fg:#000000;
+}
+
+/* Make all comment buttons use smooth transitions and kill gradients */
+#dp-comments-host :is(.dp-btn,.dp-next,.dp-fb-post){
+  transition: background-color .12s ease, color .12s ease, border-color .12s ease !important;
+  background-image: none !important;
+}
+
+/* Hover: invert to white */
+#dp-comments-host :is(.dp-btn,.dp-next,.dp-fb-post):hover{
+  background:#fff !important;
+  background-color:#fff !important;
+  background-image:none !important;
+  color:#000 !important;
+  border-color:#fff !important;
+  filter:none !important;
+}
+
+/* Active (mouse down): revert to base */
+#dp-comments-host :is(.dp-btn,.dp-next,.dp-fb-post):active{
+  background:#000 !important;
+  color:#fff !important;
+  border-color:#fff !important;
+}
+
+/* Persistent vote highlight:
+   - is-active  -> LIKE  (white)
+   - is-down    -> DISLIKE (soft gray) */
+#dp-comments-host .dp-btn.is-active{
+  background:var(--vote-like-bg) !important;
+  color:var(--vote-like-fg) !important;
+  border-color:var(--vote-like-bg) !important;
+  background-image:none !important;
+}
+#dp-comments-host .dp-btn.is-down{
+  background:var(--vote-dislike-bg) !important;
+  color:var(--vote-dislike-fg) !important;
+  border-color:var(--vote-dislike-bg) !important;
+  background-image:none !important;
+}
+
+/* Keep the highlight even while hovered/focused */
+#dp-comments-host .dp-btn.is-active:hover,
+#dp-comments-host .dp-btn.is-active:focus-visible{
+  background:var(--vote-like-bg) !important;
+  color:var(--vote-like-fg) !important;
+  border-color:var(--vote-like-bg) !important;
+}
+#dp-comments-host .dp-btn.is-down:hover,
+#dp-comments-host .dp-btn.is-down:focus-visible{
+  background:var(--vote-dislike-bg) !important;
+  color:var(--vote-dislike-fg) !important;
+  border-color:var(--vote-dislike-bg) !important;
+}
+`;
+        document.head.appendChild(s);
+    }
+
     async function mountCommentsForPlea(pleaNum) {
         console.groupCollapsed('%cCOMMENTS: mount (themed + fallback)', 'color:#3b82f6;font-weight:600');
         try {
             injectThemeCSS();
+            injectCommentsButtonPolish();
 
             await loadCommentsLib().catch(() => { });
             if (window.DP?.init) window.DP.init({ apiBase: API_BASE });
@@ -1786,47 +2046,117 @@ html,body{height:auto;overflow-y:auto;background:#000;}
         if (host && host.parentNode) host.parentNode.removeChild(host);
     }
 
+    function upsertReplayStyle() {
+        const css = `
+#dp-replay{
+  position:fixed; right:16px; bottom:16px; z-index:9998;
+  font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
+  font-weight:600;
+  background:#000 !important; color:#fff !important;
+  border:2px solid #fff !important; border-radius:0 !important;
+  min-height:36px; padding:10px 14px;
+  line-height:1; cursor:pointer;
+  box-shadow:0 8px 18px rgba(0,0,0,.35);
+  background-image:none !important;
+  transition: background-color .12s ease, color .12s ease, border-color .12s ease;
+}
+#dp-replay:hover{
+  background:#fff !important;
+  color:#000 !important;
+  border-color:#fff !important;
+}
+#dp-replay:active{
+  background:#000 !important;
+  color:#fff !important;
+  border-color:#fff !important;
+}
+#dp-replay:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+  `;
+        let s = document.getElementById('dp-replay-style');
+        if (!s) { s = document.createElement('style'); s.id = 'dp-replay-style'; document.head.appendChild(s); }
+        s.textContent = css; // overwrite any older brightness() rules
+    }
+
+    function jumpToTopHard() {
+        const html = document.documentElement;
+        const prev = html.style.scrollBehavior;
+        // kill smooth scroll temporarily so it *jumps*
+        html.style.scrollBehavior = 'auto';
+        try { window.scrollTo(0, 0); } catch { }
+        try { (document.scrollingElement || document.body).scrollTop = 0; } catch { }
+        try { container && container.scrollTo({ top: 0, behavior: 'auto' }); } catch { }
+        // do it again next frame in case layout just changed
+        requestAnimationFrame(() => {
+            try { window.scrollTo(0, 0); } catch { }
+            try { (document.scrollingElement || document.body).scrollTop = 0; } catch { }
+            try { container && container.scrollTo({ top: 0, behavior: 'auto' }); } catch { }
+            // restore any previous scroll-behavior
+            html.style.scrollBehavior = prev || '';
+        });
+    }
+
     function mountReplayButton() {
         if (replayBtnMounted) return;
         replayBtnMounted = true;
 
+        upsertReplayStyle(); // <-- new: ensures hover invert/active snap-back
+
+        // Inject theme-correct styles once
+        if (!document.getElementById('dp-replay-style')) {
+            const s = document.createElement('style');
+            s.id = 'dp-replay-style';
+            s.textContent = `
+#dp-replay{
+  position:fixed; right:16px; bottom:16px; z-index:9998;
+  font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
+  font-weight:600;
+  background:#000; color:#fff;
+  border:2px solid #fff; border-radius:0;
+  min-height:36px; padding:10px 14px;
+  line-height:1; cursor:pointer;
+  box-shadow:0 8px 18px rgba(0,0,0,.35);
+}
+#dp-replay:hover{ filter:brightness(1.05); }
+#dp-replay:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+        `;
+            document.head.appendChild(s);
+        }
+
         const btn = document.createElement('button');
         btn.id = 'dp-replay';
-        btn.textContent = 'Replay';
-        Object.assign(btn.style, {
-            position: 'fixed', right: '16px', bottom: '16px', zIndex: 9998,
-            padding: '10px 14px', borderRadius: '10px', border: '0',
-            background: '#1f2937', color: '#cbd5e1', cursor: 'pointer',
-            boxShadow: '0 6px 20px rgba(0,0,0,.35)',
-        });
-        btn.addEventListener('mouseenter', () => { btn.style.background = '#374151'; });
-        btn.addEventListener('mouseleave', () => { btn.style.background = '#1f2937'; });
+        btn.type = 'button';
+        btn.textContent = 'Restart';
+        document.body.appendChild(btn);
+
         btn.onclick = async () => {
             dlog('[replay] clicked');
             clearProgressCompletely();
             removeCommentsMount();
             hidePrompt(); hideAllText();
-            container.scrollTo({ top: 0, behavior: 'auto' });
+            jumpToTopHard();
             firstRevealStarted = false; uiUnlocked = false; revealing = false;
             timeouts.forEach(clearTimeout); timeouts = []; current = 0;
 
+            // Put the normal start text back (not "Tap To Continue")
             try {
-                startText.textContent = 'Tap to begin'; ellipsis.textContent = '';
-                startOverlay.classList.remove('hidden'); startOverlay.focus({ preventScroll: true });
+                startText.textContent = 'Connect?';     // <-- fixed overlay copy
+                ellipsis.textContent = '';
+                startOverlay.classList.remove('hidden');
+                startOverlay.focus?.({ preventScroll: true });
             } catch { }
 
-            replayBtnMounted = false; document.getElementById('dp-replay')?.remove();
+            replayBtnMounted = false;
+            document.getElementById('dp-replay')?.remove();
 
-            try { if (audioCtx.state === 'running') audioCtx.suspend(); } catch { }
+            try { if (audioCtx.state === 'running') await audioCtx.suspend(); } catch { }
 
-            // re-arm once handlers
+            // re-arm the overlay handlers
             startOverlay.addEventListener('pointerdown', onStart, { once: true });
             startOverlay.addEventListener('touchstart', onStart, { once: true, passive: false });
             startOverlay.addEventListener('click', onStart, { once: true });
 
             started = false; resumed = false;
         };
-        document.body.appendChild(btn);
     }
 
     async function completeInstantly() {
@@ -1898,24 +2228,29 @@ html,body{height:auto;overflow-y:auto;background:#000;}
             if (['input', 'textarea', 'select'].includes(tag) || e.target?.isContentEditable) return;
             if (e.repeat) return;
 
-            const onceFlag = '__pleaHandled'; if (e[onceFlag]) return; e[onceFlag] = true;
-            e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+            // let all modifier combos through (Ctrl/Cmd/Alt) — don't block browser shortcuts
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-            if (e.key === 'Escape' || e.key === 'Esc') { stashReturnTarget(); window.location.assign(hubHref); return; }
+            if (e.key === 'Escape' || e.key === 'Esc') {
+                e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+                stashReturnTarget(); window.location.assign(hubHref);
+                return;
+            }
             if (e.key === 'Enter') {
+                e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
                 if (!started) { onStart(e); return; }
                 if (!uiUnlocked) return;
                 hidePrompt();
                 if (current >= animateSections.length) return;
-
                 if (!firstRevealStarted) { beginFirstRevealIfNeeded(); return; }
                 if (finishCurrentSection()) return;
-
                 revealSection(current); current++;
             }
+            // all other keys fall through normally
         }
         window.addEventListener('keydown', keyHandler, { capture: true });
     })();
+
 
     /***********************
      * EXTRA: QUICK API HINTS

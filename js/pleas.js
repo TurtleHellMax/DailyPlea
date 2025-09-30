@@ -36,30 +36,118 @@ async function getMe() {
     return r.ok ? r.json() : { user: null };
 }
 
+// ↙️ Add this below AVATAR_FALLBACK and above mountAuthBar/refreshAuthBar
+async function resolveProfileHrefFor(user) {
+    // Prefer first_username if present
+    const first =
+        (user && (user.first_username || user.firstUsername) || '').trim();
+    if (first) return `/user/${encodeURIComponent(first)}`;
+
+    // Fall back to current username, and try to resolve first_username via API
+    const uname = (user && user.username || '').trim();
+    if (!uname) return null;
+
+    // Try a couple of lightweight endpoints that may return first_username
+    const tries = [
+        `${API_BASE}/users/by_username/${encodeURIComponent(uname)}`,
+        `${API_BASE}/users/resolve?username=${encodeURIComponent(uname)}`
+    ];
+    for (const url of tries) {
+        try {
+            const r = await fetch(url, {
+                credentials: 'include',
+                headers: { Accept: 'application/json' }
+            });
+            const j = await r.json().catch(() => ({}));
+            const fx =
+                j?.first_username ||
+                j?.user?.first_username ||
+                j?.firstUsername ||
+                j?.user?.firstUsername ||
+                null;
+            if (fx && String(fx).trim()) {
+                return `/user/${encodeURIComponent(String(fx).trim())}`;
+            }
+        } catch { /* ignore and try next */ }
+    }
+
+    // Final fallback: link to the current username
+    return `/user/${encodeURIComponent(uname)}`;
+}
+
+/* ========= AUTH BAR: “User: [pfp] [username]” or “User Login” ========= */
+
+/* styles (Voice1, no outer border, no box) */
+function injectAuthBarStyles() {
+    if (document.getElementById('dp-authbar-style')) return;
+    const s = document.createElement('style');
+    s.id = 'dp-authbar-style';
+    s.textContent = `
+#dp-authbar{
+  position:fixed; top:12px; left:12px; z-index:10060;
+  display:flex; align-items:center; gap:10px;
+  background:transparent; color:#fff;
+  border:none; border-radius:0; padding:0;
+  font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
+  line-height:1;
+}
+#dp-authprefix{ opacity:.95; }
+#dp-authlink{
+  display:inline-flex; align-items:center; gap:8px;
+  color:#fff; text-decoration:none; cursor:pointer; outline:none;
+}
+#dp-authlink:hover{ text-decoration:underline; }
+#dp-authlink:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+#dp-authname{ font-weight:600; }
+#dp-authavatar{
+  width:26px; height:26px; border-radius:50%;
+  border:2px solid #fff; object-fit:cover; background:#000; display:block;
+}
+#dp-logout-btn{
+  display:none;  /* you said you'll move it here later */
+}
+  `;
+    document.head.appendChild(s);
+}
+
+const AVATAR_FALLBACK =
+    'data:image/svg+xml;utf8,' + encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+      <rect width="100%" height="100%" fill="#000"/>
+      <circle cx="32" cy="24" r="14" fill="#fff"/>
+      <rect x="10" y="40" width="44" height="16" rx="8" fill="#fff"/>
+    </svg>`
+    );
+
+/* Keep your existing resolveProfileHrefFor(user) helper as-is */
+
+/* markup: non-clickable label + clickable (avatar+name) link */
 function mountAuthBar() {
+    injectAuthBarStyles();
+
     if (document.getElementById('dp-authbar')) return;
+
     const bar = document.createElement('div');
     bar.id = 'dp-authbar';
-    bar.style.cssText = `
-    position: fixed; top: 12px; left: 12px; z-index: 9998;
-    display: flex; gap: 10px; align-items: center;
-    background: rgba(0,0,0,.55); color: #eee; padding: 8px 12px;
-    border-radius: 10px; backdrop-filter: blur(4px);
-    font: 14px/1.2 system-ui, sans-serif;
-  `;
     bar.innerHTML = `
-    <span id="dp-authstate">…</span>
-    <button id="dp-login-btn" style="padding:6px 10px;border:none;border-radius:8px;cursor:pointer;background:#3b82f6;color:#fff;font-weight:700">Sign in</button>
-    <button id="dp-logout-btn" style="padding:6px 10px;border:none;border-radius:8px;cursor:pointer;background:#444;color:#eee;display:none">Sign out</button>
+    <span id="dp-authprefix" aria-hidden="true">User:</span>
+    <a id="dp-authlink" href="#"></a>
+    <button id="dp-logout-btn" type="button">Sign out</button>
   `;
     document.body.appendChild(bar);
 
-    const loginBtn = bar.querySelector('#dp-login-btn');
-    const logoutBtn = bar.querySelector('#dp-logout-btn');
-    loginBtn.onclick = () => (window.DP && DP.openAuth) ? DP.openAuth() : alert('Login UI not loaded—check ' + OVERLAY_JS);
-    logoutBtn.onclick = async () => { await apiLogout(); await refreshAuthBar(); };
+    const authLink = bar.querySelector('#dp-authlink');
 
-    // If overlay defines a post-login hook, refresh bar afterwards
+    // When logged out, clicking "User Login" should open overlay
+    authLink.addEventListener('click', (e) => {
+        if (authLink.getAttribute('data-state') === 'logged-out') {
+            e.preventDefault();
+            if (window.DP && DP.openAuth) DP.openAuth();
+            else alert('Login UI not loaded — check ' + OVERLAY_JS);
+        }
+    });
+
+    // Sync after overlay login
     window.DP = window.DP || {};
     const prevSync = DP.syncAfterLogin;
     DP.syncAfterLogin = async () => {
@@ -70,20 +158,36 @@ function mountAuthBar() {
 }
 
 async function refreshAuthBar() {
-    const stateEl = document.getElementById('dp-authstate');
-    const loginBtn = document.getElementById('dp-login-btn');
-    const logoutBtn = document.getElementById('dp-logout-btn');
-    if (!stateEl) return;
+    const bar = document.getElementById('dp-authbar');
+    if (!bar) return;
+
+    const prefixEl = bar.querySelector('#dp-authprefix');
+    const authLink = bar.querySelector('#dp-authlink');
+
     const { user } = await getMe();
+
     if (user) {
-        const who = user.email || user.phone || `user#${user.id}`;
-        stateEl.textContent = `Signed in as ${who}${user.totp_enabled ? ' · 2FA' : ''}`;
-        loginBtn.style.display = 'none';
-        logoutBtn.style.display = '';
+        // CURRENT username preferred; fall back to first_username
+        const uname = (user.username || user.first_username || 'me').trim();
+        const pfp = (user.profile_photo || user.photo || '').trim() || AVATAR_FALLBACK;
+        const href = await resolveProfileHrefFor(user);
+
+        // label stays non-clickable; only avatar+name are clickable
+        prefixEl.style.display = '';
+        authLink.setAttribute('data-state', 'logged-in');
+        authLink.setAttribute('href', href || '#');
+        authLink.innerHTML = `
+      <img id="dp-authavatar" alt="" src="${pfp}">
+      <span id="dp-authname">${uname}</span>
+    `;
+        // let the anchor navigate normally; no onclick override for logged-in
+        authLink.onclick = null;
     } else {
-        stateEl.textContent = 'Not signed in';
-        loginBtn.style.display = '';
-        logoutBtn.style.display = 'none';
+        // Logged out → single clickable text "User Login"
+        prefixEl.style.display = 'none';
+        authLink.setAttribute('data-state', 'logged-out');
+        authLink.setAttribute('href', '#');
+        authLink.textContent = 'User Login';
     }
 }
 

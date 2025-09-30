@@ -136,6 +136,73 @@
                 box-shadow: 0 0 0 var(--bw) rgba(255,255,255,.10) inset;
             }
 
+        /* --- Button polish --- */
+        .btn, button {
+            transition: background-color .12s ease, color .12s ease, border-color .12s ease;
+        }
+
+        /* make anchor-buttons never underline */
+        a.btn,
+        a.btn:hover,
+        a.btn:focus,
+        a.btn:active {
+            text-decoration: none !important;
+        }
+
+        /* hover: invert (white bg, black text) */
+        .btn:hover,
+        button:hover {
+            background: #fff !important;
+            color: #000 !important;
+            border-color: #fff !important;
+        }
+
+        /* active: revert to base look */
+        .btn:active,
+        button:active {
+            background: #0c0e12 !important;
+            color: #fff !important;
+            border-color: var(--border) !important;
+        }
+        /* primary active uses its own base bg + white border */
+        .btn.primary:active,
+        button.primary:active {
+            background: #0f1216 !important;
+            color: #fff !important;
+            border-color: #fff !important;
+        }
+
+        /* vote-state colors */
+        :root {
+            --vote-like-bg: #ffffff;
+            --vote-like-fg: #000000;
+            --vote-dislike-bg: #e6e6e6; /* a touch dimmer than full white */
+            --vote-dislike-fg: #000000;
+        }
+
+        /* persistent highlight while selected */
+        .btn.is-active { /* upvoted */
+            background: var(--vote-like-bg) !important;
+            color: var(--vote-like-fg) !important;
+            border-color: #fff !important;
+        }
+
+        .btn.is-down { /* downvoted */
+            background: var(--vote-dislike-bg) !important;
+            color: var(--vote-dislike-fg) !important;
+            border-color: #fff !important;
+        }
+
+            /* keep highlight on hover/focus (don’t let the global hover invert fight it) */
+            .btn.is-active:hover,
+            .btn.is-active:focus-visible,
+            .btn.is-down:hover,
+            .btn.is-down:focus-visible {
+                background: #fff !important;
+                color: #000 !important;
+                border-color: #fff !important;
+            }
+
         /* Pills / field boxes – match card chrome */
         .pill, .field-box {
             background: linear-gradient(180deg, #0f1216, #0d1014);
@@ -241,7 +308,6 @@
         .comment .reply-editor {
             margin-top: 10px;
         }
-
     </style>
 </head>
 <body class="theme-editor">
@@ -254,6 +320,7 @@
             </div>
             <div class="actions" style="margin-left:auto">
                 <a id="btn-edit" class="btn primary" href="#" style="display:none">Edit profile</a>
+                <button id="btn-logout" class="btn" type="button" style="display:none">Log out</button>
             </div>
         </header>
 
@@ -314,9 +381,36 @@
             const firstNonEmpty = (...v) => { for (const s of v) if (typeof s === "string" && s.trim()) return s.trim(); return ""; };
             const escapeHtml = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+            /* --- logout helper (tries a few common endpoints) --- */
+            async function logout() {
+                // best-effort CSRF
+                let token = null;
+                try { token = await fetchCsrf(); } catch { }
+                const baseHeaders = { Accept: "application/json" };
+                if (token) baseHeaders["X-CSRF-Token"] = token;
+
+                const tries = [
+                    { url: API_BASE + "/auth/logout", method: "POST" },
+                    { url: API_BASE + "/logout", method: "POST" },
+                    { url: API_BASE + "/auth/session", method: "DELETE" },
+                    { url: API_BASE.replace("/api", "") + "/logout", method: "POST" } // non-namespaced fallback
+                ];
+
+                for (const t of tries) {
+                    try {
+                        const r = await fetch(t.url, { method: t.method, credentials: "include", headers: baseHeaders });
+                        if (r.ok || r.status === 204) break;
+                    } catch { /* keep trying */ }
+                }
+
+                // Refresh the page (or send to home if you prefer)
+                location.reload();
+            }
+
             /* ---------- header/bio ---------- */
             function renderHeader() {
                 const u = state.profile; if (!u) return;
+
                 $("uname").textContent = u.username || u.first_username || state.slug;
                 $("hdr-slug").textContent = u.first_username || state.slug;
                 try { $("hdr-joined").textContent = new Date(u.created_at).toLocaleDateString(); } catch { $("hdr-joined").textContent = "—"; }
@@ -326,9 +420,20 @@
                 if (bio && bio.trim()) { $("bio").innerHTML = bio; $("bio-card").style.display = ""; }
                 else { $("bio-card").style.display = "none"; }
 
-                const btn = $("btn-edit");
-                if (u.is_me) { btn.style.display = ""; btn.href = `/user/${encodeURIComponent(state.slug)}/edit`; }
-                else { btn.style.display = "none"; }
+                const btnEdit = $("btn-edit");
+                const btnLogout = $("btn-logout");
+
+                if (u.is_me) {
+                    btnEdit.style.display = "";
+                    btnEdit.href = `/user/${encodeURIComponent(state.slug)}/edit`;
+
+                    btnLogout.style.display = "";
+                    btnLogout.onclick = (e) => { e.preventDefault(); logout(); };
+                } else {
+                    btnEdit.style.display = "none";
+                    btnLogout.style.display = "none";
+                    btnLogout.onclick = null;
+                }
             }
 
             /* ---------- group helpers ---------- */
@@ -456,11 +561,11 @@
                 const ed = document.createElement("div");
                 ed.className = "comment reply-editor";
                 ed.innerHTML = `
-          <textarea style="width:100%;min-height:80px" class="field-box">${escapeHtml(opts.initial || "")}</textarea>
-          <div class="actions" style="margin-top:8px">
-            <button class="btn primary js-ok">Post</button>
-            <button class="btn js-cancel" type="button">Cancel</button>
-          </div>`;
+                      <textarea style="width:100%;min-height:80px" class="field-box">${escapeHtml(opts.initial || "")}</textarea>
+                      <div class="actions" style="margin-top:8px">
+                        <button class="btn primary js-ok">Post</button>
+                        <button class="btn js-cancel" type="button">Cancel</button>
+                      </div>`;
                 const ta = ed.querySelector("textarea");
                 ed.querySelector(".js-ok").addEventListener("click", async () => {
                     const val = ta.value.trim(); if (!val) return; await opts.onSubmit(val, ed);
@@ -799,6 +904,299 @@
             }
 
             if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
+        })();
+    </script>
+    <script>
+        (function mountPleaHubBtnExact() {
+            'use strict';
+
+            const HUB_URL = '/pleas/';
+            const ICON_SRC = '/icons/plea-hub.png';
+            const STYLE_ID = 'plea-hub-btn-style';
+
+            // Remove any prior injected styles for the button
+            const prev = document.getElementById(STYLE_ID);
+            if (prev) prev.remove();
+
+            // Inject the exact CSS used by the reader (matches main styles.css)
+            function injectExactStyles() {
+                const s = document.createElement('style');
+                s.id = STYLE_ID;
+                s.textContent = `
+:root{
+          --hub-native:21;
+          --hub-scale:3;
+          --hub-gap:20px;
+          --sbw:0px; /* JS updates this */
+}
+@media (max-width:480px){ :root{ --hub-scale:2; } }
+@media (min-width:1024px){ :root{ --hub-scale:4; } }
+
+.plea-hub-btn{
+          position:fixed;
+          top:calc(var(--hub-gap) + env(safe-area-inset-top));
+          right:calc(var(--hub-gap) + env(safe-area-inset-right) + var(--sbw,0px));
+          width:calc(var(--hub-native) * var(--hub-scale) * 1px);
+          height:calc(var(--hub-native) * var(--hub-scale) * 1px);
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          padding:0;
+          border:none;
+          background:transparent;
+          border-radius:0;
+          text-decoration:none;
+          z-index:10050;
+          opacity:0;              /* will fade to .5 */
+          transition:opacity .3s ease;
+          pointer-events:auto;
+          touch-action:manipulation;
+          overflow:hidden;
+}
+.plea-hub-btn.is-show{ opacity:.5; }
+.plea-hub-btn:hover,
+.plea-hub-btn:focus-visible{ opacity:.8; }
+.plea-hub-btn:active{ opacity:1; }
+
+.plea-hub-btn img{
+          width:100%;
+          height:100%;
+          display:block;
+          image-rendering:pixelated;
+          image-rendering:crisp-edges;
+          image-rendering:-moz-crisp-edges;
+          -ms-interpolation-mode:nearest-neighbor;
+}
+`;
+                document.head.appendChild(s);
+            }
+
+            // Same stash behavior the reader uses (no-op on non-plea pages)
+            function stashReturnTarget() {
+                const m = location.pathname.match(/\/(\d{1,6})\/?$/);
+                if (m) { try { sessionStorage.setItem('plea:return', String(m[1])); } catch { } }
+            }
+
+            // Keep --sbw (scrollbar width) accurate so right offset matches reader
+            function updateSBW() {
+                const sw = window.innerWidth - document.documentElement.clientWidth;
+                document.documentElement.style.setProperty('--sbw', (sw > 0 ? sw : 0) + 'px');
+            }
+
+            // Build exactly like main.js → addPleaHubButton()
+            function buildBtn() {
+                if (document.querySelector('.plea-hub-btn')) return; // already mounted
+
+                const a = document.createElement('a');
+                a.href = HUB_URL;
+                a.className = 'plea-hub-btn';
+                a.setAttribute('aria-label', 'Open Plea Select');
+
+                const img = new Image();
+                img.src = ICON_SRC;
+                img.alt = 'Plea Select';
+                img.decoding = 'async';
+                img.loading = 'eager';
+                img.draggable = false;
+
+                a.appendChild(img);
+                document.body.appendChild(a);
+
+                a.addEventListener('click', () => { stashReturnTarget(); }, { capture: true });
+
+                requestAnimationFrame(() => a.classList.add('is-show'));
+            }
+
+            // Escape → go to hub (reader UX)
+            function bindEscapeShortcut() {
+                const handler = (e) => {
+                    const tag = (e.target && e.target.tagName || '').toLowerCase();
+                    if (['input', 'textarea', 'select'].includes(tag) || e.target?.isContentEditable) return;
+                    if (e.repeat) return;
+                    if (e.key === 'Escape' || e.key === 'Esc') {
+                        e.preventDefault(); e.stopPropagation();
+                        stashReturnTarget();
+                        const href = document.querySelector('.plea-hub-btn')?.href || HUB_URL;
+                        window.location.assign(href);
+                    }
+                };
+                window.addEventListener('keydown', handler, { capture: true });
+            }
+
+            function mount() {
+                injectExactStyles();
+                updateSBW();
+                window.addEventListener('resize', updateSBW, { passive: true });
+                buildBtn();
+                bindEscapeShortcut();
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', mount, { once: true });
+            } else {
+                mount();
+            }
+        })();
+    </script>
+    <script>
+        /* ===== Auth Bar (profile view) ===== */
+        (() => {
+            const API = "http://localhost:3000/api";        // fallback (global API_BASE isn't visible here)
+            const ASSET_BASE = "/web";
+            const OVERLAY_JS = ASSET_BASE + "/authOverlay.js";
+            const OVERLAY_CSS = ASSET_BASE + "/authOverlay.css";
+
+            if (window.DPAuthBar && typeof window.DPAuthBar.ensure === "function") {
+                if (document.readyState === "loading") {
+                    document.addEventListener("DOMContentLoaded", () => window.DPAuthBar.ensure(), { once: true });
+                } else { window.DPAuthBar.ensure(); }
+                return;
+            }
+
+            function loadStyle(href) { try { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; document.head.appendChild(l); } catch { } }
+            function loadScript(src) {
+                return new Promise((res, rej) => {
+                    const s = document.createElement("script"); s.src = src; s.defer = true;
+                    s.onload = res; s.onerror = () => rej(new Error("Failed to load " + src)); document.head.appendChild(s);
+                });
+            }
+            async function getMe() {
+                try { const r = await fetch(API + "/auth/me", { credentials: "include" }); return r.ok ? r.json() : { user: null }; }
+                catch { return { user: null }; }
+            }
+
+            function injectStyles() {
+                if (document.getElementById("dp-authbar-style")) return;
+                const s = document.createElement("style");
+                s.id = "dp-authbar-style";
+                s.textContent = `
+#dp-authbar{
+      position:fixed; top:12px; left:12px; z-index:10060;
+      display:flex; align-items:center; gap:10px;
+      background:transparent; color:#fff; padding:0; border:none; border-radius:0;
+      font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
+      line-height:1;
+}
+#dp-authprefix{ opacity:.95; }
+#dp-authlink{
+      display:inline-flex; align-items:center; gap:8px;
+      color:#fff; text-decoration:none; cursor:pointer; outline:none;
+}
+#dp-authlink:hover{ text-decoration:underline; }
+#dp-authlink:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+#dp-authname{ font-weight:600; }
+#dp-authavatar{
+      width:26px; height:26px; display:block;
+      border-radius:50%; object-fit:cover; background:#000; border:2px solid #fff;
+}
+#dp-logout-btn{ display:none; } /* reserved */
+`;
+                document.head.appendChild(s);
+            }
+
+            const AVATAR_FALLBACK = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+          <rect width="100%" height="100%" fill="#000"/>
+          <circle cx="32" cy="24" r="14" fill="#fff"/>
+          <rect x="10" y="40" width="44" height="16" rx="8" fill="#fff"/>
+        </svg>`);
+
+            async function resolveProfileHrefFor(user) {
+                const first = (user?.first_username || user?.firstUsername || "").trim();
+                if (first) return "/user/" + encodeURIComponent(first);
+                const uname = (user?.username || "").trim();
+                if (!uname) return null;
+
+                const tries = [
+                    `${API}/users/by_username/${encodeURIComponent(uname)}`,
+                    `${API}/users/resolve?username=${encodeURIComponent(uname)}`
+                ];
+                for (const url of tries) {
+                    try {
+                        const r = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
+                        const j = await r.json().catch(() => ({}));
+                        const fx = j?.first_username || j?.user?.first_username || j?.firstUsername || j?.user?.firstUsername;
+                        if (fx) return "/user/" + encodeURIComponent(String(fx).trim());
+                    } catch { }
+                }
+                return "/user/" + encodeURIComponent(uname);
+            }
+
+            function mount() {
+                injectStyles();
+                if (document.getElementById("dp-authbar")) return;
+
+                const bar = document.createElement("div");
+                bar.id = "dp-authbar";
+                bar.innerHTML = `
+          <span id="dp-authprefix" aria-hidden="true">User:</span>
+          <a id="dp-authlink" href="#"></a>
+          <button id="dp-logout-btn" type="button">Sign out</button>
+        `;
+                document.body.appendChild(bar);
+
+                const authLink = bar.querySelector("#dp-authlink");
+                authLink.addEventListener("click", (e) => {
+                    if (authLink.getAttribute("data-state") === "logged-out") {
+                        e.preventDefault();
+                        if (window.DP && DP.openAuth) DP.openAuth();
+                        else alert("Login UI not loaded — check " + OVERLAY_JS);
+                    }
+                });
+
+                // refresh after overlay login
+                window.DP = window.DP || {};
+                const prev = DP.syncAfterLogin;
+                DP.syncAfterLogin = async () => { try { if (prev) await prev(); } finally { await refresh(); } };
+            }
+
+            async function refresh() {
+                const bar = document.getElementById("dp-authbar");
+                if (!bar) return;
+                const prefixEl = bar.querySelector("#dp-authprefix");
+                const authLink = bar.querySelector("#dp-authlink");
+
+                const { user } = await getMe();
+
+                if (user) {
+                    const uname = (user.username || user.first_username || "me").trim();
+                    const pfp = (user.profile_photo || user.photo || "").trim() || AVATAR_FALLBACK;
+                    const href = await resolveProfileHrefFor(user);
+
+                    prefixEl.style.display = "";
+                    authLink.setAttribute("data-state", "logged-in");
+                    authLink.setAttribute("href", href || "#");
+                    authLink.innerHTML = `
+            <img id="dp-authavatar" alt="" src="${pfp}">
+            <span id="dp-authname">${uname}</span>
+          `;
+                    authLink.onclick = null;
+                } else {
+                    prefixEl.style.display = "none";
+                    authLink.setAttribute("data-state", "logged-out");
+                    authLink.setAttribute("href", "#");
+                    authLink.textContent = "User Login";
+                }
+            }
+
+            async function ensure() {
+                try { loadStyle(OVERLAY_CSS); } catch { }
+                let overlayOk = true;
+                try { await loadScript(OVERLAY_JS); } catch (e) { overlayOk = false; console.warn(e.message); }
+                window.DP = window.DP || {};
+                if (overlayOk && DP.init) DP.init({ apiBase: API });
+
+                mount();
+                await refresh();
+            }
+
+            window.DPAuthBar = { ensure, refresh };
+
+            if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", () => ensure(), { once: true });
+            } else {
+                ensure();
+            }
         })();
     </script>
 </body>

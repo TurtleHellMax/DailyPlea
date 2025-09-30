@@ -350,6 +350,199 @@
         .preview .thumb {
             border: var(--bw) solid #fff !important;
         }
+
+        /* --- Button polish & vote highlights (carryover) --- */
+
+        /* colors for selected vote states */
+        :root {
+            --vote-like-bg: #ffffff;
+            --vote-like-fg: #000000;
+            --vote-dislike-bg: #e6e6e6;
+            --vote-dislike-fg: #000000;
+        }
+
+        /* smooth transitions */
+        button, .btn {
+            transition: background-color .12s ease, color .12s ease, border-color .12s ease;
+        }
+
+        /* anchor-style buttons never underline (in case you use <a class="btn">) */
+        a.btn,
+        a.btn:hover,
+        a.btn:focus,
+        a.btn:active {
+            text-decoration: none !important;
+        }
+
+        /* hover: invert (white bg, black text) */
+        button:hover,
+        .btn:hover {
+            background: #fff !important;
+            color: #000 !important;
+        }
+
+        /* active: snap back to each button's base style */
+        button:active:not(.secondary):not(.danger),
+        .btn:active:not(.secondary):not(.danger) {
+            background: var(--primary) !important;
+            color: #fff !important;
+        }
+
+        button.secondary:active, .btn.secondary:active {
+            background: #1f2937 !important;
+            color: #cbd5e1 !important;
+        }
+
+        button.danger:active, .btn.danger:active {
+            background: #b91c1c !important;
+            color: #fff !important;
+        }
+
+        /* persistent highlight for vote buttons based on current vote */
+        button.is-active, .btn.is-active { /* upvoted */
+            background: var(--vote-like-bg) !important;
+            color: var(--vote-like-fg) !important;
+        }
+
+        button.is-down, .btn.is-down { /* downvoted */
+            background: var(--vote-dislike-bg) !important;
+            color: var(--vote-dislike-fg) !important;
+        }
+            /* keep the highlight even on hover/focus */
+            button.is-active:hover, .btn.is-active:hover,
+            button.is-active:focus-visible, .btn.is-active:focus-visible,
+            button.is-down:hover, .btn.is-down:hover,
+            button.is-down:focus-visible, .btn.is-down:focus-visible {
+                background: #fff !important;
+                color: #000 !important;
+            }
+
+        /* ===== universal hover invert (force) ===== */
+        :is(button, .btn, .bio-toolbar button, .bio-toolbar select, label.pill):hover {
+            background: #fff !important;
+            background-color: #fff !important; /* some UAs use this separately */
+            background-image: none !important; /* kill gradients that were winning */
+            color: #000 !important;
+            border-color: #fff !important; /* where a border exists */
+        }
+
+        /* revert on click/active (primary/neutral/danger already defined; add pill & toolbar) */
+        label.pill:active { /* choose image */
+            background: #0d1520 !important;
+            color: var(--text) !important;
+            border-color: var(--border) !important;
+        }
+
+        .bio-toolbar button:active,
+        .bio-toolbar select:active {
+            background: #111826 !important;
+            color: var(--text) !important;
+            border-color: var(--border) !important;
+        }
+
+        /* anchor-style buttons never underline, just in case you use <a class="pill"> later */
+        a.pill,
+        a.pill:hover,
+        a.pill:focus,
+        a.pill:active {
+            text-decoration: none !important;
+        }
+
+        /* make label look/behave like a button */
+        label.pill {
+            cursor: pointer;
+            user-select: none;
+            transition: background-color .12s ease, color .12s ease, border-color .12s ease;
+        }
+
+        /* ===== sliders (range) — invert on hover, revert on active ===== */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            background: transparent;
+            cursor: pointer;
+        }
+
+            /* base track/thumb */
+            input[type="range"]::-webkit-slider-runnable-track {
+                height: 6px;
+                border-radius: 999px;
+                background: #1f2a37;
+            }
+
+            input[type="range"]::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                width: 18px;
+                height: 18px;
+                border-radius: 50%;
+                background: var(--primary);
+                border: 2px solid transparent;
+                margin-top: -6px;
+            }
+
+            input[type="range"]::-moz-range-track {
+                height: 6px;
+                border-radius: 999px;
+                background: #1f2a37;
+            }
+
+            input[type="range"]::-moz-range-thumb {
+                width: 18px;
+                height: 18px;
+                border-radius: 50%;
+                background: var(--primary);
+                border: 2px solid transparent;
+            }
+
+            /* hover invert */
+            input[type="range"]:hover::-webkit-slider-runnable-track {
+                background: #fff !important;
+            }
+
+            input[type="range"]:hover::-moz-range-track {
+                background: #fff !important;
+            }
+
+            input[type="range"]:hover::-webkit-slider-thumb {
+                background: #000 !important;
+            }
+
+            input[type="range"]:hover::-moz-range-thumb {
+                background: #000 !important;
+            }
+
+            /* active revert */
+            input[type="range"]:active::-webkit-slider-runnable-track {
+                background: #1f2a37 !important;
+            }
+
+            input[type="range"]:active::-moz-range-track {
+                background: #1f2a37 !important;
+            }
+
+            input[type="range"]:active::-webkit-slider-thumb {
+                background: var(--primary) !important;
+            }
+
+            input[type="range"]:active::-moz-range-thumb {
+                background: var(--primary) !important;
+            }
+
+        /* ===== vote state highlight stays visible even when hovered/focused ===== */
+        :is(button, .btn).is-active,
+        :is(button, .btn).is-down {
+            background-image: none !important; /* ensure white shows */
+        }
+
+            :is(button, .btn).is-active:hover,
+            :is(button, .btn).is-active:focus-visible,
+            :is(button, .btn).is-down:hover,
+            :is(button, .btn).is-down:focus-visible {
+                background: #fff !important;
+                color: #000 !important;
+                border-color: #fff !important;
+            }
     </style>
     <link rel="stylesheet" href="/web/user-profile.css?v=dev">
 </head>

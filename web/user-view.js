@@ -20,6 +20,169 @@ console.log("[user-view.js] loaded");
         domGroups: new Map()
     };
 
+    /* ===== Auth Bar (user-view page) ===== */
+    (() => {
+        const API = (typeof API_BASE === "string" && API_BASE) || "http://localhost:3000/api";
+        const ASSET_BASE = "/web";
+        const OVERLAY_JS = ASSET_BASE + "/authOverlay.js";
+        const OVERLAY_CSS = ASSET_BASE + "/authOverlay.css";
+
+        // If already defined by another bundle, just ensure it.
+        if (window.DPAuthBar && typeof window.DPAuthBar.ensure === "function") {
+            if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", () => window.DPAuthBar.ensure(), { once: true });
+            } else {
+                window.DPAuthBar.ensure();
+            }
+            return;
+        }
+
+        function loadStyle(href) { try { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; document.head.appendChild(l); } catch { } }
+        function loadScript(src) {
+            return new Promise((res, rej) => {
+                const s = document.createElement("script"); s.src = src; s.defer = true;
+                s.onload = res; s.onerror = () => rej(new Error("Failed to load " + src)); document.head.appendChild(s);
+            });
+        }
+        async function getMe() {
+            try { const r = await fetch(API + "/auth/me", { credentials: "include" }); return r.ok ? r.json() : { user: null }; }
+            catch { return { user: null }; }
+        }
+
+        function injectStyles() {
+            if (document.getElementById("dp-authbar-style")) return;
+            const s = document.createElement("style");
+            s.id = "dp-authbar-style";
+            s.textContent = `
+#dp-authbar{
+  position:fixed; top:12px; left:12px; z-index:10060;
+  display:flex; align-items:center; gap:10px;
+  background:transparent; color:#fff; padding:0; border:none; border-radius:0;
+  font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
+  line-height:1;
+}
+#dp-authprefix{ opacity:.95; }
+#dp-authlink{
+  display:inline-flex; align-items:center; gap:8px;
+  color:#fff; text-decoration:none; cursor:pointer; outline:none;
+}
+#dp-authlink:hover{ text-decoration:underline; }
+#dp-authlink:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+#dp-authname{ font-weight:600; }
+#dp-authavatar{
+  width:26px; height:26px; display:block;
+  border-radius:50%; object-fit:cover; background:#000; border:2px solid #fff;
+}
+#dp-logout-btn{ display:none; } /* reserved */
+`;
+            document.head.appendChild(s);
+        }
+
+        const AVATAR_FALLBACK = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+      <rect width="100%" height="100%" fill="#000"/>
+      <circle cx="32" cy="24" r="14" fill="#fff"/>
+      <rect x="10" y="40" width="44" height="16" rx="8" fill="#fff"/>
+    </svg>`);
+
+        async function resolveProfileHrefFor(user) {
+            const first = (user?.first_username || user?.firstUsername || "").trim();
+            if (first) return "/user/" + encodeURIComponent(first);
+            const uname = (user?.username || "").trim();
+            if (!uname) return null;
+
+            const tries = [
+                `${API}/users/by_username/${encodeURIComponent(uname)}`,
+                `${API}/users/resolve?username=${encodeURIComponent(uname)}`
+            ];
+            for (const url of tries) {
+                try {
+                    const r = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
+                    const j = await r.json().catch(() => ({}));
+                    const fx = j?.first_username || j?.user?.first_username || j?.firstUsername || j?.user?.firstUsername;
+                    if (fx) return "/user/" + encodeURIComponent(String(fx).trim());
+                } catch { }
+            }
+            return "/user/" + encodeURIComponent(uname);
+        }
+
+        function mount() {
+            injectStyles();
+            if (document.getElementById("dp-authbar")) return;
+
+            const bar = document.createElement("div");
+            bar.id = "dp-authbar";
+            bar.innerHTML = `
+      <span id="dp-authprefix" aria-hidden="true">User:</span>
+      <a id="dp-authlink" href="#"></a>
+      <button id="dp-logout-btn" type="button">Sign out</button>
+    `;
+            document.body.appendChild(bar);
+
+            const authLink = bar.querySelector("#dp-authlink");
+            authLink.addEventListener("click", (e) => {
+                if (authLink.getAttribute("data-state") === "logged-out") {
+                    e.preventDefault();
+                    if (window.DP && DP.openAuth) DP.openAuth();
+                    else alert("Login UI not loaded — check " + OVERLAY_JS);
+                }
+            });
+
+            // refresh after overlay login
+            window.DP = window.DP || {};
+            const prev = DP.syncAfterLogin;
+            DP.syncAfterLogin = async () => { try { if (prev) await prev(); } finally { await refresh(); } };
+        }
+
+        async function refresh() {
+            const bar = document.getElementById("dp-authbar");
+            if (!bar) return;
+            const prefixEl = bar.querySelector("#dp-authprefix");
+            const authLink = bar.querySelector("#dp-authlink");
+
+            const { user } = await getMe();
+
+            if (user) {
+                const uname = (user.username || user.first_username || "me").trim();
+                const pfp = (user.profile_photo || user.photo || "").trim() || AVATAR_FALLBACK;
+                const href = await resolveProfileHrefFor(user);
+
+                prefixEl.style.display = "";
+                authLink.setAttribute("data-state", "logged-in");
+                authLink.setAttribute("href", href || "#");
+                authLink.innerHTML = `
+        <img id="dp-authavatar" alt="" src="${pfp}">
+        <span id="dp-authname">${uname}</span>
+      `;
+                authLink.onclick = null; // normal navigation
+            } else {
+                prefixEl.style.display = "none";
+                authLink.setAttribute("data-state", "logged-out");
+                authLink.setAttribute("href", "#");
+                authLink.textContent = "User Login";
+            }
+        }
+
+        async function ensure() {
+            try { loadStyle(OVERLAY_CSS); } catch { }
+            let overlayOk = true;
+            try { await loadScript(OVERLAY_JS); } catch (e) { overlayOk = false; console.warn(e.message); }
+            window.DP = window.DP || {};
+            if (overlayOk && DP.init) DP.init({ apiBase: API });
+
+            mount();
+            await refresh();
+        }
+
+        window.DPAuthBar = { ensure, refresh };
+
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", () => ensure(), { once: true });
+        } else {
+            ensure();
+        }
+    })();
+
     /* ---------- CSRF + API ---------- */
     async function fetchCsrf() {
         const r = await fetch(API_BASE.replace("/api", "") + "/api/csrf", { credentials: "include" });
@@ -631,8 +794,50 @@ console.log("[user-view.js] loaded");
         setTimeout(() => { $("msg").textContent = ""; }, 3000);
     }
 
+    function mountPleaHubButton() {
+        const HUB_URL = '/pleas/';              // hub route
+        const ICON_SRC = '/icons/plea-hub.png';  // adjust if your asset lives elsewhere
+        if (document.querySelector('.plea-hub-btn')) return; // no dupes
+
+        const a = document.createElement('a');
+        a.href = HUB_URL;
+        a.className = 'plea-hub-btn';
+        a.setAttribute('aria-label', 'Open Plea Select');
+
+        const img = new Image();
+        img.src = ICON_SRC;
+        img.alt = 'Plea Hub';
+        img.decoding = 'async';
+        img.loading = 'eager';
+        img.draggable = false;
+
+        a.appendChild(img);
+        document.body.appendChild(a);
+        requestAnimationFrame(() => a.classList.add('is-show'));
+    }
+
+    function mountPleaHubOnProfile() {
+        if (document.querySelector(".plea-hub-btn")) return;
+        const a = document.createElement("a");
+        a.href = "/pleas/";
+        a.className = "plea-hub-btn";
+        a.setAttribute("aria-label", "Open Plea Select");
+        const img = new Image();
+        img.src = "/icons/plea-hub.png";
+        img.alt = "Plea Select";
+        img.decoding = "async";
+        img.loading = "eager";
+        img.draggable = false;
+        a.appendChild(img);
+        a.addEventListener("click", () => { try { sessionStorage.setItem("plea:return", "profile"); } catch { } }, { capture: true });
+        document.body.appendChild(a);
+        requestAnimationFrame(() => a.classList.add("is-show"));
+    }
+
+
     /* ---------- boot ---------- */
     async function init() {
+        mountPleaHubOnProfile();
         state.slug = extractSlugFromPath(location.pathname) || "";
         if (!state.slug) return msg("Bad URL");
 
