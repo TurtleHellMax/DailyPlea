@@ -75,6 +75,66 @@ function ensureUsersTable() {
     for (const def of want) addColumnIfMissing('users', def);
 }
 
+/* ---------- FRIENDS & REQUESTS ---------- */
+function ensureFriendsTables() {
+    // Friend requests: pending → accepted/ignored. Keep one row per from→to.
+    db.exec(`
+    CREATE TABLE IF NOT EXISTS friend_requests (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_user_id INTEGER NOT NULL,
+      to_user_id   INTEGER NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'accepted' | 'ignored'
+      created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(from_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(to_user_id)   REFERENCES users(id) ON DELETE CASCADE,
+      CHECK (status IN ('pending','accepted','ignored'))
+    );
+
+    -- Avoid duplicate open requests from A→B
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_friend_requests_open
+      ON friend_requests(from_user_id, to_user_id)
+      WHERE status = 'pending';
+
+    CREATE INDEX IF NOT EXISTS idx_friend_requests_from ON friend_requests(from_user_id);
+    CREATE INDEX IF NOT EXISTS idx_friend_requests_to   ON friend_requests(to_user_id);
+    CREATE INDEX IF NOT EXISTS idx_friend_requests_stat ON friend_requests(status);
+
+    DROP TRIGGER IF EXISTS trg_friend_requests_updated_at;
+    CREATE TRIGGER trg_friend_requests_updated_at
+    AFTER UPDATE ON friend_requests
+    FOR EACH ROW BEGIN
+      UPDATE friend_requests SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+    END;
+  `);
+
+    // Friendships: undirected (store once as (a<b)).
+    db.exec(`
+    CREATE TABLE IF NOT EXISTS friendships (
+      user_id_a  INTEGER NOT NULL,
+      user_id_b  INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id_a, user_id_b),
+      CHECK (user_id_a < user_id_b),
+      FOREIGN KEY(user_id_a) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(user_id_b) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_friendships_a ON friendships(user_id_a);
+    CREATE INDEX IF NOT EXISTS idx_friendships_b ON friendships(user_id_b);
+  `);
+
+    // Convenience view: edges in both directions (one row per user → friend)
+    try {
+        db.exec(`
+      CREATE VIEW IF NOT EXISTS user_friend_edges AS
+      SELECT user_id_a AS user_id, user_id_b AS friend_id, created_at FROM friendships
+      UNION ALL
+      SELECT user_id_b AS user_id, user_id_a AS friend_id, created_at FROM friendships;
+    `);
+    } catch { /* view exists or SQLite without CREATE VIEW IF NOT EXISTS */ }
+}
+
+
 /* ---------- CREDENTIALS (password storage) ---------- */
 function ensureCredentialsTable() {
     db.exec(`
@@ -449,6 +509,7 @@ function ensureCommentsAndVotes() {
 function migrate() {
     // Order matters: users → credentials/sessions/2FA → resets → comments
     ensureUsersTable();
+    ensureFriendsTables();
     ensureCredentialsTable();
     ensureSessionsTable();
     ensureTotpTable();

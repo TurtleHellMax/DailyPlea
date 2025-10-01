@@ -72,6 +72,13 @@ function ensureUserExtrasSchema() {
       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_plea_reads_user ON plea_reads(user_id);
+
+    CREATE TABLE IF NOT EXISTS user_presence (
+        user_id  INTEGER PRIMARY KEY,
+        seen_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_presence_seen ON user_presence(seen_at);
   `);
 }
 ensureUserExtrasSchema();
@@ -771,6 +778,39 @@ router.get('/users/me/reads/count', requireAuth, (req, res) => {
 router.get('/users/me/reads', requireAuth, (req, res) => {
     const rows = db.prepare(`SELECT plea_num, completed_at FROM plea_reads WHERE user_id = ? ORDER BY completed_at DESC`).all(req.userId);
     res.json({ ok: true, items: rows });
+});
+
+/* ===================== PRESENCE ===================== */
+/**
+ * POST /api/presence/ping
+ * Body: { } (ignored). Marks viewer as online "now".
+ */
+router.post('/presence/ping', requireAuth, (req, res) => {
+    db.prepare(`
+    INSERT INTO user_presence(user_id, seen_at)
+    VALUES (?, datetime('now'))
+    ON CONFLICT(user_id) DO UPDATE SET seen_at = datetime('now')
+  `).run(req.userId);
+    res.json({ ok: true });
+});
+
+/* ===================== FRIENDS SUMMARY (owner only) ===================== */
+/**
+ * GET /api/users/me/friends/summary
+ * Returns: { total, online, window_minutes }
+ * "online" = seen within last 5 minutes according to user_presence.
+ */
+router.get('/users/me/friends/summary', requireAuth, (req, res) => {
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM user_friends WHERE user_id = ?`).get(req.userId)?.n | 0;
+    const windowMinutes = 5;
+    const online = db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM user_friends f
+    JOIN user_presence p ON p.user_id = f.friend_user_id
+    WHERE f.user_id = ?
+      AND p.seen_at >= datetime('now', ?)
+  `).get(req.userId, `-${windowMinutes} minutes`)?.n | 0;
+    res.json({ ok: true, total, online, window_minutes: windowMinutes });
 });
 
 module.exports = { router };

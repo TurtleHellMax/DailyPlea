@@ -129,18 +129,65 @@
         window.addEventListener('touchmove', scrollLock.onTouchMove, { passive: false, capture: true });
 
         scrollLock.onKey = (e) => {
-            const keys = [' ', 'Spacebar', 'Space', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
+            // include Enter now
+            const keys = [' ', 'Spacebar', 'Space', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', 'Enter'];
             if (!keys.includes(e.key)) return;
-            const scroller = modal; const page = scroller.clientHeight * 0.9; let delta = 0;
+
+            const inModal = modal && modal.contains(e.target);
+            const tag = (e.target && e.target.tagName || '').toLowerCase();
+
+            // Special-case Enter so the page behind never sees it
+            if (e.key === 'Enter') {
+                // Let IME / Shift+Enter pass through for newline-like behavior in text areas only
+                if (tag === 'textarea') {
+                    // still stop propagation so background can't react
+                    e.stopPropagation();
+                    return;
+                }
+                if (e.isComposing || e.shiftKey) {
+                    // Don't submit while composing; just swallow for background
+                    e.preventDefault();
+                }
+
+                // If we're inside the overlay, submit the visible form
+                if (inModal) {
+                    // Prefer explicit primary buttons; fall back to any submit in the current form
+                    const form = modal.querySelector('#dp-content form');
+                    let btn =
+                        modal.querySelector('#dp-content #dp-login') ||
+                        modal.querySelector('#dp-content #dp-reg') ||
+                        (form && form.querySelector('button[type="submit"]'));
+
+                    if (btn && !btn.disabled) {
+                        // Click ensures existing handlers (doLogin/doRegister) run
+                        btn.click();
+                    } else if (form && form.requestSubmit) {
+                        form.requestSubmit();
+                    } else if (form) {
+                        form.submit();
+                    }
+                }
+
+                // Always block the background page from seeing Enter while overlay is open
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+
+            // Original scroll key handling (unchanged)
+            const scroller = modal;
+            const page = scroller.clientHeight * 0.9; let delta = 0;
             if (e.key === 'ArrowDown') delta = 60;
             if (e.key === 'ArrowUp') delta = -60;
             if (e.key === 'PageDown' || e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') delta = page;
             if (e.key === 'PageUp') delta = -page;
+
             e.preventDefault(); e.stopPropagation();
             if (e.key === 'Home') scroller.scrollTop = 0;
             else if (e.key === 'End') scroller.scrollTop = scroller.scrollHeight;
             else scroller.scrollTop = Math.min(scroller.scrollHeight, Math.max(0, scroller.scrollTop + delta));
         };
+
         window.addEventListener('keydown', scrollLock.onKey, { capture: true });
 
         log('scroll lock engaged');
@@ -471,34 +518,66 @@ body.dp-noscroll { overflow: hidden !important; }
         upsertAuthOverlayTheme();
     }
 
+    // ---- Credential Management helpers (HTTPS only) ----
+    async function tryStoreCredentials(id, password) {
+        try {
+            if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
+            if (!('credentials' in navigator) || !navigator.credentials || !window.PasswordCredential) return;
+            const cred = await navigator.credentials.create({ password: { id, name: id, password } });
+            if (cred) await navigator.credentials.store(cred);
+        } catch { /* ok */ }
+    }
+
+    async function tryPrefillLogin() {
+        try {
+            if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
+            if (!('credentials' in navigator) || !navigator.credentials) return;
+            const cred = await navigator.credentials.get({ password: true, mediation: 'optional' });
+            if (cred && cred.id) {
+                const id = document.getElementById('dp-id'); if (id && !id.value) id.value = cred.id;
+            }
+            if (cred && cred.password) {
+                const pw = document.getElementById('dp-pw'); if (pw && !pw.value) pw.value = cred.password;
+            }
+        } catch { /* ok */ }
+    }
+
     /* ===================== VIEWS ===================== */
     function renderLogin() {
         log('renderLogin');
         const c = byId('dp-content');
         if (!c) { warn('renderLogin: #dp-content missing'); return; }
         c.innerHTML = `
+    <form id="dp-login-form" autocomplete="on" novalidate>
       <h2 style="margin:0 0 8px">Welcome back</h2>
+
       <label><span>Email, phone, or username</span></label>
-      <input id="dp-id" autocomplete="username" placeholder="name@example.com, +15555550123, or handle">
+      <input id="dp-id" name="username" type="text" autocomplete="username"
+             placeholder="name@example.com, +15555550123, or handle">
+
       <label>Password</label>
-      <input id="dp-pw" type="hidden" value="">
-      <input id="dp-pw-vis" type="text" autocomplete="current-password" placeholder="Min 7, < 32, 1 capital, 1 number, 1 symbol">
+      <input id="dp-pw" name="password" type="password" autocomplete="current-password"
+             placeholder="Enter your password">
+
       <div id="dp-totp-row" style="display:none;margin-top:14px">
         <label>2FA Code</label>
         <div style="display:flex;gap:10px">
-          <input id="dp-totp" inputmode="numeric" placeholder="123456" style="flex:1">
+          <input id="dp-totp" inputmode="numeric" placeholder="123456" style="flex:1" autocomplete="one-time-code">
           <button id="dp-sendcode" type="button" title="Send code to your email/phone" style="white-space:nowrap">Send code</button>
         </div>
       </div>
-      <button id="dp-login" class="dp-btn-full" style="margin-top:10px">Login</button>
-      <div class="muted" style="margin-top:6px;text-align:center"><a href="#" id="dp-reset">Forgot password?</a></div>
-    `;
-        attachAsteriskMask('dp-pw-vis', 'dp-pw');
 
-        attachErrorClearOnInput(['dp-id', 'dp-pw-vis', 'dp-totp']);
+      <button id="dp-login" class="dp-btn-full" type="submit" style="margin-top:10px">Login</button>
+      <div class="muted" style="margin-top:6px;text-align:center"><a href="#" id="dp-reset">Forgot password?</a></div>
+    </form>
+  `;
+
+        attachErrorClearOnInput(['dp-id', 'dp-pw', 'dp-totp']);
         bindEnter(c, 'dp-login');
 
+        const form = byId('dp-login-form');
         const idInput = byId('dp-id');
+
         idInput.addEventListener('blur', () => {
             const raw = idInput.value.trim();
             if (!raw) return;
@@ -517,7 +596,7 @@ body.dp-noscroll { overflow: hidden !important; }
             catch { msg('Could not send code.'); }
         };
 
-        byId('dp-login').onclick = async () => {
+        const doLogin = async () => {
             msg(''); clearErrors(c);
             const rawId = idInput.value.trim();
             const password = byId('dp-pw').value;
@@ -525,7 +604,7 @@ body.dp-noscroll { overflow: hidden !important; }
 
             let hasErr = false;
             if (!rawId) { markError(idInput); hasErr = true; }
-            if (!password) { markError(byId('dp-pw-vis')); hasErr = true; }
+            if (!password) { markError(byId('dp-pw')); hasErr = true; }
             if (hasErr) { msg('Please fill the highlighted fields.'); focusFirstError(c); return; }
 
             let identifier = '';
@@ -548,6 +627,8 @@ body.dp-noscroll { overflow: hidden !important; }
                 const body = { identifier, password };
                 if (totp) body.totp = totp;
                 await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
+                // Store creds (best-effort; HTTPS/localhost only)
+                tryStoreCredentials(identifier, password);
                 msg('Logged in.');
                 closeOverlay('login-success');
                 Promise.resolve((window.DP && DP.syncAfterLogin) ? DP.syncAfterLogin() : null).catch(err => warn('post-login sync failed:', err));
@@ -561,14 +642,11 @@ body.dp-noscroll { overflow: hidden !important; }
             }
         };
 
-        byId('dp-reset').onclick = async (ev) => {
-            ev.preventDefault();
-            try {
-                await fetchCsrf();
-                await api('/auth/password/reset/request', { method: 'POST', body: JSON.stringify({ identifier: idInput.value.trim() }) });
-                msg('Reset link sent to Dev Mailbox.');
-            } catch { msg('Reset failed.'); }
-        };
+        form.addEventListener('submit', (ev) => { ev.preventDefault(); doLogin(); });
+        byId('dp-login').onclick = (ev) => { ev.preventDefault(); doLogin(); };
+
+        // Give the browser a moment to autofill; then reflect any values (esp. via managers)
+        setTimeout(tryPrefillLogin, 50);
 
         upsertAuthOverlayTheme();
     }
@@ -578,27 +656,28 @@ body.dp-noscroll { overflow: hidden !important; }
         const c = byId('dp-content');
         if (!c) { warn('renderRegister: #dp-content missing'); return; }
         c.innerHTML = `
+    <form id="dp-reg-form" autocomplete="on" novalidate>
       <h2 style="margin:0 0 8px">Create account</h2>
 
       <label>Username <span class="req" aria-hidden="true">*</span> <span class="muted" style="font-weight:normal;">(3–24 letters, numbers, _)</span></label>
-      <input id="dp-username" placeholder="your_handle" autocomplete="off">
+      <input id="dp-username" name="username" placeholder="your_handle" autocomplete="username">
 
       <label>Email <span class="req" aria-hidden="true">*</span></label>
-      <input id="dp-email" autocomplete="email" placeholder="name@example.com">
+      <input id="dp-email" name="email" type="email" autocomplete="email" placeholder="name@example.com">
 
       <label>Confirm email <span class="req" aria-hidden="true">*</span></label>
-      <input id="dp-email2" autocomplete="email" placeholder="Re-enter your email">
+      <input id="dp-email2" name="email-confirm" type="email" autocomplete="email" placeholder="Re-enter your email">
 
       <label>Phone (optional)</label>
-      <input id="dp-phone" placeholder="+15555550123" autocomplete="tel">
+      <input id="dp-phone" name="tel" type="tel" placeholder="+15555550123" autocomplete="tel">
 
       <label>Password <span class="req" aria-hidden="true">*</span></label>
-      <input id="dp-pw" type="hidden" value="">
-      <input id="dp-pw-vis" type="text" autocomplete="new-password" placeholder="Min 7, < 32, 1 capital, 1 number, 1 symbol">
+      <input id="dp-pw" name="new-password" type="password" autocomplete="new-password"
+             placeholder="Min 7, < 32, 1 capital, 1 number, 1 symbol">
 
       <label>Confirm password <span class="req" aria-hidden="true">*</span></label>
-      <input id="dp-pw2" type="hidden" value="">
-      <input id="dp-pw2-vis" type="text" autocomplete="new-password" placeholder="Re-enter your password">
+      <input id="dp-pw2" name="new-password-confirm" type="password" autocomplete="new-password"
+             placeholder="Re-enter your password">
 
       <label class="dp-check" style="margin-top:10px">
         <input id="dp-optin" type="checkbox">
@@ -606,17 +685,16 @@ body.dp-noscroll { overflow: hidden !important; }
       </label>
 
       <div class="dp-actions" style="margin-top:10px">
-        <button id="dp-reg" class="dp-btn-full">Register</button>
+        <button id="dp-reg" class="dp-btn-full" type="submit">Register</button>
         <div class="muted dp-terms" style="user-select:text">
           By registering, you agree to the following
           <a href="/terms-and-conditions/9-30-2025" target="_blank" rel="noopener noreferrer">terms and conditions</a>.
         </div>
       </div>
-    `;
-        attachAsteriskMask('dp-pw-vis', 'dp-pw');
-        attachAsteriskMask('dp-pw2-vis', 'dp-pw2');
+    </form>
+  `;
 
-        attachErrorClearOnInput(['dp-username', 'dp-email', 'dp-email2', 'dp-phone', 'dp-pw-vis', 'dp-pw2-vis', 'dp-optin']);
+        attachErrorClearOnInput(['dp-username', 'dp-email', 'dp-email2', 'dp-phone', 'dp-pw', 'dp-pw2', 'dp-optin']);
         bindEnter(c, 'dp-reg');
 
         const inputEmail = byId('dp-email');
@@ -633,7 +711,9 @@ body.dp-noscroll { overflow: hidden !important; }
             if (!v.ok) msg('Password needs: ' + v.reasons.join(', ') + '.'); else msg('');
         });
 
-        byId('dp-reg').onclick = async () => {
+        const form = byId('dp-reg-form');
+
+        const doRegister = async () => {
             msg(''); clearErrors(c);
 
             const usernameRaw = byId('dp-username').value.trim();
@@ -651,8 +731,8 @@ body.dp-noscroll { overflow: hidden !important; }
             if (!usernameRaw) { markErrorById('dp-username'); missing = true; }
             if (!email) { markErrorById('dp-email'); missing = true; }
             if (!email2) { markErrorById('dp-email2'); missing = true; }
-            if (!password) { markErrorById('dp-pw-vis'); missing = true; }
-            if (!password2) { markErrorById('dp-pw2-vis'); missing = true; }
+            if (!password) { markErrorById('dp-pw'); missing = true; }
+            if (!password2) { markErrorById('dp-pw2'); missing = true; }
             if (!optin) { markErrorById('dp-optin'); missing = true; }
             if (missing) { msg('Please fill the highlighted fields.'); focusFirstError(c); return; }
 
@@ -666,8 +746,8 @@ body.dp-noscroll { overflow: hidden !important; }
             if (phone && !isPhone(phone)) { markErrorById('dp-phone'); msg('Invalid phone number.'); return; }
 
             const p = validatePassword(password);
-            if (!p.ok) { markErrorById('dp-pw-vis'); msg('Password needs: ' + p.reasons.join(', ') + '.'); return; }
-            if (password !== password2) { markErrorById('dp-pw-vis'); markErrorById('dp-pw2-vis'); msg('Passwords do not match.'); return; }
+            if (!p.ok) { markErrorById('dp-pw'); msg('Password needs: ' + p.reasons.join(', ') + '.'); return; }
+            if (password !== password2) { markErrorById('dp-pw'); markErrorById('dp-pw2'); msg('Passwords do not match.'); return; }
 
             try {
                 await fetchCsrf().catch((e) => { throw { ...e, action: 'Fetch CSRF' }; });
@@ -675,6 +755,9 @@ body.dp-noscroll { overflow: hidden !important; }
                     method: 'POST',
                     body: JSON.stringify({ username: u.username, email, phone: phone || null, password, consent_emails: true })
                 }).catch((e) => { throw { ...e, action: 'Register' }; });
+
+                // Store creds for future autofill (best-effort)
+                tryStoreCredentials(email || u.username, password);
 
                 try {
                     const localSave = JSON.parse(localStorage.getItem('dp_save') || 'null');
@@ -698,10 +781,13 @@ body.dp-noscroll { overflow: hidden !important; }
                 if (e?.error === 'username_banned') { markErrorById('dp-username'); msg('That username is not allowed. Pick a different one.'); return; }
                 if (e?.error === 'username_taken') { markErrorById('dp-username'); msg('That username is taken. Try another.'); return; }
                 if (e?.error === 'user_exists') { markErrorById('dp-email'); msg('Email or phone already in use.'); return; }
-                if (e?.error === 'weak_password') { markErrorById('dp-pw-vis'); msg('Password too weak. Use a stronger one.'); return; }
+                if (e?.error === 'weak_password') { markErrorById('dp-pw'); msg('Password too weak. Use a stronger one.'); return; }
                 showSpecificError(e.action || 'Register', e);
             }
         };
+
+        form.addEventListener('submit', (ev) => { ev.preventDefault(); doRegister(); });
+        byId('dp-reg').onclick = (ev) => { ev.preventDefault(); doRegister(); };
 
         upsertAuthOverlayTheme();
     }

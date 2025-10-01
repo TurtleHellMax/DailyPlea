@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Friends</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/web/site.css">
+    <link rel="stylesheet" href="/web/user-profile.css?v=dev">
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0a0b0d;
+            --bg-2: #0c0e12;
+            --panel: #0e1116;
+            --panel-2: #12161c;
+            --text: #f2f2f2;
+            --muted: #b3b3b3;
+            --primary: #fff;
+            --border: #e6e6e6;
+            --border-soft: rgba(255,255,255,.14);
+            --bw: 2px;
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
+            color: var(--text);
+            background: radial-gradient(1200px 800px at 20% -10%, #111214 0%, #0a0b0d 45%, #08090b 100%), linear-gradient(180deg,#0a0b0d,#0a0b0d);
+        }
+
+        .container {
+            max-width: 980px;
+            margin: 24px auto;
+            padding: 0 16px;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            margin-bottom: 20px;
+        }
+
+        .avatar {
+            width: 64px;
+            height: 64px;
+            background: #0b0c0f;
+            border: var(--bw) solid #fff;
+            border-radius: 50%;
+            overflow: hidden;
+            display: grid;
+            place-items: center;
+            box-shadow: 0 0 0 1px var(--border-soft) inset;
+        }
+
+            .avatar img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+            }
+
+        h1 {
+            margin: 0 0 4px;
+            font-weight: 700;
+            font-size: 22px;
+        }
+
+        .muted {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .card {
+            background: linear-gradient(180deg,var(--panel-2),var(--panel));
+            border: var(--bw) solid var(--border);
+            border-radius: 0;
+            padding: 16px;
+            box-shadow: 0 1px 0 var(--border-soft) inset, 0 8px 18px rgba(0,0,0,.35);
+        }
+
+        .btn, button {
+            appearance: none;
+            background: #0c0e12;
+            color: #fff;
+            border: var(--bw) solid var(--border);
+            border-radius: 0;
+            padding: 10px 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 1px 0 var(--border-soft) inset;
+            transition: background-color .12s,color .12s,border-color .12s;
+        }
+
+            .btn.primary {
+                background: #0f1216;
+                border-color: #fff;
+            }
+
+            .btn:hover {
+                background: #fff !important;
+                color: #000 !important;
+                border-color: #fff !important;
+            }
+
+        .list {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+        details.req-panel {
+            border: var(--bw) solid var(--border);
+            border-radius: 0;
+            background: linear-gradient(180deg,var(--panel-2),var(--panel));
+            box-shadow: 0 1px 0 var(--border-soft) inset, 0 8px 18px rgba(0,0,0,.35);
+        }
+
+            details.req-panel:not(:last-child) {
+                margin-bottom: 12px;
+            }
+
+            details.req-panel > summary {
+                list-style: none;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 12px 14px;
+                user-select: none;
+            }
+
+                details.req-panel > summary::-webkit-details-marker {
+                    display: none;
+                }
+
+        .caret {
+            display: inline-block;
+            width: 0;
+            height: 0;
+            border: 6px solid transparent;
+            border-left-color: #fff;
+            transform: rotate(0deg);
+            transition: transform .15s ease;
+        }
+
+        details[open] > summary .caret {
+            transform: rotate(90deg);
+        }
+
+        .sumtitle {
+            font-weight: 700;
+        }
+
+        .sumcount {
+            margin-left: auto;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .panel-body {
+            padding: 12px 14px;
+            border-top: var(--bw) solid var(--border);
+        }
+
+        .person {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 12px;
+            align-items: center;
+            background: linear-gradient(180deg,#0f1216,#0c0f13);
+            border: var(--bw) solid var(--border);
+            border-radius: 0;
+            padding: 12px;
+            box-shadow: 0 1px 0 var(--border-soft) inset;
+        }
+
+        .pfp {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .person .name {
+            font-weight: 700;
+        }
+
+            .person .name a {
+                color: #fff;
+                text-decoration: none;
+            }
+
+                .person .name a:hover {
+                    text-decoration: underline;
+                }
+
+        .bio {
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        #friends-list {
+            margin-top: 12px;
+        }
+
+        #load-more {
+            margin-top: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="avatar"><img id="pfp" alt=""></div>
+            <div>
+                <h1>Friends — @<span id="uname">…</span></h1>
+                <div class="muted">Manage requests and your friends list</div>
+            </div>
+            <div style="margin-left:auto; display:flex; gap:10px;">
+                <a id="back-to-profile" class="btn" href="#">← Back to profile</a>
+            </div>
+        </header>
+
+        <div id="request-panels"></div>
+
+        <section class="card" id="friends-card">
+            <h3 style="margin:0 0 10px">Your Friends</h3>
+            <div id="friends-list" class="list"></div>
+            <button id="load-more" class="btn" style="display:none">Load 10 more</button>
+            <div id="empty" class="muted" style="display:none">No friends yet.</div>
+            <div id="msg" class="muted"></div>
+        </section>
+    </div>
+
+    <script>
+        (() => {
+            "use strict";
+
+            /* ====== DEBUG ====== */
+            const DEBUG = /\bdebug=1\b/.test(location.search) || window.DP_DEBUG === true;
+            const log = (...a) => { if (DEBUG) console.log("[friends]", ...a); };
+
+            const API = "http://localhost:3000/api";
+            const AVATAR_FALLBACK = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+          <rect width="100%" height="100%" fill="#000"/>
+          <circle cx="32" cy="24" r="14" fill="#fff"/>
+          <rect x="10" y="40" width="44" height="16" rx="8" fill="#fff"/>
+        </svg>`);
+
+            const $ = (id) => document.getElementById(id);
+
+            const state = {
+                slug: "",
+                friendsOffset: 0,
+                friendsLimit: 10,
+                friendsTotal: 0,
+                loading: false
+            };
+
+            /* ---------------- DOM HARD RESET ---------------- */
+            function rebuildBodySkeleton() {
+                document.body.innerHTML = `
+          <div class="container">
+            <header>
+              <div class="avatar"><img id="pfp" alt=""></div>
+              <div>
+                <h1>Friends — @<span id="uname">…</span></h1>
+                <div class="muted">Manage requests and your friends list</div>
+              </div>
+              <div style="margin-left:auto; display:flex; gap:10px;">
+                <a id="back-to-profile" class="btn" href="#">← Back to profile</a>
+              </div>
+            </header>
+
+            <div id="request-panels"></div>
+
+            <section class="card" id="friends-card">
+              <h3 style="margin:0 0 10px">Your Friends</h3>
+              <div id="friends-list" class="list"></div>
+              <button id="load-more" class="btn" style="display:none">Load 10 more</button>
+              <div id="empty" class="muted" style="display:none">No friends yet.</div>
+              <div id="msg" class="muted"></div>
+            </section>
+          </div>
+        `;
+            }
+
+            function collectEls() {
+                return {
+                    uname: $('uname'),
+                    pfp: $('pfp'),
+                    back: $('back-to-profile'),
+                    requestPanels: $('request-panels'),
+                    friendsList: $('friends-list'),
+                    loadMore: $('load-more'),
+                    empty: $('empty'),
+                    msg: $('msg')
+                };
+            }
+            function haveAll(el) {
+                return !!(el.uname && el.pfp && el.back && el.requestPanels && el.friendsList && el.loadMore && el.empty && el.msg);
+            }
+
+            /* ---------------- utils ---------------- */
+            function extractSlug(path) {
+                const p = (path || "").replace(/\/+$/, "");
+                const m = p.match(/^\/user\/([^\/?#]+)\/friends(?:[\/?#]|$)/i) || p.match(/^\/user\/([^\/?#]+)/i);
+                return m ? decodeURIComponent(m[1]) : "";
+            }
+            function firstNonEmpty(...v) { for (const s of v) if (typeof s === "string" && s.trim()) return s.trim(); return ""; }
+            function toUserHref(u) {
+                const fx = u.first_username || u.firstUsername;
+                const name = fx || u.username || state.slug;
+                return "/user/" + encodeURIComponent(name);
+            }
+
+            /* ---------------- API ---------------- */
+            async function csrf() {
+                const r = await fetch(API.replace('/api', '') + '/api/csrf?_=' + Date.now(), { credentials: 'include' });
+                const j = await r.json().catch(() => ({}));
+                if (!r.ok || !j.token) throw new Error('csrf');
+                return j.token;
+            }
+            async function api(path, opts = {}) {
+                const method = (opts.method || "GET").toUpperCase();
+                const headers = Object.assign({ "Accept": "application/json" }, opts.headers || {});
+                if (opts.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+                if (method !== "GET" && !headers["X-CSRF-Token"]) headers["X-CSRF-Token"] = await csrf();
+                let url = API + path;
+                if (method === "GET") url += (url.includes("?") ? "&" : "?") + "_=" + Date.now(); // bust caches
+                const r = await fetch(url, { method, headers, credentials: "include", body: opts.body });
+                const txt = await r.text();
+                let data; try { data = txt ? JSON.parse(txt) : {}; } catch { data = { raw: txt }; }
+                if (!r.ok) { const e = new Error(data?.error || r.statusText); e.status = r.status; e.detail = data?.detail || txt; throw e; }
+                return data;
+            }
+
+            async function fetchProfile(slug) {
+                const tries = [
+                    `/users/by-first/${encodeURIComponent(slug)}`,
+                    `/users/by_username/${encodeURIComponent(slug)}`,
+                    `/users/resolve?username=${encodeURIComponent(slug)}`
+                ];
+                for (const p of tries) {
+                    try {
+                        const j = await api(p);
+                        const u = j?.user || j;
+                        if (u) return {
+                            username: u.username || null,
+                            first_username: u.first_username || null,
+                            profile_photo: u.profile_photo || null,
+                            bio_html: u.bio_html || null,
+                            bio: u.bio || null
+                        };
+                    } catch { /* continue */ }
+                }
+                return null;
+            }
+
+            async function fetchRequests(direction) {
+                const tries = [
+                    `/friends/requests?direction=${direction}`,
+                    `/users/me/friends/requests?direction=${direction}`,
+                    `/users/${encodeURIComponent(state.slug)}/friends/requests?direction=${direction}`
+                ];
+                for (const p of tries) {
+                    try {
+                        const j = await api(p);
+                        const arr = Array.isArray(j?.items) ? j.items : Array.isArray(j) ? j : [];
+                        return arr.map(row => ({
+                            request_id: row.id || row.request_id || null,
+                            user: direction === "in" ? (row.from_user || row.user || row) : (row.to_user || row.user || row)
+                        }));
+                    } catch { /* soft-fail */ }
+                }
+                return [];
+            }
+            async function acceptRequest(id) { return api(`/friends/requests/${encodeURIComponent(id)}/accept`, { method: 'POST' }); }
+            async function ignoreRequest(id) { return api(`/friends/requests/${encodeURIComponent(id)}/ignore`, { method: 'POST' }); }
+
+            async function fetchFriends(offset, limit) {
+                const tries = [
+                    `/users/${encodeURIComponent(state.slug)}/friends?offset=${offset}&limit=${limit}`,
+                    `/users/me/friends?offset=${offset}&limit=${limit}`
+                ];
+                for (const p of tries) {
+                    try {
+                        const j = await api(p);
+                        const items = Array.isArray(j?.items) ? j.items : Array.isArray(j) ? j : [];
+                        const total = Number.isFinite(j?.total) ? j.total :
+                            (items.length < limit ? offset + items.length : offset + items.length + 1);
+                        return { items, total };
+                    } catch { /* soft-fail */ }
+                }
+                return { items: [], total: 0 };
+            }
+
+            /* ---------------- UI ---------------- */
+            function renderPersonCard(user, withButtons) {
+                const href = toUserHref(user);
+                const el = document.createElement('div');
+                el.className = 'person';
+                const photo = user.profile_photo || AVATAR_FALLBACK;
+                el.innerHTML = `
+          <a href="${href}" aria-label="${user.username || user.first_username || 'user'}">
+            <img class="pfp" src="${photo}" alt="">
+          </a>
+          <div>
+            <div class="name"><a href="${href}">@${user.username || user.first_username || "user"}</a></div>
+            <div class="bio" title="${firstNonEmpty(user.bio?.replace?.(/<[^>]+>/g, '') || '',
+                    user.bio_html?.replace?.(/<[^>]+>/g, '') || '')}">
+              ${firstNonEmpty(user.bio_html, user.bio) || ""}
+            </div>
+          </div>
+          <div class="actions" ${withButtons ? "" : 'style="display:none"'}></div>
+        `;
+                return el;
+            }
+
+            function attachReqButtons(cardEl, request_id, after) {
+                const actions = cardEl.querySelector(".actions");
+                const ok = document.createElement("button"); ok.className = "btn primary"; ok.textContent = "Accept";
+                const no = document.createElement("button"); no.className = "btn"; no.textContent = "Ignore";
+                actions.append(ok, no);
+                const lock = (b) => { ok.disabled = no.disabled = b; };
+                ok.addEventListener("click", async () => {
+                    try { lock(true); await acceptRequest(request_id); cardEl.remove(); after('accepted'); }
+                    catch { alert("Failed to accept"); } finally { lock(false); }
+                });
+                no.addEventListener("click", async () => {
+                    try { lock(true); await ignoreRequest(request_id); cardEl.remove(); after('ignored'); }
+                    catch { alert("Failed to ignore"); } finally { lock(false); }
+                });
+            }
+
+            function renderReqPanel(kind, items) {
+                if (!items.length) return null;
+                const det = document.createElement('details');
+                det.className = 'req-panel';
+                det.innerHTML = `
+          <summary>
+            <span class="caret"></span>
+            <span class="sumtitle">${kind} Requests</span>
+            <span class="sumcount" id="cnt">${items.length}</span>
+          </summary>
+          <div class="panel-body"><div class="list" id="list"></div></div>
+        `;
+                const list = det.querySelector('#list');
+                const cntEl = det.querySelector('#cnt');
+                for (const it of items) {
+                    const card = renderPersonCard(it.user, true);
+                    attachReqButtons(card, it.request_id, () => {
+                        const left = Math.max(0, parseInt(cntEl.textContent, 10) - 1);
+                        cntEl.textContent = String(left);
+                        if (left === 0) det.remove();
+                    });
+                    list.appendChild(card);
+                }
+                return det;
+            }
+
+            async function refreshRequests(el) {
+                el.requestPanels.innerHTML = "";
+                try {
+                    const [incoming, outgoing] = await Promise.all([fetchRequests('in'), fetchRequests('out')]);
+                    const a = renderReqPanel('Incoming', incoming);
+                    const b = renderReqPanel('Outgoing', outgoing);
+                    if (a) el.requestPanels.appendChild(a);
+                    if (b) el.requestPanels.appendChild(b);
+                } catch (e) {
+                    log("requests error", e);
+                }
+            }
+
+            async function loadMoreFriends(el) {
+                if (state.loading) return;
+                state.loading = true; el.loadMore.disabled = true;
+                try {
+                    const { items, total } = await fetchFriends(state.friendsOffset, state.friendsLimit);
+                    state.friendsTotal = total | 0;
+
+                    if (state.friendsOffset === 0 && items.length === 0) {
+                        el.empty.style.display = '';
+                        el.loadMore.style.display = 'none';
+                        return;
+                    }
+                    el.empty.style.display = 'none';
+                    for (const u of items) el.friendsList.appendChild(renderPersonCard(u, false));
+                    state.friendsOffset += items.length;
+                    el.loadMore.style.display = (state.friendsOffset < state.friendsTotal) ? '' : 'none';
+                } catch (e) {
+                    el.msg.textContent = e?.message || "Error loading friends";
+                    setTimeout(() => el.msg.textContent = "", 2500);
+                } finally {
+                    state.loading = false; el.loadMore.disabled = false;
+                }
+            }
+
+            /* ---------------- BOOT ---------------- */
+            async function init() {
+                log("boot", { readyState: document.readyState, path: location.pathname });
+
+                // 1) Force-known DOM
+                rebuildBodySkeleton();
+                const el = collectEls();
+                if (!haveAll(el)) { console.error("[friends] DOM rebuild failed", el); return; }
+
+                // 2) Slug & immediate header defaults
+                state.slug = extractSlug(location.pathname);
+                if (!state.slug) { console.error("[friends] bad URL"); return; }
+                el.uname.textContent = state.slug;
+                el.pfp.src = AVATAR_FALLBACK;
+                el.back.href = "/user/" + encodeURIComponent(state.slug);
+                el.empty.style.display = '';     // default empty
+                el.loadMore.style.display = 'none';
+
+                // 3) Hydrate header (best-effort)
+                try {
+                    const prof = await fetchProfile(state.slug);
+                    if (prof) {
+                        el.uname.textContent = prof.username || prof.first_username || state.slug;
+                        el.pfp.src = prof.profile_photo || AVATAR_FALLBACK;
+                    }
+                } catch { /* ignore */ }
+
+                // 4) Requests (soft-fail if unauth)
+                try { await refreshRequests(el); } catch { }
+
+                // 5) Friends first page + handler
+                try {
+                    await loadMoreFriends(el);
+                    el.loadMore.addEventListener('click', () => loadMoreFriends(el));
+                } catch { }
+            }
+
+            if (document.readyState === "complete" || document.readyState === "interactive") {
+                // run immediately after current tick to let any parser work finish
+                setTimeout(init, 0);
+            } else {
+                document.addEventListener("DOMContentLoaded", init, { once: true });
+            }
+        })();
+    </script>
+
+</body>
+</html>

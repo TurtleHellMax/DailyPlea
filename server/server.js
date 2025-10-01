@@ -127,11 +127,18 @@ app.use('/api/auth', require('./routes-auth').router);
 app.use('/api', require('./routes-saves').router);
 app.use('/api', require('./routes-social').router);
 app.use('/api', require('./routes-users').router);
+app.use('/api', require('./routes-friends').router);
 app.use('/api/admin', require('./routes-admin').router);
 
 // (optional) if you want /pleas/78 to work without a .html extension:
 app.get('/pleas/:id', (req, res, next) => {
     const f = path.join(WEB_ROOT, 'pleas', `${req.params.id}.html`);
+    res.sendFile(f, err => err ? next() : undefined);
+});
+
+app.get('/user/:slug/friends', (req, res, next) => {
+    res.set('Cache-Control', 'no-store');         // <— important
+    const f = path.join(WEB_ROOT, 'web', 'user-friends.html');
     res.sendFile(f, err => err ? next() : undefined);
 });
 

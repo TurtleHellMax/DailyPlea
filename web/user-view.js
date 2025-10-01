@@ -17,7 +17,13 @@ console.log("[user-view.js] loaded");
         total: 0,
         loading: false,
         // group containers we’ve already created, by plea_num
-        domGroups: new Map()
+        domGroups: new Map(),
+        // owner widgets
+        ownerMount: null,
+        ownerRendered: false,
+        friendsRefreshTimer: null,
+        presenceTimer: null,
+        presenceVisHandler: null
     };
 
     /* ===== Auth Bar (user-view page) ===== */
@@ -27,7 +33,6 @@ console.log("[user-view.js] loaded");
         const OVERLAY_JS = ASSET_BASE + "/authOverlay.js";
         const OVERLAY_CSS = ASSET_BASE + "/authOverlay.css";
 
-        // If already defined by another bundle, just ensure it.
         if (window.DPAuthBar && typeof window.DPAuthBar.ensure === "function") {
             if (document.readyState === "loading") {
                 document.addEventListener("DOMContentLoaded", () => window.DPAuthBar.ensure(), { once: true });
@@ -73,17 +78,17 @@ console.log("[user-view.js] loaded");
   width:26px; height:26px; display:block;
   border-radius:50%; object-fit:cover; background:#000; border:2px solid #fff;
 }
-#dp-logout-btn{ display:none; } /* reserved */
+#dp-logout-btn{ display:none; }
 `;
             document.head.appendChild(s);
         }
 
         const AVATAR_FALLBACK = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
-    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
-      <rect width="100%" height="100%" fill="#000"/>
-      <circle cx="32" cy="24" r="14" fill="#fff"/>
-      <rect x="10" y="40" width="44" height="16" rx="8" fill="#fff"/>
-    </svg>`);
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <rect width="100%" height="100%" fill="#000"/>
+  <circle cx="32" cy="24" r="14" fill="#fff"/>
+  <rect x="10" y="40" width="44" height="16" rx="8" fill="#fff"/>
+</svg>`);
 
         async function resolveProfileHrefFor(user) {
             const first = (user?.first_username || user?.firstUsername || "").trim();
@@ -113,10 +118,10 @@ console.log("[user-view.js] loaded");
             const bar = document.createElement("div");
             bar.id = "dp-authbar";
             bar.innerHTML = `
-      <span id="dp-authprefix" aria-hidden="true">User:</span>
-      <a id="dp-authlink" href="#"></a>
-      <button id="dp-logout-btn" type="button">Sign out</button>
-    `;
+        <span id="dp-authprefix" aria-hidden="true">User:</span>
+        <a id="dp-authlink" href="#"></a>
+        <button id="dp-logout-btn" type="button">Sign out</button>
+      `;
             document.body.appendChild(bar);
 
             const authLink = bar.querySelector("#dp-authlink");
@@ -128,7 +133,6 @@ console.log("[user-view.js] loaded");
                 }
             });
 
-            // refresh after overlay login
             window.DP = window.DP || {};
             const prev = DP.syncAfterLogin;
             DP.syncAfterLogin = async () => { try { if (prev) await prev(); } finally { await refresh(); } };
@@ -151,10 +155,10 @@ console.log("[user-view.js] loaded");
                 authLink.setAttribute("data-state", "logged-in");
                 authLink.setAttribute("href", href || "#");
                 authLink.innerHTML = `
-        <img id="dp-authavatar" alt="" src="${pfp}">
-        <span id="dp-authname">${uname}</span>
-      `;
-                authLink.onclick = null; // normal navigation
+          <img id="dp-authavatar" alt="" src="${pfp}">
+          <span id="dp-authname">${uname}</span>
+        `;
+                authLink.onclick = null;
             } else {
                 prefixEl.style.display = "none";
                 authLink.setAttribute("data-state", "logged-out");
@@ -225,14 +229,134 @@ console.log("[user-view.js] loaded");
     const escapeHtml = (s) => String(s || "")
         .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-    /* ---------- render profile header ---------- */
+    /* ---------- owner widgets (karma + friends) ---------- */
+    function ensureOwnerTheme() {
+        if (document.getElementById("dp-ownerbits-style")) return;
+        const s = document.createElement("style");
+        s.id = "dp-ownerbits-style";
+        s.textContent = `
+.dp-owner-row{ display:flex; gap:12px; flex-wrap:wrap; margin:12px 0; }
+.dp-chip, .dp-btn {
+  background:#000; color:#fff; border:2px solid #fff; border-radius:0;
+  padding:8px 12px; font-weight:700; line-height:1; display:inline-flex; align-items:center; gap:8px;
+  text-decoration:none; cursor:pointer;
+  font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
+}
+.dp-btn:hover{ background:#fff; color:#000; text-decoration:none; }
+.dp-chip small{ opacity:.85; font-weight:600; }
+`;
+        document.head.appendChild(s);
+    }
+
+    function pickOwnerMount() {
+        let mount =
+            document.querySelector("#owner-widgets") ||
+            document.querySelector("#profile-actions") ||
+            document.querySelector(".profile-actions");
+        if (!mount) {
+            const wrap = document.createElement("div");
+            wrap.id = "owner-widgets";
+            const groups = $("groups");
+            if (groups && groups.parentNode) {
+                groups.parentNode.insertBefore(wrap, groups);
+            } else {
+                document.body.insertBefore(wrap, document.body.firstChild);
+            }
+            mount = wrap;
+        }
+        return mount;
+    }
+
+    async function fetchFriendsSummary() {
+        try {
+            const j = await api(`/users/me/friends/summary`);
+            return { total: j.total | 0, online: j.online | 0, window: j.window_minutes | 0 };
+        } catch {
+            return { total: 0, online: 0, window: 0 };
+        }
+    }
+
+    function startPresence() {
+        stopPresence();
+        const ping = async () => { try { await api(`/presence/ping`, { method: "POST", body: "{}" }); } catch { } };
+        ping();
+        state.presenceTimer = setInterval(ping, 60_000);
+        state.presenceVisHandler = () => { if (document.visibilityState === "visible") ping(); };
+        document.addEventListener("visibilitychange", state.presenceVisHandler, { passive: true });
+    }
+    function stopPresence() {
+        if (state.presenceTimer) clearInterval(state.presenceTimer);
+        state.presenceTimer = null;
+        if (state.presenceVisHandler) {
+            document.removeEventListener("visibilitychange", state.presenceVisHandler);
+            state.presenceVisHandler = null;
+        }
+    }
+
+    function clearOwnerUI() {
+        if (state.friendsRefreshTimer) clearInterval(state.friendsRefreshTimer);
+        state.friendsRefreshTimer = null;
+        state.ownerRendered = false;
+        const mount = state.ownerMount;
+        if (mount) mount.innerHTML = "";
+        stopPresence();
+    }
+
+    async function ensureOwnerUI() {
+        if (!state.profile?.is_me) return;
+        if (state.ownerRendered) return;
+
+        ensureOwnerTheme();
+        const mount = state.ownerMount || pickOwnerMount();
+        state.ownerMount = mount;
+
+        // Base row
+        mount.innerHTML = "";
+        const row = document.createElement("div");
+        row.className = "dp-owner-row";
+
+        // Karma chip
+        const likes = state.profile.received_likes | 0;
+        const dislikes = state.profile.received_dislikes | 0;
+        const karma = (likes - dislikes) | 0;
+        const chip = document.createElement("div");
+        chip.className = "dp-chip";
+        chip.innerHTML = `Karma: <strong>${karma >= 0 ? "+" : ""}${karma}</strong> <small>(+${likes}/-${dislikes})</small>`;
+        row.appendChild(chip);
+
+        // Friends button (lazy-fill counts)
+        const friendsBtn = document.createElement("a");
+        friendsBtn.className = "dp-btn";
+        friendsBtn.href = `/user/${encodeURIComponent(state.slug)}/friends`;
+        friendsBtn.setAttribute("aria-label", "Open friends list");
+        friendsBtn.textContent = `Friends — … online / … total`;
+        row.appendChild(friendsBtn);
+
+        mount.appendChild(row);
+
+        // Presence + counts
+        startPresence();
+        const refresh = async () => {
+            const u = await fetchFriendsSummary();
+            friendsBtn.textContent = `Friends — ${u.online} online / ${u.total} total`;
+        };
+        try { await refresh(); } catch { }
+        if (state.friendsRefreshTimer) clearInterval(state.friendsRefreshTimer);
+        state.friendsRefreshTimer = setInterval(refresh, 90_000);
+
+        state.ownerRendered = true;
+    }
+
+    /* ---------- render profile header (DRIVES OWNER UI) ---------- */
     function renderHeader() {
         const u = state.profile;
         if (!u) return;
+
         $("uname").textContent = u.username || u.first_username || state.slug;
         $("pfp").src = u.profile_photo || "";
         const bio = firstNonEmpty(u.bio_html, u.bio);
         $("bio").innerHTML = bio || "";
+
         const btn = $("btn-edit");
         if (btn) {
             if (u.is_me) {
@@ -242,6 +366,10 @@ console.log("[user-view.js] loaded");
                 btn.style.display = "none";
             }
         }
+
+        // Use the same ownership signal as the Edit button.
+        state.isOwner = !!u.is_me;
+        if (state.isOwner) ensureOwnerUI(); else clearOwnerUI();
     }
 
     /* ---------- group DOM helper ---------- */
@@ -270,8 +398,6 @@ console.log("[user-view.js] loaded");
     }
 
     /* ---------- inline editor helper (revised) ---------- */
-    // Mounts the editor *after* `mountAfter` (we'll pass the repliesWrap to be beneath everything)
-    // Also ensures only one editor lives under the same .comment container.
     function openInlineEditor(opts, mountAfter) {
         const commentRoot = mountAfter?.closest('.comment') || document.body;
         const existing = commentRoot.querySelector('.reply-editor');
@@ -280,13 +406,13 @@ console.log("[user-view.js] loaded");
         const ed = document.createElement('div');
         ed.className = 'comment reply-editor';
         ed.innerHTML = `
-    <textarea class="field-box" style="min-height:80px">${(opts.initial || "")
+      <textarea class="field-box" style="min-height:80px">${(opts.initial || "")
                 .replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]))}</textarea>
-    <div class="actions" style="margin-top:8px">
-      <button class="btn primary js-ok">Save</button>
-      <button class="btn js-cancel" type="button">Cancel</button>
-    </div>
-  `;
+      <div class="actions" style="margin-top:8px">
+        <button class="btn primary js-ok">Save</button>
+        <button class="btn js-cancel" type="button">Cancel</button>
+      </div>
+    `;
 
         const ta = ed.querySelector('textarea');
         ed.querySelector('.js-ok').addEventListener('click', async () => {
@@ -307,7 +433,7 @@ console.log("[user-view.js] loaded");
     const isReplyItem = (it) =>
         !!(it.parent || it.parent_id != null || it.in_reply_to != null || it.reply_to != null || it.is_reply === true);
 
-    /* ---------- Voting (modeled after main.js) ---------- */
+    /* ---------- Voting ---------- */
     async function apiGetMyVote(pleaNum, id) {
         const tries = [
             `/comments/${encodeURIComponent(id)}/my_vote`,
@@ -316,11 +442,11 @@ console.log("[user-view.js] loaded");
         ];
         for (const url of tries) {
             try {
-                const j = await api(url); // GET
+                const j = await api(url);
                 if (j && (j.vote === "up" || j.direction === "up" || j.value === 1 || j.delta === 1 || j.liked === true)) return 1;
                 if (j && (j.vote === "down" || j.direction === "down" || j.value === -1 || j.delta === -1 || j.disliked === true)) return -1;
                 if (typeof j?.my_vote === "number") return j.my_vote > 0 ? 1 : j.my_vote < 0 ? -1 : 0;
-            } catch { /* try next */ }
+            } catch { }
         }
         return 0;
     }
@@ -340,7 +466,7 @@ console.log("[user-view.js] loaded");
                 try {
                     await api(`/comments/${encodeURIComponent(id)}/vote`, { method: "DELETE" });
                     return { ok: true, likes: null, dislikes: null, my: 0 };
-                } catch { /* fall through */ }
+                } catch { }
             }
             const mv = await apiGetMyVote(pleaNum, id);
             return { ok: true, likes: null, dislikes: null, my: mv };
@@ -377,9 +503,8 @@ console.log("[user-view.js] loaded");
 
             await ensureKnownMy();
             const prev = st.my;
-            if (nextMy === prev) nextMy = 0; // toggle off
+            if (nextMy === prev) nextMy = 0;
 
-            // optimistic highlight only
             st.my = nextMy; render();
 
             try {
@@ -400,7 +525,6 @@ console.log("[user-view.js] loaded");
                 render();
                 onCountsChanged && onCountsChanged(st);
 
-                // verify after write
                 const verify = await apiGetMyVote(pleaNum, id).catch(() => st.my);
                 if (verify !== st.my) { st.my = verify; render(); }
             } finally {
@@ -435,7 +559,6 @@ console.log("[user-view.js] loaded");
         node.className = "comment";
         node.dataset.commentId = item.id;
 
-        // If this item is itself a reply, show parent context (read-only)
         const thisIsReply = isReplyItem(item);
         if (thisIsReply && item.parent) {
             const parent = document.createElement("div");
@@ -447,23 +570,19 @@ console.log("[user-view.js] loaded");
             node.appendChild(parent);
         }
 
-        // body
         const body = document.createElement("div");
         body.className = "body";
         body.innerHTML = escapeHtml(item.body || "");
         node.appendChild(body);
 
-        // meta
         const meta = document.createElement("div");
         meta.className = "muted";
         meta.textContent = new Date(item.created_at).toLocaleString();
         node.appendChild(meta);
 
-        // actions row (like/dislike + (maybe) reply + edit/delete)
         const actions = document.createElement("div");
         actions.className = "actions";
 
-        // like / dislike
         const likeBtn = document.createElement("button");
         likeBtn.className = "btn js-like";
         likeBtn.textContent = `▲ ${item.likes | 0}`;
@@ -492,17 +611,13 @@ console.log("[user-view.js] loaded");
             if (v !== vc.state.my) { vc.state.my = v; vc.render(); }
         }).catch(() => { });
 
-        // We'll mount the reply editor at the very bottom (beneath replies)
-        // so create a stable "bottom anchor" here:
-        const bottomAnchor = document.createElement('div');
-        bottomAnchor.className = 'reply-anchor';
+        const bottomAnchor = document.createElement("div");
+        bottomAnchor.className = "reply-anchor";
 
-        /* ---------- Replies UI (top-level comments only) ---------- */
         let repliesWrap = null, repliesList = null, toggleRepliesBtn = null;
         const isTopLevel = !thisIsReply;
 
         if (isTopLevel) {
-            // Always create the replies container so we can mount the editor beneath it
             repliesWrap = document.createElement("div");
             repliesWrap.className = "replies";
             repliesWrap.style.display = "none";
@@ -513,7 +628,7 @@ console.log("[user-view.js] loaded");
 
             toggleRepliesBtn = document.createElement("button");
             toggleRepliesBtn.className = "btn js-toggle-replies";
-            toggleRepliesBtn.style.display = "none"; // hidden until we confirm there are replies
+            toggleRepliesBtn.style.display = "none";
             toggleRepliesBtn.textContent = "View replies (0)";
 
             async function refreshReplies(openAfter = false) {
@@ -525,11 +640,11 @@ console.log("[user-view.js] loaded");
                     empty.textContent = "(No replies)";
                     repliesList.appendChild(empty);
                     toggleRepliesBtn.textContent = "View replies (0)";
-                    toggleRepliesBtn.style.display = "none"; // hide if none
+                    toggleRepliesBtn.style.display = "none";
                 } else {
                     for (const r of reps) repliesList.appendChild(renderOneReply(r, item.plea_num));
                     toggleRepliesBtn.textContent = "Hide replies";
-                    toggleRepliesBtn.style.display = ""; // show if any
+                    toggleRepliesBtn.style.display = "";
                 }
                 if (openAfter) {
                     repliesWrap.style.display = "";
@@ -540,8 +655,6 @@ console.log("[user-view.js] loaded");
                 }
             }
 
-            // Initial presence check (covers servers that don’t send reply_count)
-            // If your API is heavy, change to a HEAD/count endpoint.
             (async () => {
                 const known = nRepliesCount(item);
                 if (known > 0) {
@@ -552,7 +665,6 @@ console.log("[user-view.js] loaded");
                     if (reps.length > 0) {
                         toggleRepliesBtn.style.display = "";
                         toggleRepliesBtn.textContent = `View replies (${reps.length})`;
-                        // don’t pre-open; just show the button
                     }
                 }
             })();
@@ -573,16 +685,13 @@ console.log("[user-view.js] loaded");
             actions.appendChild(toggleRepliesBtn);
         }
 
-        /* ---------- Reply button (ONLY for top-level comments) ---------- */
         if (isTopLevel) {
             const replyBtn = document.createElement("button");
             replyBtn.className = "btn js-reply";
             replyBtn.textContent = "Reply";
             replyBtn.addEventListener("click", async () => {
-                // ensure replies are visible when replying
                 if (repliesWrap) {
                     repliesWrap.style.display = "";
-                    // also refresh so you’re replying with context visible
                     await (async () => {
                         const reps = await apiReplies(item.id).catch(() => []);
                         repliesList.innerHTML = "";
@@ -599,7 +708,6 @@ console.log("[user-view.js] loaded");
                     })();
                 }
 
-                // Mount editor BENEATH the comment — i.e., after the replies block
                 const mountTarget = repliesWrap || bottomAnchor;
                 openInlineEditor({
                     plea_num: item.plea_num,
@@ -611,7 +719,6 @@ console.log("[user-view.js] loaded");
                                 body: JSON.stringify({ parent_id: item.id, body: text })
                             });
                             editor.remove();
-                            // Refresh + KEEP OPEN + update label
                             if (repliesWrap && repliesList) {
                                 repliesWrap.style.display = "";
                                 const reps = await apiReplies(item.id).catch(() => []);
@@ -635,9 +742,7 @@ console.log("[user-view.js] loaded");
             });
             actions.appendChild(replyBtn);
         }
-        // (No Reply button at all for replies)
 
-        // edit
         const editBtn = document.createElement("button");
         editBtn.className = "btn js-edit";
         editBtn.textContent = "Edit";
@@ -659,7 +764,6 @@ console.log("[user-view.js] loaded");
         });
         actions.appendChild(editBtn);
 
-        // delete
         const delBtn = document.createElement("button");
         delBtn.className = "btn js-del";
         delBtn.textContent = "Delete";
@@ -672,16 +776,13 @@ console.log("[user-view.js] loaded");
         });
         actions.appendChild(delBtn);
 
-        // assemble
         node.appendChild(actions);
-        // replies + bottom anchor live at the end so the editor is always *beneath* the comment
         if (isTopLevel && repliesWrap) node.appendChild(repliesWrap);
         node.appendChild(bottomAnchor);
 
         container.appendChild(node);
     }
 
-    // tiny renderer for a single reply row
     function renderOneReply(r, fallbackPleaNum) {
         const wrap = document.createElement("div");
         wrap.className = "reply";
@@ -733,22 +834,20 @@ console.log("[user-view.js] loaded");
         try {
             const j = await api(`/users/${encodeURIComponent(state.slug)}/activity?offset=${state.offset}&limit=${state.limit}`);
             state.total = j.total | 0;
-            state.isOwner = !!j.is_me;
 
-            // reflect owner status in header if it changed
+            // if ownership signal changes here, let header drive UI
             if (state.profile && state.profile.is_me !== j.is_me) {
                 state.profile.is_me = j.is_me;
-                renderHeader();
+                renderHeader(); // ensureOwnerUI/clearOwnerUI happens inside
             }
 
             if (!j.items || j.items.length === 0) {
-                if (state.offset === 0) $("empty").style.display = ""; // nothing at all
+                if (state.offset === 0) $("empty").style.display = "";
                 $("load-more").style.display = "none";
                 return;
             }
             $("empty").style.display = "none";
 
-            // group by plea_num preserving order of the slice
             for (const item of j.items) {
                 const group = ensureGroup(item.plea_num);
                 renderItem(group, item);
@@ -794,28 +893,6 @@ console.log("[user-view.js] loaded");
         setTimeout(() => { $("msg").textContent = ""; }, 3000);
     }
 
-    function mountPleaHubButton() {
-        const HUB_URL = '/pleas/';              // hub route
-        const ICON_SRC = '/icons/plea-hub.png';  // adjust if your asset lives elsewhere
-        if (document.querySelector('.plea-hub-btn')) return; // no dupes
-
-        const a = document.createElement('a');
-        a.href = HUB_URL;
-        a.className = 'plea-hub-btn';
-        a.setAttribute('aria-label', 'Open Plea Select');
-
-        const img = new Image();
-        img.src = ICON_SRC;
-        img.alt = 'Plea Hub';
-        img.decoding = 'async';
-        img.loading = 'eager';
-        img.draggable = false;
-
-        a.appendChild(img);
-        document.body.appendChild(a);
-        requestAnimationFrame(() => a.classList.add('is-show'));
-    }
-
     function mountPleaHubOnProfile() {
         if (document.querySelector(".plea-hub-btn")) return;
         const a = document.createElement("a");
@@ -834,20 +911,17 @@ console.log("[user-view.js] loaded");
         requestAnimationFrame(() => a.classList.add("is-show"));
     }
 
-
     /* ---------- boot ---------- */
     async function init() {
         mountPleaHubOnProfile();
         state.slug = extractSlugFromPath(location.pathname) || "";
         if (!state.slug) return msg("Bad URL");
 
-        // load public profile
         const prof = await api(`/users/by-first/${encodeURIComponent(state.slug)}`).catch(() => null);
         state.profile = prof?.user || null;
         if (!state.profile) return msg("Profile not found");
-        renderHeader();
+        renderHeader(); // drives owner UI
 
-        // titles & activity
         await loadPleaTitles();
         $("load-more").addEventListener("click", loadMore);
         await loadMore();
@@ -858,4 +932,10 @@ console.log("[user-view.js] loaded");
     } else {
         init();
     }
+
+    // Clean up (in case of SPA navigation)
+    window.addEventListener("beforeunload", () => {
+        clearOwnerUI();
+        if (state.friendsRefreshTimer) clearInterval(state.friendsRefreshTimer);
+    });
 })();

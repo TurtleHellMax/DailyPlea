@@ -35,7 +35,6 @@
             margin: 0;
             font-family: 'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
             color: var(--text) !important;
-            /* subtle neutral background (no colors, just gray shades) */
             background: radial-gradient(1200px 800px at 20% -10%, #111214 0%, #0a0b0d 45%, #08090b 100%), linear-gradient(180deg, #0a0b0d, #0a0b0d);
         }
 
@@ -58,8 +57,8 @@
             height: 88px;
             flex: 0 0 auto;
             background: #0b0c0f;
-            border: var(--bw) solid #fff; /* crisp white ring */
-            border-radius: 50%; /* keep circle */
+            border: var(--bw) solid #fff;
+            border-radius: 50%;
             overflow: hidden;
             display: grid;
             place-items: center;
@@ -83,14 +82,13 @@
             font-size: 14px;
         }
 
-        /* Card/grid — square corners, gentle depth via neutral gradient + inner edge */
+        /* Card/grid */
         .card {
             background: linear-gradient(180deg, var(--panel-2), var(--panel));
             border: var(--bw) solid var(--border);
             border-radius: 0;
             padding: 16px;
-            box-shadow: 0 1px 0 var(--border-soft) inset, /* inner stroke for definition */
-            0 8px 18px rgba(0,0,0,.35); /* soft lift */
+            box-shadow: 0 1px 0 var(--border-soft) inset, 0 8px 18px rgba(0,0,0,.35);
         }
 
         .grid {
@@ -105,7 +103,7 @@
             margin-top: 10px;
         }
 
-        /* Buttons: square, neutral hover */
+        /* Buttons */
         .btn, button {
             appearance: none;
             background: #0c0e12;
@@ -116,6 +114,7 @@
             font-weight: 600;
             cursor: pointer;
             box-shadow: 0 1px 0 var(--border-soft) inset;
+            transition: background-color .12s ease, color .12s ease, border-color .12s ease;
         }
 
             .btn.primary, button.primary {
@@ -136,37 +135,23 @@
                 box-shadow: 0 0 0 var(--bw) rgba(255,255,255,.10) inset;
             }
 
-        /* --- Button polish --- */
-        .btn, button {
-            transition: background-color .12s ease, color .12s ease, border-color .12s ease;
-        }
-
-        /* make anchor-buttons never underline */
-        a.btn,
-        a.btn:hover,
-        a.btn:focus,
-        a.btn:active {
+        a.btn, a.btn:hover, a.btn:focus, a.btn:active {
             text-decoration: none !important;
         }
 
-        /* hover: invert (white bg, black text) */
-        .btn:hover,
-        button:hover {
+        .btn:hover, button:hover {
             background: #fff !important;
             color: #000 !important;
             border-color: #fff !important;
         }
 
-        /* active: revert to base look */
-        .btn:active,
-        button:active {
+        .btn:active, button:active {
             background: #0c0e12 !important;
             color: #fff !important;
             border-color: var(--border) !important;
         }
-        /* primary active uses its own base bg + white border */
-        .btn.primary:active,
-        button.primary:active {
+
+        .btn.primary:active, button.primary:active {
             background: #0f1216 !important;
             color: #fff !important;
             border-color: #fff !important;
@@ -176,24 +161,22 @@
         :root {
             --vote-like-bg: #ffffff;
             --vote-like-fg: #000000;
-            --vote-dislike-bg: #e6e6e6; /* a touch dimmer than full white */
+            --vote-dislike-bg: #e6e6e6;
             --vote-dislike-fg: #000000;
         }
 
-        /* persistent highlight while selected */
-        .btn.is-active { /* upvoted */
+        .btn.is-active {
             background: var(--vote-like-bg) !important;
             color: var(--vote-like-fg) !important;
             border-color: #fff !important;
         }
 
-        .btn.is-down { /* downvoted */
+        .btn.is-down {
             background: var(--vote-dislike-bg) !important;
             color: var(--vote-dislike-fg) !important;
             border-color: #fff !important;
         }
 
-            /* keep highlight on hover/focus (don’t let the global hover invert fight it) */
             .btn.is-active:hover,
             .btn.is-active:focus-visible,
             .btn.is-down:hover,
@@ -203,7 +186,7 @@
                 border-color: #fff !important;
             }
 
-        /* Pills / field boxes – match card chrome */
+        /* Pills / field boxes */
         .pill, .field-box {
             background: linear-gradient(180deg, #0f1216, #0d1014);
             color: var(--text);
@@ -228,7 +211,7 @@
             color: var(--muted);
         }
 
-        /* Activity groups — same card treatment */
+        /* Activity groups */
         .group {
             background: linear-gradient(180deg, var(--panel-2), var(--panel));
             border: var(--bw) solid var(--border);
@@ -252,7 +235,7 @@
                         text-decoration: underline;
                     }
 
-        /* Comments — boxed with subtle layering so it isn’t a wall of outlines */
+        /* Comments */
         .comment {
             background: linear-gradient(180deg, #0f1216, #0c0f13);
             border: var(--bw) solid var(--border);
@@ -285,7 +268,6 @@
             word-break: break-word;
         }
 
-        /* replies container + single reply rows */
         .replies {
             margin-top: 10px;
         }
@@ -308,6 +290,70 @@
         .comment .reply-editor {
             margin-top: 10px;
         }
+
+        /* ===== Inline owner meta (beside username in H1) ===== */
+        .owner-inline {
+            display: none;
+            margin-left: -2px; /* space after @username */
+            font-size: 14px; /* smaller than H1 */
+            color: var(--text); /* <- white */
+        }
+
+        .title h1 .owner-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            vertical-align: baseline;
+        }
+
+        .owner-inline .sep {
+            opacity: .9;
+        }
+
+        /* keep link white too */
+        .owner-inline a {
+            color: var(--text); /* <- white */
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+            .owner-inline a:hover {
+                text-decoration: underline;
+            }
+
+        /* status dot (offline ring by default) */
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 2px solid #fff; /* white ring, empty center */
+            background: transparent;
+            display: inline-block;
+        }
+
+            /* online = solid green + smooth pulse */
+            .status-dot.is-online {
+                border-color: transparent;
+                background: #34d399;
+                animation: pulseDot 2.2s ease-in-out infinite;
+            }
+
+        @keyframes pulseDot {
+            0% {
+                box-shadow: 0 0 0 0 rgba(52,211,153,.45);
+            }
+
+            50% {
+                box-shadow: 0 0 0 6px rgba(52,211,153,0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(52,211,153,0);
+            }
+        }
+
     </style>
 </head>
 <body class="theme-editor">
@@ -346,18 +392,50 @@
             const API_BASE = "http://localhost:3000/api";
             const $ = id => document.getElementById(id);
 
+            /* ================= DEBUG ================= */
+            const DEBUG = /\bdebug=1\b/.test(location.search) || (window.DP_DEBUG === true);
+            const D = (...a) => { if (DEBUG) console.log("[profile-debug]", ...a); };
+            function setOwnerBadge(text) {
+                if (!DEBUG) return;
+                let el = document.getElementById("owner-debug");
+                if (!el) {
+                    el = document.createElement("div");
+                    el.id = "owner-debug";
+                    Object.assign(el.style, {
+                        position: "fixed", right: "12px", bottom: "12px", zIndex: 100000,
+                        background: "rgba(0,0,0,.8)", color: "#fff", padding: "8px 10px",
+                        border: "1px solid #fff", fontFamily: "monospace", fontSize: "12px",
+                        borderRadius: "0", whiteSpace: "pre-wrap", maxWidth: "48ch"
+                    });
+                    document.body.appendChild(el);
+                }
+                el.textContent = String(text || "");
+            }
+            window.__ownerbits = {}; // expose a few things for the console
+
+            /* ======================================== */
+
             const state = {
                 slug: "", profile: null, isOwner: false,
                 pleaTitleMap: new Map(),
                 offset: 0, limit: 10, total: 0, loading: false,
-                domGroups: new Map()
+                domGroups: new Map(),
+                // OWNER WIDGETS
+                friendsRefreshTimer: null,
+                presenceTimer: null,
+                presenceVisHandler: null
             };
 
             /* ---------- CSRF + API ---------- */
             async function fetchCsrf() {
-                const r = await fetch(API_BASE.replace("/api", "") + "/api/csrf", { credentials: "include" });
-                const j = await r.json().catch(() => ({}));
+                const url = API_BASE.replace("/api", "") + "/api/csrf";
+                D("csrf: fetching", url);
+                const r = await fetch(url, { credentials: "include" });
+                const txt = await r.text();
+                let j = {};
+                try { j = txt ? JSON.parse(txt) : {}; } catch { j = {}; }
                 const tok = j?.token ?? j?.csrfToken ?? j?.csrf ?? null;
+                D("csrf: response ok?", r.ok, "token?", !!tok, j);
                 if (!r.ok || !tok) throw new Error("csrf");
                 return tok;
             }
@@ -366,8 +444,12 @@
                 const headers = Object.assign({}, opts.headers || {});
                 if (opts.body && !headers["content-type"]) headers["content-type"] = "application/json";
                 if (method !== "GET" && !headers["x-csrf-token"]) headers["x-csrf-token"] = await fetchCsrf();
-                const r = await fetch(API_BASE + path, { method, headers, credentials: "include", body: opts.body });
-                const txt = await r.text(); let data; try { data = txt ? JSON.parse(txt) : {}; } catch { data = { raw: txt }; }
+                const url = API_BASE + path;
+                D("api:", method, url, opts.body ? "(with body)" : "");
+                const r = await fetch(url, { method, headers, credentials: "include", body: opts.body });
+                const txt = await r.text();
+                let data; try { data = txt ? JSON.parse(txt) : {}; } catch { data = { raw: txt }; }
+                D("api: response", r.status, r.ok ? "OK" : "ERR", data);
                 if (!r.ok) { const err = new Error(data?.error || r.statusText); err.status = r.status; err.data = data; err.detail = data?.detail || txt; throw err; }
                 return data;
             }
@@ -381,34 +463,155 @@
             const firstNonEmpty = (...v) => { for (const s of v) if (typeof s === "string" && s.trim()) return s.trim(); return ""; };
             const escapeHtml = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-            /* --- logout helper (tries a few common endpoints) --- */
+            // Robust owner detection + reason string for debugging
+            function resolveOwner(u, fallbackFromActivity) {
+                if (!u) return { flag: false, reason: "no profile loaded" };
+                const cand = [
+                    ["is_me", u.is_me],
+                    ["isMe", u.isMe],
+                    ["is_owner", u.is_owner],
+                    ["isOwner", u.isOwner],
+                    ["me", u.me],
+                    ["owner", u.owner]
+                ];
+                for (const [k, v] of cand) {
+                    if (typeof v !== "undefined") return { flag: !!v, reason: `profile.${k}=${v}` };
+                }
+                if (typeof fallbackFromActivity !== "undefined") {
+                    return { flag: !!fallbackFromActivity, reason: `activity.is_me=${fallbackFromActivity}` };
+                }
+                return { flag: false, reason: "no owner flag on profile" };
+            }
+
+            /* --- logout helper --- */
             async function logout() {
-                // best-effort CSRF
+                D("logout: start");
                 let token = null;
-                try { token = await fetchCsrf(); } catch { }
+                try { token = await fetchCsrf(); } catch { D("logout: csrf failed (continuing best-effort)"); }
                 const baseHeaders = { Accept: "application/json" };
                 if (token) baseHeaders["X-CSRF-Token"] = token;
-
                 const tries = [
                     { url: API_BASE + "/auth/logout", method: "POST" },
                     { url: API_BASE + "/logout", method: "POST" },
                     { url: API_BASE + "/auth/session", method: "DELETE" },
-                    { url: API_BASE.replace("/api", "") + "/logout", method: "POST" } // non-namespaced fallback
+                    { url: API_BASE.replace("/api", "") + "/logout", method: "POST" }
                 ];
-
                 for (const t of tries) {
-                    try {
-                        const r = await fetch(t.url, { method: t.method, credentials: "include", headers: baseHeaders });
-                        if (r.ok || r.status === 204) break;
-                    } catch { /* keep trying */ }
+                    try { const r = await fetch(t.url, { method: t.method, credentials: "include", headers: baseHeaders }); D("logout: try", t, "->", r.status); if (r.ok || r.status === 204) break; }
+                    catch (e) { D("logout: error", e); }
                 }
-
-                // Refresh the page (or send to home if you prefer)
                 location.reload();
             }
 
+            /* ===== OWNER WIDGETS ===== */
+            async function pingPresenceOnce() {
+                try { await api(`/presence/ping`, { method: "POST", body: "{}" }); D("presence: ping ok"); }
+                catch (e) { D("presence: ping failed", e); }
+            }
+            function startPresence() {
+                stopPresence();
+                D("presence: start");
+                pingPresenceOnce();
+                state.presenceTimer = setInterval(pingPresenceOnce, 60_000);
+                state.presenceVisHandler = () => { if (document.visibilityState === "visible") pingPresenceOnce(); };
+                document.addEventListener("visibilitychange", state.presenceVisHandler, { passive: true });
+            }
+            function stopPresence() {
+                if (state.presenceTimer) clearInterval(state.presenceTimer);
+                if (state.presenceVisHandler) document.removeEventListener("visibilitychange", state.presenceVisHandler);
+                state.presenceTimer = null; state.presenceVisHandler = null;
+                D("presence: stopped");
+            }
+            async function fetchFriendsSummary() {
+                try {
+                    const j = await api(`/users/me/friends/summary`);
+                    const out = { total: j.total | 0, online: j.online | 0, window: j.window_minutes | 0 };
+                    D("friends.summary:", out);
+                    return out;
+                } catch (e) {
+                    D("friends.summary: failed", e);
+                    return { total: 0, online: 0, window: 0 };
+                }
+            }
+            function teardownOwnerBits(reason = "teardown") {
+                D("ownerbits: hide", { reason });
+                if (state.friendsRefreshTimer) clearInterval(state.friendsRefreshTimer);
+                state.friendsRefreshTimer = null;
+                stopPresence();
+
+                const slot = document.getElementById('owner-inline');
+                if (slot) { slot.style.display = "none"; slot.innerHTML = ""; }
+
+                setOwnerBadge("ownerbits: hidden\n" + reason);
+            }
+            function ensureOwnerInlineSlot() {
+                const name = document.getElementById('hdr-name'); // the H1 line
+                if (!name) return null;
+                let slot = document.getElementById('owner-inline');
+                if (!slot) {
+                    slot = document.createElement('span');
+                    slot.id = 'owner-inline';
+                    slot.className = 'owner-inline';
+                    name.appendChild(document.createTextNode(' '));
+                    name.appendChild(slot);
+                }
+                return slot;
+            }
+            async function renderOwnerBits() {
+                const u = state.profile; if (!u) return;
+                startPresence();
+
+                const slot = ensureOwnerInlineSlot();
+                if (!slot) { D("owner-inline: missing '.title .muted'"); return; }
+
+                const likes = u?.received_likes | 0;
+                const dislikes = u?.received_dislikes | 0;
+                const karma = (likes - dislikes) | 0;
+                const arrow = karma > 0 ? "▲" : (karma < 0 ? "▼" : "");
+                const kNum = Math.abs(karma);
+
+                const friendsHref = `/user/${encodeURIComponent(state.slug)}/friends`;
+
+                // Build: [▲/▼] [abs(karma)] • [dot] [N] Friends Online
+                slot.innerHTML = `
+    <span class="karma-seg" title="Karma = likes − dislikes">
+      ${arrow ? `${arrow} ` : ""}${kNum}
+    </span>
+    <span class="sep">•</span>
+    <a class="friends-seg" id="friends-link" href="${friendsHref}" aria-label="Friends online">
+      <span class="status-dot" id="friends-dot" aria-hidden="true"></span>
+      <span class="friends-count" id="friends-count">0</span>
+      <span class="friends-label">Friends Online</span>
+    </a>
+  `;
+                slot.style.display = "inline-flex";
+
+                const dot = slot.querySelector("#friends-dot");
+                const countEl = slot.querySelector("#friends-count");
+
+                const refresh = async () => {
+                    const s = await fetchFriendsSummary();
+                    const n = s.online | 0;
+                    countEl.textContent = String(n);
+                    const online = n > 0;
+                    dot.classList.toggle("is-online", online); // green pulse when true; white ring otherwise
+                };
+
+                try { await refresh(); } catch { }
+                if (state.friendsRefreshTimer) clearInterval(state.friendsRefreshTimer);
+                state.friendsRefreshTimer = setInterval(refresh, 90_000);
+
+                // expose for console testing
+                window.__ownerbits.refreshFriends = refresh;
+
+                D("owner-inline: rendered", { karma, likes, dislikes });
+                setOwnerBadge(`ownerbits: inline\nkarma=${karma} (+${likes}/-${dislikes})`);
+            }
+            window.__ownerbits.render = renderOwnerBits;
+            window.__ownerbits.teardown = teardownOwnerBits;
+
             /* ---------- header/bio ---------- */
-            function renderHeader() {
+            function renderHeader(activityIsMe) {
                 const u = state.profile; if (!u) return;
 
                 $("uname").textContent = u.username || u.first_username || state.slug;
@@ -423,16 +626,21 @@
                 const btnEdit = $("btn-edit");
                 const btnLogout = $("btn-logout");
 
-                if (u.is_me) {
+                const { flag, reason } = resolveOwner(u, activityIsMe);
+                state.isOwner = flag;
+                D("owner: resolve", { flag, reason, profile: u });
+
+                if (flag) {
                     btnEdit.style.display = "";
                     btnEdit.href = `/user/${encodeURIComponent(state.slug)}/edit`;
-
                     btnLogout.style.display = "";
                     btnLogout.onclick = (e) => { e.preventDefault(); logout(); };
+                    renderOwnerBits();
                 } else {
                     btnEdit.style.display = "none";
                     btnLogout.style.display = "none";
                     btnLogout.onclick = null;
+                    teardownOwnerBits("not owner (" + reason + ")");
                 }
             }
 
@@ -446,11 +654,7 @@
 
                 const h = document.createElement("h3");
                 const a = document.createElement("a");
-
-                // 🔁 new hash-style route:
                 a.href = `/#${encodeURIComponent(pleaNum)}`;
-
-                // placeholder → real title will be filled in below
                 a.textContent = state.pleaTitleMap.get(pleaNum) || `Plea #${pleaNum}`;
                 h.appendChild(a);
 
@@ -462,9 +666,7 @@
                 document.getElementById("groups").appendChild(wrap);
                 state.domGroups.set(pleaNum, list);
 
-                // 🔎 fetch & upgrade to actual title (same method as the hub)
                 ensureTitleFor(pleaNum, a);
-
                 return list;
             }
 
@@ -495,7 +697,7 @@
                         return { ok: true, likes: +j.likes || 0, dislikes: +j.dislikes || 0, my: (typeof j.my_vote === "number" ? j.my_vote : newVote) };
                     }
                     return { ok: true, likes: null, dislikes: null, my: newVote };
-                } catch (e) {
+                } catch {
                     if (newVote === 0) {
                         try { await api(`/comments/${encodeURIComponent(id)}/vote`, { method: "DELETE" }); return { ok: true, likes: null, dislikes: null, my: 0 }; }
                         catch { }
@@ -552,20 +754,19 @@
                 return Array.isArray(j?.items) ? j.items : (Array.isArray(j) ? j : []);
             }
 
-            /* ---------- compose/edit/delete (editor mounts beneath the comment) ---------- */
+            /* ---------- compose/edit/delete ---------- */
             function openInlineEditor(opts, mountAfter) {
-                // ensure single editor under the same comment
                 const root = mountAfter?.closest?.('.comment') || document;
                 root.querySelectorAll('.reply-editor').forEach(n => n.remove());
 
                 const ed = document.createElement("div");
                 ed.className = "comment reply-editor";
                 ed.innerHTML = `
-                      <textarea style="width:100%;min-height:80px" class="field-box">${escapeHtml(opts.initial || "")}</textarea>
-                      <div class="actions" style="margin-top:8px">
-                        <button class="btn primary js-ok">Post</button>
-                        <button class="btn js-cancel" type="button">Cancel</button>
-                      </div>`;
+                  <textarea style="width:100%;min-height:80px" class="field-box">${escapeHtml(opts.initial || "")}</textarea>
+                  <div class="actions" style="margin-top:8px">
+                    <button class="btn primary js-ok">Post</button>
+                    <button class="btn js-cancel" type="button">Cancel</button>
+                  </div>`;
                 const ta = ed.querySelector("textarea");
                 ed.querySelector(".js-ok").addEventListener("click", async () => {
                     const val = ta.value.trim(); if (!val) return; await opts.onSubmit(val, ed);
@@ -601,7 +802,7 @@
                 await api(`/comments/${encodeURIComponent(id)}`, { method: "DELETE" }); return true;
             }
 
-            /* ---------- tiny renderer for a single reply row ---------- */
+            /* ---------- tiny reply renderer ---------- */
             function renderOneReply(r, fallbackPleaNum) {
                 const wrap = document.createElement("div");
                 wrap.className = "reply";
@@ -644,11 +845,10 @@
                 return wrap;
             }
 
-            /* ---------- render item (with replies + correct editor placement) ---------- */
+            /* ---------- render item ---------- */
             function renderItem(container, item) {
                 const node = document.createElement("div"); node.className = "comment"; node.dataset.commentId = item.id;
 
-                // If this item is a reply, show parent context + NEVER show a Reply button
                 const thisIsReply = isReplyItem(item);
                 if (thisIsReply && item.parent) {
                     const parent = document.createElement("div");
@@ -677,7 +877,6 @@
                 });
                 apiGetMyVote(item.plea_num, item.id).then(v => { if (v !== vc.state.my) { vc.state.my = v; vc.render(); } }).catch(() => { });
 
-                // Replies UI (top-level comments only)
                 const isTopLevel = !thisIsReply;
                 let repliesWrap = null, repliesList = null, toggleRepliesBtn = null;
 
@@ -692,7 +891,7 @@
 
                     toggleRepliesBtn = document.createElement("button");
                     toggleRepliesBtn.className = "btn js-toggle-replies";
-                    toggleRepliesBtn.style.display = "none";     // hidden until we confirm replies exist
+                    toggleRepliesBtn.style.display = "none";
                     toggleRepliesBtn.textContent = "View replies (0)";
                     actions.appendChild(toggleRepliesBtn);
 
@@ -714,7 +913,6 @@
                         if (openAfter) repliesWrap.style.display = "";
                     }
 
-                    // Initial presence check (uses reply_count if available, otherwise fetch once)
                     (async () => {
                         const known = nRepliesCount(item);
                         if (known > 0) { toggleRepliesBtn.style.display = ""; toggleRepliesBtn.textContent = `View replies (${known})`; }
@@ -737,14 +935,12 @@
                         }
                     });
 
-                    // Reply button (ONLY for top-level)
                     const replyBtn = document.createElement("button");
                     replyBtn.className = "btn js-reply";
                     replyBtn.textContent = "Reply";
                     actions.appendChild(replyBtn);
 
                     replyBtn.addEventListener("click", async () => {
-                        // open replies so the editor is clearly *beneath* the comment
                         repliesWrap.style.display = "";
                         await (async () => {
                             const reps = await apiReplies(item.id).catch(() => []);
@@ -761,14 +957,12 @@
                             toggleRepliesBtn.textContent = "Hide replies";
                         })();
 
-                        // mount editor *after* repliesWrap => beneath comment
                         openInlineEditor({
                             plea_num: item.plea_num,
                             parent_id: item.id,
                             onSubmit: async (text, ed) => {
                                 await api(`/pleas/${item.plea_num}/comments`, { method: "POST", body: JSON.stringify({ parent_id: item.id, body: text }) });
                                 ed.remove();
-                                // refresh + keep open + update label
                                 const reps = await apiReplies(item.id).catch(() => []);
                                 repliesList.innerHTML = "";
                                 if (!reps.length) {
@@ -786,14 +980,13 @@
                     });
                 }
 
-                // Owner controls
                 if (state.isOwner) {
                     const editBtn = document.createElement("button"); editBtn.className = "btn js-edit"; editBtn.textContent = "Edit";
                     const delBtn = document.createElement("button"); delBtn.className = "btn js-del"; delBtn.textContent = "Delete";
                     actions.appendChild(editBtn); actions.appendChild(delBtn);
 
                     editBtn.addEventListener("click", () => {
-                        const mountTarget = (isTopLevel && repliesWrap) ? repliesWrap : node; // still beneath content
+                        const mountTarget = (isTopLevel && repliesWrap) ? repliesWrap : node;
                         openInlineEditor({
                             initial: item.body || "",
                             onSubmit: async (text, ed) => { await editComment(item.id, text); ed.remove(); body.textContent = text; }
@@ -806,40 +999,48 @@
                 }
 
                 node.appendChild(actions);
-                if (isTopLevel && repliesWrap) node.appendChild(repliesWrap); // replies live above the editor
+                if (isTopLevel && repliesWrap) node.appendChild(repliesWrap);
                 container.appendChild(node);
             }
 
             /* ---------- activity loading ---------- */
             async function loadMore() {
                 if (state.loading) return; state.loading = true; $("load-more").disabled = true;
+                D("activity: load", { offset: state.offset, limit: state.limit });
                 try {
                     const j = await api(`/users/${encodeURIComponent(state.slug)}/activity?offset=${state.offset}&limit=${state.limit}`);
-                    state.total = j.total | 0; state.isOwner = !!j.is_me;
-                    if (state.profile && state.profile.is_me !== j.is_me) { state.profile.is_me = j.is_me; renderHeader(); }
+                    D("activity: got", j);
+                    state.total = j.total | 0;
+                    // keep track of activity-provided owner flag for debugging
+                    const activityIsMe = !!j.is_me;
+                    if (state.profile && state.profile.is_me !== j.is_me) {
+                        state.profile.is_me = j.is_me;
+                        D("profile.is_me updated from activity:", j.is_me);
+                        renderHeader(activityIsMe);
+                    }
 
                     if (!j.items || j.items.length === 0) {
-                        if (state.offset === 0) $("empty").style.display = ""; $("load-more").style.display = "none"; return;
+                        if (state.offset === 0) $("empty").style.display = ""; $("load-more").style.display = "none";
+                        return;
                     }
                     $("empty").style.display = "none";
-
                     for (const it of j.items) {
                         const group = ensureGroup(it.plea_num);
                         renderItem(group, it);
                     }
                     state.offset += j.items.length;
                     $("load-more").style.display = (state.offset < state.total) ? "" : "none";
-                } catch (e) { msg(e); }
+                } catch (e) { msg(e); D("activity: error", e); }
                 finally { state.loading = false; $("load-more").disabled = false; }
             }
             function resetAndLoad() {
+                D("activity: reset");
                 state.offset = 0; state.total = 0; state.domGroups.clear();
                 $("groups").innerHTML = ""; loadMore();
             }
 
-            // --- title helpers (mirror the plea hub approach) ---
+            // --- title helpers ---
             async function fetchPleaTitleByNum(num) {
-                // try both with and without trailing slash
                 const candidates = [`/${encodeURIComponent(num)}/`, `/${encodeURIComponent(num)}`];
                 for (const u of candidates) {
                     try {
@@ -848,18 +1049,14 @@
                         const html = await res.text();
                         const doc = new DOMParser().parseFromString(html, 'text/html');
                         const raw = (doc.querySelector('.plea-number')?.textContent?.trim() || doc.title || '').trim();
-                        const title = raw.replace(/^\s*plea\s*[:#-]?\s*/i, '').trim(); // strip "Plea #", "Plea:", etc.
+                        const title = raw.replace(/^\s*plea\s*[:#-]?\s*/i, '').trim();
                         if (title) return title;
                     } catch { }
                 }
                 return null;
             }
-
             function ensureTitleFor(pleaNum, anchorEl) {
-                if (state.pleaTitleMap.has(pleaNum)) {
-                    anchorEl.textContent = state.pleaTitleMap.get(pleaNum);
-                    return;
-                }
+                if (state.pleaTitleMap.has(pleaNum)) { anchorEl.textContent = state.pleaTitleMap.get(pleaNum); return; }
                 fetchPleaTitleByNum(pleaNum).then(title => {
                     if (!title) return;
                     state.pleaTitleMap.set(pleaNum, title);
@@ -879,7 +1076,8 @@
                         const ttl = it.title ?? it.name ?? null;
                         if (id != null && ttl) state.pleaTitleMap.set(+id, String(ttl));
                     }
-                } catch { }
+                    D("titles: loaded", state.pleaTitleMap.size);
+                } catch (e) { D("titles: failed", e); }
             }
 
             function msg(e) {
@@ -889,125 +1087,91 @@
 
             /* ---------- boot ---------- */
             async function init() {
+                D("init: start", { API_BASE, path: location.pathname, search: location.search });
                 state.slug = extractSlugFromPath(location.pathname) || "";
-                if (!state.slug) { msg("Bad URL"); return; }
+                if (!state.slug) { msg("Bad URL"); D("init: bad URL"); setOwnerBadge("ownerbits: hidden\nreason=bad URL"); return; }
                 $("hdr-slug").textContent = state.slug;
 
-                const prof = await api(`/users/by-first/${encodeURIComponent(state.slug)}`).catch(() => null);
+                const prof = await api(`/users/by-first/${encodeURIComponent(state.slug)}`).catch((e) => { D("profile fetch failed", e); return null; });
                 state.profile = prof?.user || null;
-                if (!state.profile) { msg("Profile not found"); return; }
-                renderHeader();
+                D("profile:", state.profile);
+
+                if (!state.profile) { msg("Profile not found"); setOwnerBadge("ownerbits: hidden\nreason=profile not found"); return; }
+
+                renderHeader(); // no activity fallback yet
 
                 await loadPleaTitles();
                 $("load-more").addEventListener("click", loadMore);
                 await loadMore();
+
+                // expose for console checks
+                window.__ownerbits.state = state;
+                const card = $("owner-card");
+                D("ownerbits: dom", { hasOwnerCard: !!card, ownerCardDisplay: card?.style?.display });
             }
 
             if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
+
+            // cleanup
+            window.addEventListener("beforeunload", () => {
+                if (state.friendsRefreshTimer) clearInterval(state.friendsRefreshTimer);
+                stopPresence();
+            });
         })();
     </script>
+
     <script>
         (function mountPleaHubBtnExact() {
             'use strict';
-
             const HUB_URL = '/pleas/';
             const ICON_SRC = '/icons/plea-hub.png';
             const STYLE_ID = 'plea-hub-btn-style';
-
-            // Remove any prior injected styles for the button
             const prev = document.getElementById(STYLE_ID);
             if (prev) prev.remove();
-
-            // Inject the exact CSS used by the reader (matches main styles.css)
             function injectExactStyles() {
                 const s = document.createElement('style');
                 s.id = STYLE_ID;
                 s.textContent = `
-:root{
-          --hub-native:21;
-          --hub-scale:3;
-          --hub-gap:20px;
-          --sbw:0px; /* JS updates this */
-}
+:root{ --hub-native:21; --hub-scale:3; --hub-gap:20px; --sbw:0px; }
 @media (max-width:480px){ :root{ --hub-scale:2; } }
 @media (min-width:1024px){ :root{ --hub-scale:4; } }
-
 .plea-hub-btn{
-          position:fixed;
-          top:calc(var(--hub-gap) + env(safe-area-inset-top));
+          position:fixed; top:calc(var(--hub-gap) + env(safe-area-inset-top));
           right:calc(var(--hub-gap) + env(safe-area-inset-right) + var(--sbw,0px));
           width:calc(var(--hub-native) * var(--hub-scale) * 1px);
           height:calc(var(--hub-native) * var(--hub-scale) * 1px);
-          display:inline-flex;
-          align-items:center;
-          justify-content:center;
-          padding:0;
-          border:none;
-          background:transparent;
-          border-radius:0;
-          text-decoration:none;
-          z-index:10050;
-          opacity:0;              /* will fade to .5 */
-          transition:opacity .3s ease;
-          pointer-events:auto;
-          touch-action:manipulation;
-          overflow:hidden;
+          display:inline-flex; align-items:center; justify-content:center;
+          padding:0; border:none; background:transparent; border-radius:0; text-decoration:none;
+          z-index:10050; opacity:0; transition:opacity .3s ease; pointer-events:auto; touch-action:manipulation; overflow:hidden;
 }
 .plea-hub-btn.is-show{ opacity:.5; }
-.plea-hub-btn:hover,
-.plea-hub-btn:focus-visible{ opacity:.8; }
+.plea-hub-btn:hover, .plea-hub-btn:focus-visible{ opacity:.8; }
 .plea-hub-btn:active{ opacity:1; }
-
-.plea-hub-btn img{
-          width:100%;
-          height:100%;
-          display:block;
-          image-rendering:pixelated;
-          image-rendering:crisp-edges;
-          image-rendering:-moz-crisp-edges;
-          -ms-interpolation-mode:nearest-neighbor;
-}
+.plea-hub-btn img{ width:100%; height:100%; display:block; image-rendering:pixelated; image-rendering:crisp-edges; image-rendering:-moz-crisp-edges; -ms-interpolation-mode:nearest-neighbor; }
 `;
                 document.head.appendChild(s);
             }
-
-            // Same stash behavior the reader uses (no-op on non-plea pages)
             function stashReturnTarget() {
                 const m = location.pathname.match(/\/(\d{1,6})\/?$/);
                 if (m) { try { sessionStorage.setItem('plea:return', String(m[1])); } catch { } }
             }
-
-            // Keep --sbw (scrollbar width) accurate so right offset matches reader
             function updateSBW() {
                 const sw = window.innerWidth - document.documentElement.clientWidth;
                 document.documentElement.style.setProperty('--sbw', (sw > 0 ? sw : 0) + 'px');
             }
-
-            // Build exactly like main.js → addPleaHubButton()
             function buildBtn() {
-                if (document.querySelector('.plea-hub-btn')) return; // already mounted
-
+                if (document.querySelector('.plea-hub-btn')) return;
                 const a = document.createElement('a');
                 a.href = HUB_URL;
                 a.className = 'plea-hub-btn';
                 a.setAttribute('aria-label', 'Open Plea Select');
-
                 const img = new Image();
-                img.src = ICON_SRC;
-                img.alt = 'Plea Select';
-                img.decoding = 'async';
-                img.loading = 'eager';
-                img.draggable = false;
-
+                img.src = ICON_SRC; img.alt = 'Plea Select'; img.decoding = 'async'; img.loading = 'eager'; img.draggable = false;
                 a.appendChild(img);
                 document.body.appendChild(a);
-
                 a.addEventListener('click', () => { stashReturnTarget(); }, { capture: true });
-
                 requestAnimationFrame(() => a.classList.add('is-show'));
             }
-
-            // Escape → go to hub (reader UX)
             function bindEscapeShortcut() {
                 const handler = (e) => {
                     const tag = (e.target && e.target.tagName || '').toLowerCase();
@@ -1022,7 +1186,6 @@
                 };
                 window.addEventListener('keydown', handler, { capture: true });
             }
-
             function mount() {
                 injectExactStyles();
                 updateSBW();
@@ -1030,7 +1193,6 @@
                 buildBtn();
                 bindEscapeShortcut();
             }
-
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', mount, { once: true });
             } else {
@@ -1038,10 +1200,11 @@
             }
         })();
     </script>
+
     <script>
         /* ===== Auth Bar (profile view) ===== */
         (() => {
-            const API = "http://localhost:3000/api";        // fallback (global API_BASE isn't visible here)
+            const API = "http://localhost:3000/api";
             const ASSET_BASE = "/web";
             const OVERLAY_JS = ASSET_BASE + "/authOverlay.js";
             const OVERLAY_CSS = ASSET_BASE + "/authOverlay.css";
@@ -1071,35 +1234,32 @@
                 s.id = "dp-authbar-style";
                 s.textContent = `
 #dp-authbar{
-      position:fixed; top:12px; left:12px; z-index:10060;
-      display:flex; align-items:center; gap:10px;
-      background:transparent; color:#fff; padding:0; border:none; border-radius:0;
-      font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
-      line-height:1;
+          position:fixed; top:12px; left:12px; z-index:10060;
+          display:flex; align-items:center; gap:10px;
+          background:transparent; color:#fff; padding:0; border:none; border-radius:0;
+          font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important; line-height:1;
 }
 #dp-authprefix{ opacity:.95; }
 #dp-authlink{
-      display:inline-flex; align-items:center; gap:8px;
-      color:#fff; text-decoration:none; cursor:pointer; outline:none;
+          display:inline-flex; align-items:center; gap:8px;
+          color:#fff; text-decoration:none; cursor:pointer; outline:none;
 }
 #dp-authlink:hover{ text-decoration:underline; }
 #dp-authlink:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
 #dp-authname{ font-weight:600; }
 #dp-authavatar{
-      width:26px; height:26px; display:block;
-      border-radius:50%; object-fit:cover; background:#000; border:2px solid #fff;
+          width:26px; height:26px; display:block; border-radius:50%; object-fit:cover; background:#000; border:2px solid #fff;
 }
-#dp-logout-btn{ display:none; } /* reserved */
-`;
+#dp-logout-btn{ display:none; }`;
                 document.head.appendChild(s);
             }
 
             const AVATAR_FALLBACK = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
-        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
-          <rect width="100%" height="100%" fill="#000"/>
-          <circle cx="32" cy="24" r="14" fill="#fff"/>
-          <rect x="10" y="40" width="44" height="16" rx="8" fill="#fff"/>
-        </svg>`);
+                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+                  <rect width="100%" height="100%" fill="#000"/>
+                  <circle cx="32" cy="24" r="14" fill="#fff"/>
+                  <rect x="10" y="40" width="44" height="16" rx="8" fill="#fff"/>
+                </svg>`);
 
             async function resolveProfileHrefFor(user) {
                 const first = (user?.first_username || user?.firstUsername || "").trim();
@@ -1129,10 +1289,10 @@
                 const bar = document.createElement("div");
                 bar.id = "dp-authbar";
                 bar.innerHTML = `
-          <span id="dp-authprefix" aria-hidden="true">User:</span>
-          <a id="dp-authlink" href="#"></a>
-          <button id="dp-logout-btn" type="button">Sign out</button>
-        `;
+                  <span id="dp-authprefix" aria-hidden="true">User:</span>
+                  <a id="dp-authlink" href="#"></a>
+                  <button id="dp-logout-btn" type="button">Sign out</button>
+                `;
                 document.body.appendChild(bar);
 
                 const authLink = bar.querySelector("#dp-authlink");
@@ -1144,7 +1304,6 @@
                     }
                 });
 
-                // refresh after overlay login
                 window.DP = window.DP || {};
                 const prev = DP.syncAfterLogin;
                 DP.syncAfterLogin = async () => { try { if (prev) await prev(); } finally { await refresh(); } };
@@ -1167,9 +1326,9 @@
                     authLink.setAttribute("data-state", "logged-in");
                     authLink.setAttribute("href", href || "#");
                     authLink.innerHTML = `
-            <img id="dp-authavatar" alt="" src="${pfp}">
-            <span id="dp-authname">${uname}</span>
-          `;
+                    <img id="dp-authavatar" alt="" src="${pfp}">
+                    <span id="dp-authname">${uname}</span>
+                  `;
                     authLink.onclick = null;
                 } else {
                     prefixEl.style.display = "none";
