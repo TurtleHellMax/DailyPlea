@@ -14,32 +14,16 @@
         apiBase: 'http://localhost:3000/api',
         csrf: null,
         overlay: null,
-        openedAt: 0,                 // <— NEW
+        openedAt: 0,
     };
 
     /* ===================== UTIL ===================== */
-
     const byId = (id) => document.getElementById(id);
-
-    function msg(t = '') {
-        const n = byId('dp-msg');
-        if (n) n.textContent = t;
-    }
-
-    function snippet(s, n = 160) {
-        if (!s) return '';
-        const t = String(s).replace(/\s+/g, ' ').trim();
-        return t.length > n ? t.slice(0, n) + '…' : t;
-    }
-
+    function msg(t = '') { const n = byId('dp-msg'); if (n) n.textContent = t; }
+    function snippet(s, n = 160) { if (!s) return ''; const t = String(s).replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n) + '…' : t; }
     function showSpecificError(action, err) {
-        const line =
-            `${action} failed → ${err.method || 'GET'} ${err.path || '(unknown)'} ` +
-            `[${err.status ?? 'no-status'}] ` +
-            `${err.code || err.error || err.statusText || 'unknown'}` +
-            (err.detail ? ` · ${snippet(err.detail, 140)}` : '');
+        const line = `${action} failed → ${err.method || 'GET'} ${err.path || '(unknown)'} [${err.status ?? 'no-status'}] ${err.code || err.error || err.statusText || 'unknown'}${err.detail ? ` · ${snippet(err.detail, 140)}` : ''}`;
         msg(line);
-
         console.groupCollapsed(`❌ ${TAG} ${action} failed`);
         console.error('Error object:', err);
         console.error('Request:', { method: err.method, url: err.url, headers: err.reqHeaders, body: err.reqBody });
@@ -48,179 +32,85 @@
     }
 
     /* ===================== VALIDATION / SANITIZERS ===================== */
-
     const USERNAME_RE = /^[A-Za-z0-9_]{3,24}$/;
     function validateUsername(u) {
         const username = String(u || '').trim();
         if (!username) return { ok: false, reason: 'Username is required.' };
-        if (!USERNAME_RE.test(username)) {
-            return { ok: false, reason: 'Username must be 3–24 chars: letters, numbers, underscore.' };
-        }
+        if (!USERNAME_RE.test(username)) return { ok: false, reason: 'Username must be 3–24 chars: letters, numbers, underscore.' };
         return { ok: true, username };
     }
-
     function validatePassword(pw) {
-        const s = String(pw || '');
-        const reasons = [];
+        const s = String(pw || ''); const reasons = [];
         if (!(s.length > 6 && s.length < 32)) reasons.push('7–31 characters');
         if (!/[A-Z]/.test(s)) reasons.push('at least one capital letter');
         if (!/[0-9]/.test(s)) reasons.push('at least one number');
         if (!/[^A-Za-z0-9]/.test(s)) reasons.push('at least one symbol');
         return { ok: reasons.length === 0, reasons };
     }
-
-    function sanitizeEmail(x) {
-        const s = String(x || '').trim();
-        return s ? s : '';
-    }
-    function isEmail(x) {
-        return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(x || ''));
-    }
+    const sanitizeEmail = (x) => String(x || '').trim();
+    const isEmail = (x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(x || ''));
     function sanitizePhone(x) {
         if (!x) return '';
-        let s = String(x).trim();
-        const hasPlus = s.startsWith('+');
-        s = s.replace(/[^\d+]/g, '');
-        if (hasPlus) s = '+' + s.replace(/[+]/g, '');
-        else s = s.replace(/[+]/g, '');
+        let s = String(x).trim(); const hasPlus = s.startsWith('+');
+        s = s.replace(/[^\d+]/g, ''); s = hasPlus ? ('+' + s.replace(/[+]/g, '')) : s.replace(/[+]/g, '');
         return s;
     }
-    function isPhone(x) {
-        return /^\+?[0-9]{7,15}$/.test(String(x || ''));
-    }
+    const isPhone = (x) => /^\+?[0-9]{7,15}$/.test(String(x || ''));
 
     /* ===================== CSRF + API WRAPPER ===================== */
-
     async function fetchCsrf() {
         const url = state.apiBase.replace('/api', '') + '/api/csrf';
         log('fetchCsrf →', url);
         const r = await fetch(url, { credentials: 'include' }).catch((e) => {
-            throw {
-                name: 'NetworkError',
-                code: 'csrf_network_error',
-                message: 'Failed to reach /api/csrf',
-                method: 'GET',
-                url,
-                path: '/api/csrf',
-                detail: String(e?.message || e),
-            };
+            throw { name: 'NetworkError', code: 'csrf_network_error', message: 'Failed to reach /api/csrf', method: 'GET', url, path: '/api/csrf', detail: String(e?.message || e) };
         });
-
-        let text = '';
-        try { text = await r.text(); } catch { }
-        let j = {};
-        try { j = text ? JSON.parse(text) : {}; } catch { }
+        let text = ''; try { text = await r.text(); } catch { }
+        let j = {}; try { j = text ? JSON.parse(text) : {}; } catch { }
         if (!r.ok || !j.token) {
-            throw {
-                name: 'CsrfError',
-                code: 'csrf_bad_response',
-                message: 'Unexpected CSRF response',
-                method: 'GET',
-                url,
-                path: '/api/csrf',
-                status: r.status,
-                statusText: r.statusText,
-                text,
-                data: j,
-            };
+            throw { name: 'CsrfError', code: 'csrf_bad_response', message: 'Unexpected CSRF response', method: 'GET', url, path: '/api/csrf', status: r.status, statusText: r.statusText, text, data: j };
         }
-        state.csrf = j.token;
-        log('fetchCsrf ok');
-        return j.token;
+        state.csrf = j.token; log('fetchCsrf ok'); return j.token;
     }
-
     async function api(path, opts = {}) {
         const method = (opts.method || 'GET').toUpperCase();
         const url = state.apiBase + path;
-
         const headers = Object.assign({}, opts.headers || {});
-        if (opts.body && !headers['content-type']) {
-            headers['content-type'] = 'application/json';
-        }
-
-        if (method !== 'GET' && !headers['x-csrf-token']) {
-            if (!state.csrf) await fetchCsrf();
-            headers['x-csrf-token'] = state.csrf;
-        }
-
+        if (opts.body && !headers['content-type']) headers['content-type'] = 'application/json';
+        if (method !== 'GET' && !headers['x-csrf-token']) { if (!state.csrf) await fetchCsrf(); headers['x-csrf-token'] = state.csrf; }
         const reqInfo = { method, url, reqHeaders: headers, reqBody: opts.body, path };
         const end = group(`api ${method} ${path}`);
-
         let res;
-        try {
-            res = await fetch(url, { method, credentials: 'include', headers, body: opts.body });
-        } catch (e) {
-            end();
-            throw {
-                ...reqInfo,
-                name: 'NetworkError',
-                code: 'network_error',
-                message: `Network error calling ${method} ${path}`,
-                detail: String(e?.message || e),
-            };
-        }
-
-        let text = '';
-        try { text = await res.text(); } catch { }
-        let data = {};
-        try { data = text ? JSON.parse(text) : {}; } catch { }
-
+        try { res = await fetch(url, { method, credentials: 'include', headers, body: opts.body }); }
+        catch (e) { end(); throw { ...reqInfo, name: 'NetworkError', code: 'network_error', message: `Network error calling ${method} ${path}`, detail: String(e?.message || e) }; }
+        let text = ''; try { text = await res.text(); } catch { }
+        let data = {}; try { data = text ? JSON.parse(text) : {}; } catch { }
         log('status:', res.status, res.statusText);
         if (!res.ok) {
             const code = (data && (data.error || data.code)) || undefined;
             const message = (data && (data.message || data.msg)) || undefined;
-            end();
-            throw {
-                ...reqInfo,
-                name: 'HttpError',
-                code: code || 'http_error',
-                error: code,
-                message: message || `HTTP ${res.status} on ${path}`,
-                status: res.status,
-                statusText: res.statusText,
-                data,
-                text,
-                resHeaders: Object.fromEntries(res.headers.entries()),
-                detail: snippet(text || message, 300),
-            };
+            end(); throw { ...reqInfo, name: 'HttpError', code: code || 'http_error', error: code, message: message || `HTTP ${res.status} on ${path}`, status: res.status, statusText: res.statusText, data, text, resHeaders: Object.fromEntries(res.headers.entries()), detail: snippet(text || message, 300) };
         }
-        end();
-        return (text ? (data || {}) : {});
+        end(); return (text ? (data || {}) : {});
     }
 
-    /* ===================== OVERLAY THEME (overwrite-proof) ===================== */
-
-    // put near the top (after state/log helpers)
+    /* ===================== SCROLL LOCK ===================== */
     const scrollLock = { onWheel: null, onTouchMove: null, onKey: null, onTouchStart: null };
-
     function lockScroll(modal) {
         if (!modal) return;
         document.body.classList.add('dp-noscroll');
-
         const canScroll = (el) => el && el.scrollHeight > el.clientHeight;
 
-        // WHEEL: manual scrolling inside modal, block background
         scrollLock.onWheel = (e) => {
-            // find nearest scrollable inside modal
             let t = e.target;
             while (t && t !== modal && t instanceof HTMLElement && !canScroll(t)) t = t.parentElement;
             const scroller = (t && modal.contains(t) && canScroll(t)) ? t : modal;
-
-            const dy = e.deltaY || 0;
-            const top = scroller.scrollTop;
-            const max = scroller.scrollHeight - scroller.clientHeight;
-            const atTop = top <= 0;
-            const atBottom = top >= max - 1;
-
-            e.preventDefault();
-            e.stopPropagation();
-
-            if ((dy < 0 && atTop) || (dy > 0 && atBottom) || max <= 0) return; // no room to scroll
+            const dy = e.deltaY || 0; const top = scroller.scrollTop; const max = scroller.scrollHeight - scroller.clientHeight;
+            e.preventDefault(); e.stopPropagation();
+            if ((dy < 0 && top <= 0) || (dy > 0 && top >= max) || max <= 0) return;
             scroller.scrollTop = Math.min(max, Math.max(0, top + dy));
         };
         window.addEventListener('wheel', scrollLock.onWheel, { passive: false, capture: true });
 
-        // TOUCH: same idea as wheel
         let lastY = 0;
         scrollLock.onTouchStart = (e) => { const t = e.touches && e.touches[0]; if (t) lastY = t.clientY; };
         window.addEventListener('touchstart', scrollLock.onTouchStart, { passive: true, capture: true });
@@ -229,40 +119,24 @@
             let t = modal.contains(e.target) ? e.target : modal;
             while (t && t !== modal && t instanceof HTMLElement && !(t.scrollHeight > t.clientHeight)) t = t.parentElement;
             const scroller = (t && modal.contains(t)) ? t : modal;
-
-            const touch = e.touches ? e.touches[0] : null;
-            if (!touch) return;
-            const dy = lastY ? lastY - touch.clientY : 0;
-            lastY = touch.clientY;
-
-            const top = scroller.scrollTop;
-            const max = scroller.scrollHeight - scroller.clientHeight;
-
-            e.preventDefault();
-            e.stopPropagation();
-
+            const touch = e.touches ? e.touches[0] : null; if (!touch) return;
+            const dy = lastY ? lastY - touch.clientY : 0; lastY = touch.clientY;
+            const top = scroller.scrollTop; const max = scroller.scrollHeight - scroller.clientHeight;
+            e.preventDefault(); e.stopPropagation();
             if ((dy < 0 && top <= 0) || (dy > 0 && top >= max) || max <= 0) return;
             scroller.scrollTop = Math.min(max, Math.max(0, top + dy));
         };
         window.addEventListener('touchmove', scrollLock.onTouchMove, { passive: false, capture: true });
 
-        // KEYBOARD: space/pgup/pgdn/arrows/home/end
         scrollLock.onKey = (e) => {
             const keys = [' ', 'Spacebar', 'Space', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
             if (!keys.includes(e.key)) return;
-
-            const scroller = modal;
-            const page = scroller.clientHeight * 0.9;
-            let delta = 0;
-
+            const scroller = modal; const page = scroller.clientHeight * 0.9; let delta = 0;
             if (e.key === 'ArrowDown') delta = 60;
             if (e.key === 'ArrowUp') delta = -60;
             if (e.key === 'PageDown' || e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') delta = page;
             if (e.key === 'PageUp') delta = -page;
-
-            e.preventDefault();
-            e.stopPropagation();
-
+            e.preventDefault(); e.stopPropagation();
             if (e.key === 'Home') scroller.scrollTop = 0;
             else if (e.key === 'End') scroller.scrollTop = scroller.scrollHeight;
             else scroller.scrollTop = Math.min(scroller.scrollHeight, Math.max(0, scroller.scrollTop + delta));
@@ -271,7 +145,6 @@
 
         log('scroll lock engaged');
     }
-
     function unlockScroll() {
         document.body.classList.remove('dp-noscroll');
         if (scrollLock.onWheel) window.removeEventListener('wheel', scrollLock.onWheel, { capture: true });
@@ -282,6 +155,7 @@
         log('scroll lock released');
     }
 
+    /* ===================== THEME (overwrite-proof) ===================== */
     function upsertAuthOverlayTheme() {
         let s = document.getElementById('dp-auth-overlay-theme');
         if (!s) {
@@ -321,7 +195,7 @@ body.dp-noscroll { overflow: hidden !important; }
 /* Title / muted */
 #dp-overlay h2{ margin:0 0 8px 0 !important; font-size:22px !important; font-weight:700 !important; }
 #dp-overlay .muted{ font-size:.92em !important; opacity:.85 !important; margin-top:6px !important; color:#fff !important; }
-#dp-overlay #dp-msg{ color:#fca5a5 !important; min-height:1.2em !important; }
+#dp-overlay #dp-msg{ color:#fca5a5 !important; min-height:1.2em !important; text-align:center !important; }
 
 /* Tabs */
 #dp-tabs{ display:grid !important; grid-template-columns:1fr 1fr !important; gap:10px !important; margin:4px 0 8px 0 !important; }
@@ -349,13 +223,12 @@ body.dp-noscroll { overflow: hidden !important; }
 #dp-overlay label + input{ margin-top:6px !important; }
 #dp-overlay input + label{ margin-top:12px !important; }
 
-/* >>> Inputs — FORCE black bg + matching border (very strong selectors) */
+/* Inputs — text-like only (exclude checkbox/radio) */
 #dp-overlay .dp-modal input[type="text" i],
 #dp-overlay .dp-modal input[type="email" i],
 #dp-overlay .dp-modal input[type="tel" i],
 #dp-overlay .dp-modal input[type="password" i],
-#dp-overlay .dp-modal input:not([type]),
-#dp-overlay .dp-modal input{
+#dp-overlay .dp-modal input:not([type]){
   width:100% !important; min-height:40px !important; padding:10px 12px !important;
   background:#000 !important; background-color:#000 !important; background-image:none !important;
   color:#fff !important; caret-color:#fff !important;
@@ -367,7 +240,38 @@ body.dp-noscroll { overflow: hidden !important; }
 #dp-overlay .dp-modal input::placeholder{ color:rgba(255,255,255,.75) !important; }
 #dp-overlay .dp-modal input:focus-visible{ outline:2px solid #fff !important; outline-offset:2px !important; }
 
-/* WebKit autofill */
+/* Checkbox — custom themed square to match buttons/borders */
+#dp-overlay .dp-check{
+  display:flex !important; align-items:center !important; gap:10px !important;
+  user-select:none !important; cursor:pointer !important;
+}
+#dp-overlay .dp-check input[type="checkbox"]{
+  -webkit-appearance:none !important; appearance:none !important;
+  width:18px !important; height:18px !important; margin:0 !important;
+  background:#000 !important; border:2px solid #fff !important; border-radius:0 !important;
+  display:inline-grid !important; place-content:center !important;
+  position:relative !important; transition:background-color .12s ease !important;
+}
+#dp-overlay .dp-check input[type="checkbox"]::before{
+  content:"" !important; width:10px !important; height:10px !important;
+  background:#fff !important; transform:scale(0) !important; transition:transform .12s ease-in-out !important;
+}
+#dp-overlay .dp-check input[type="checkbox"]:checked::before{ transform:scale(1) !important; }
+#dp-overlay .dp-check input[type="checkbox"]:hover{ background:#111 !important; }
+#dp-overlay .dp-check input[type="checkbox"]:focus-visible{
+  outline:2px solid #fff !important; outline-offset:2px !important;
+}
+
+/* Error outline */
+#dp-overlay .dp-modal .dp-error{
+  border-color:#f87171 !important;
+  outline:2px solid #f87171 !important; outline-offset:2px !important;
+}
+#dp-overlay .dp-check input[type="checkbox"].dp-error{
+  outline:2px solid #f87171 !important; outline-offset:2px !important; border-color:#f87171 !important;
+}
+
+/* Autofill */
 #dp-overlay .dp-modal input:-webkit-autofill,
 #dp-overlay .dp-modal input:-webkit-autofill:hover,
 #dp-overlay .dp-modal input:-webkit-autofill:focus{
@@ -375,19 +279,10 @@ body.dp-noscroll { overflow: hidden !important; }
   box-shadow: 0 0 0 1000px #000 inset !important;
   -webkit-text-fill-color:#fff !important; caret-color:#fff !important; border:2px solid #fff !important;
 }
-/* Firefox autofill */
 #dp-overlay .dp-modal input:-moz-autofill,
 #dp-overlay .dp-modal input:-moz-autofill-preview{
   box-shadow: 0 0 0 1000px #000 inset !important;
   -moz-text-fill-color:#fff !important; color:#fff !important;
-}
-
-/* Checkbox row */
-#dp-overlay .dp-check{ display:flex !important; align-items:center !important; gap:8px !important; }
-#dp-overlay .dp-check input[type="checkbox"]{
-  width:16px !important; height:16px !important; margin:0 !important;
-  appearance:auto !important; accent-color:#000 !important;
-  background:#000 !important; border:2px solid #fff !important; border-radius:0 !important;
 }
 
 /* Buttons */
@@ -408,7 +303,10 @@ body.dp-noscroll { overflow: hidden !important; }
   gap:8px !important; margin-top:4px !important; text-align:center !important;
 }
 #dp-overlay .dp-terms{ text-align:center !important; }
-#dp-overlay .dp-inline{ display:flex !important; align-items:center !important; justify-content:space-between !important; gap:12px !important; flex-wrap:wrap !important; }
+
+/* 2FA row spacing (more room under label) */
+#dp-overlay #dp-totp-row{ margin-top:14px !important; }
+#dp-overlay #dp-totp-row > label{ display:block !important; margin-bottom:10px !important; }
 
 /* Links */
 #dp-overlay a{ color:#fff !important; text-decoration:none !important; user-select:text !important; }
@@ -416,36 +314,31 @@ body.dp-noscroll { overflow: hidden !important; }
 `;
             document.head.appendChild(s);
         }
-        ensureAuthThemeLast(); // keep it on top of cascade
+        ensureAuthThemeLast();
+    }
+    function ensureAuthThemeLast() {
+        const s = document.getElementById('dp-auth-overlay-theme');
+        if (s && s !== document.head.lastElementChild) { document.head.removeChild(s); document.head.appendChild(s); }
     }
 
-    // Put this near the top-level helpers
+    /* ===================== PASSWORD ASTERISK MASK ===================== */
     function attachAsteriskMask(visibleInput, hiddenInput) {
         const vis = (typeof visibleInput === 'string') ? document.getElementById(visibleInput) : visibleInput;
         const hid = (typeof hiddenInput === 'string') ? document.getElementById(hiddenInput) : hiddenInput;
         if (!vis || !hid) return;
-
         let real = hid.value || '';
-        const maskChar = '*'; // will render with your font's asterisk glyph
-
+        const maskChar = '*';
         const paint = () => { vis.value = maskChar.repeat(real.length); };
-
-        const setCaret = (pos) => {
-            requestAnimationFrame(() => { try { vis.setSelectionRange(pos, pos); } catch { } });
-        };
-
-        // Keep selection snapshot for reliable edits
+        const setCaret = (pos) => { requestAnimationFrame(() => { try { vis.setSelectionRange(pos, pos); } catch { } }); };
         let selStart = 0, selEnd = 0;
         vis.addEventListener('beforeinput', () => { selStart = vis.selectionStart || 0; selEnd = vis.selectionEnd || selStart; });
-
         vis.addEventListener('paste', (e) => {
             e.preventDefault();
             const text = (e.clipboardData || window.clipboardData).getData('text') || '';
             real = real.slice(0, selStart) + text + real.slice(selEnd);
             hid.value = real; paint(); setCaret(selStart + text.length);
-            hid.dispatchEvent(new Event('input')); // preserve your live validators
+            hid.dispatchEvent(new Event('input'));
         });
-
         vis.addEventListener('input', (e) => {
             const t = e.inputType || '';
             if (t === 'insertText') {
@@ -461,26 +354,57 @@ body.dp-noscroll { overflow: hidden !important; }
                     hid.value = real; paint(); setCaret(selStart);
                 }
             } else if (t === 'deleteContentForward') {
-                if (selStart === selEnd) {
-                    real = real.slice(0, selStart) + real.slice(selStart + 1);
-                } else {
-                    real = real.slice(0, selStart) + real.slice(selEnd);
-                }
+                if (selStart === selEnd) real = real.slice(0, selStart) + real.slice(selStart + 1);
+                else real = real.slice(0, selStart) + real.slice(selEnd);
                 hid.value = real; paint(); setCaret(selStart);
             } else {
-                // Fallback: re-mask without changing the stored value
                 paint();
             }
             hid.dispatchEvent(new Event('input'));
         });
-
-        // Init
         vis.autocomplete = vis.autocomplete || 'new-password';
         vis.spellcheck = false;
         paint();
     }
 
+    /* ===================== ERROR UX HELPERS ===================== */
+    function clearErrors(scope) { (scope || state.overlay)?.querySelectorAll('.dp-error')?.forEach(el => el.classList.remove('dp-error')); }
+    function markError(el) { if (el) el.classList.add('dp-error'); }
+    function markErrorById(id) { const el = byId(id); if (el) el.classList.add('dp-error'); }
+    function focusFirstError(scope) { const el = (scope || state.overlay)?.querySelector('.dp-error'); if (el && el.focus) el.focus(); }
+    function attachErrorClearOnInput(ids) {
+        ids.forEach(id => {
+            const el = byId(id); if (!el) return;
+            const fn = () => el.classList.remove('dp-error');
+            el.addEventListener('input', fn);
+            el.addEventListener('change', fn);
+            el.addEventListener('blur', fn);
+        });
+    }
+
+    /* ===================== SUBMIT ON ENTER ===================== */
+    function bindEnter(container, buttonId) {
+        const root = (typeof container === 'string') ? byId(container) : container;
+        const btn = byId(buttonId);
+        if (!root || !btn) return;
+        const handler = (e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                const tag = (e.target.tagName || '').toLowerCase();
+                if (tag === 'textarea') return;
+                e.preventDefault();
+                btn.click();
+            }
+        };
+        root.addEventListener('keydown', handler);
+    }
+
     /* ===================== OVERLAY UI ===================== */
+    function closeOverlay(reason = 'unknown') {
+        if (!state.overlay) return;
+        log('close overlay (reason:', reason, ')');
+        state.overlay.classList.remove('dp-open');
+        unlockScroll();
+    }
 
     function ensureOverlay() {
         if (state.overlay) { log('ensureOverlay: reuse existing'); return state.overlay; }
@@ -490,17 +414,17 @@ body.dp-noscroll { overflow: hidden !important; }
         el.id = 'dp-overlay';
         el.style.cssText = 'position:fixed;inset:0;z-index:10080;';
         el.innerHTML = `
-    <div class="dp-backdrop"></div>
-    <div class="dp-modal">
-      <button class="dp-close" title="Close" style="position:absolute;right:10px;top:8px;background:none;border:none;color:#fff;font-size:20px;cursor:pointer">×</button>
-      <div id="dp-tabs" style="display:flex;gap:8px;margin-bottom:10px">
-        <button data-tab="login" class="active">Login</button>
-        <button data-tab="register">Register</button>
+      <div class="dp-backdrop"></div>
+      <div class="dp-modal">
+        <button class="dp-close" title="Close" style="position:absolute;right:10px;top:8px;background:none;border:none;color:#fff;font-size:20px;cursor:pointer">×</button>
+        <div id="dp-tabs" style="display:flex;gap:8px;margin-bottom:10px">
+          <button data-tab="login" class="active">Login</button>
+          <button data-tab="register">Register</button>
+        </div>
+        <div id="dp-content"></div>
+        <div class="muted" id="dp-msg" style="min-height:1.2em;margin-top:8px"></div>
       </div>
-      <div id="dp-content"></div>
-      <div class="muted" id="dp-msg" style="min-height:1.2em;margin-top:8px"></div>
-    </div>
-  `;
+    `;
         document.body.appendChild(el);
         state.overlay = el;
 
@@ -508,20 +432,14 @@ body.dp-noscroll { overflow: hidden !important; }
 
         const modal = el.querySelector('.dp-modal');
 
-        const close = (reason = 'unknown') => {
-            log('close overlay (reason:', reason, ')');
-            el.classList.remove('dp-open');
-            unlockScroll();
-        };
-
         const backdrop = el.querySelector('.dp-backdrop');
         backdrop.addEventListener('click', () => {
             const dt = performance.now() - state.openedAt;
             if (dt < 300) { log('backdrop click ignored (debounce,', Math.round(dt), 'ms)'); return; }
-            close('backdrop');
+            closeOverlay('backdrop');
         });
         modal.addEventListener('click', (e) => e.stopPropagation());
-        el.querySelector('.dp-close').addEventListener('click', () => close('close-button'));
+        el.querySelector('.dp-close').addEventListener('click', () => closeOverlay('close-button'));
 
         const [btnLogin, btnReg] = el.querySelectorAll('#dp-tabs button');
         btnLogin.addEventListener('click', () => { setActiveTab(btnLogin, btnReg); renderLogin(); });
@@ -544,10 +462,7 @@ body.dp-noscroll { overflow: hidden !important; }
         state.overlay.classList.add('dp-open');
 
         const modal = state.overlay.querySelector('.dp-modal');
-        lockScroll(modal); // <-- capture wheel/touch/keys for the modal only
-
-        const cs = getComputedStyle(state.overlay);
-        log('overlay display after open =', cs.display);
+        lockScroll(modal);
 
         const [btnLogin, btnReg] = state.overlay.querySelectorAll('#dp-tabs button');
         if (startTab === 'register') { setActiveTab(btnReg, btnLogin); renderRegister(); }
@@ -557,7 +472,6 @@ body.dp-noscroll { overflow: hidden !important; }
     }
 
     /* ===================== VIEWS ===================== */
-
     function renderLogin() {
         log('renderLogin');
         const c = byId('dp-content');
@@ -569,17 +483,20 @@ body.dp-noscroll { overflow: hidden !important; }
       <label>Password</label>
       <input id="dp-pw" type="hidden" value="">
       <input id="dp-pw-vis" type="text" autocomplete="current-password" placeholder="Min 7, < 32, 1 capital, 1 number, 1 symbol">
-      <div id="dp-totp-row" style="display:none">
-        <label>2FA code</label>
-        <div style="display:flex;gap:8px">
+      <div id="dp-totp-row" style="display:none;margin-top:14px">
+        <label>2FA Code</label>
+        <div style="display:flex;gap:10px">
           <input id="dp-totp" inputmode="numeric" placeholder="123456" style="flex:1">
           <button id="dp-sendcode" type="button" title="Send code to your email/phone" style="white-space:nowrap">Send code</button>
         </div>
       </div>
       <button id="dp-login" class="dp-btn-full" style="margin-top:10px">Login</button>
-      <div class="muted" style="margin-top:6px"><a href="#" id="dp-reset">Forgot password?</a></div>
+      <div class="muted" style="margin-top:6px;text-align:center"><a href="#" id="dp-reset">Forgot password?</a></div>
     `;
         attachAsteriskMask('dp-pw-vis', 'dp-pw');
+
+        attachErrorClearOnInput(['dp-id', 'dp-pw-vis', 'dp-totp']);
+        bindEnter(c, 'dp-login');
 
         const idInput = byId('dp-id');
         idInput.addEventListener('blur', () => {
@@ -592,7 +509,7 @@ body.dp-noscroll { overflow: hidden !important; }
 
         const show2fa = (hint) => {
             const row = byId('dp-totp-row'); if (row) row.style.display = '';
-            msg(hint || 'Enter your 2FA code.');
+            msg(hint || 'Enter your 2FA Code.');
         };
 
         byId('dp-sendcode').onclick = async () => {
@@ -601,23 +518,28 @@ body.dp-noscroll { overflow: hidden !important; }
         };
 
         byId('dp-login').onclick = async () => {
-            msg('');
+            msg(''); clearErrors(c);
             const rawId = idInput.value.trim();
             const password = byId('dp-pw').value;
             const totp = (byId('dp-totp')?.value || '').trim();
 
+            let hasErr = false;
+            if (!rawId) { markError(idInput); hasErr = true; }
+            if (!password) { markError(byId('dp-pw-vis')); hasErr = true; }
+            if (hasErr) { msg('Please fill the highlighted fields.'); focusFirstError(c); return; }
+
             let identifier = '';
             if (rawId.includes('@')) {
                 const e = sanitizeEmail(rawId);
-                if (!isEmail(e)) { msg('Invalid email.'); return; }
+                if (!isEmail(e)) { markError(idInput); msg('Invalid email.'); return; }
                 identifier = e;
             } else if (/^\+?[\d\s().-]+$/.test(rawId)) {
                 const p = sanitizePhone(rawId);
-                if (!isPhone(p)) { msg('Invalid phone number.'); return; }
+                if (!isPhone(p)) { markError(idInput); msg('Invalid phone number.'); return; }
                 identifier = p;
             } else {
                 const u = validateUsername(rawId);
-                if (!u.ok) { msg('Invalid username.'); return; }
+                if (!u.ok) { markError(idInput); msg('Invalid username.'); return; }
                 identifier = u.username;
             }
 
@@ -625,19 +547,16 @@ body.dp-noscroll { overflow: hidden !important; }
                 await fetchCsrf();
                 const body = { identifier, password };
                 if (totp) body.totp = totp;
-
                 await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
-
                 msg('Logged in.');
-                state.overlay.classList.remove('dp-open');
-                Promise.resolve((window.DP && DP.syncAfterLogin) ? DP.syncAfterLogin() : null)
-                    .catch(err => warn('post-login sync failed:', err));
+                closeOverlay('login-success');
+                Promise.resolve((window.DP && DP.syncAfterLogin) ? DP.syncAfterLogin() : null).catch(err => warn('post-login sync failed:', err));
             } catch (e) {
                 if (e?.error === 'totp_required') { show2fa('Enter your authenticator app code.'); return; }
-                if (e?.error === 'totp_invalid') { show2fa('That authenticator code was invalid.'); return; }
+                if (e?.error === 'totp_invalid') { show2fa('That authenticator code was invalid.'); markError(byId('dp-totp')); return; }
                 if (e?.error === 'email_otp_required') { show2fa('We sent a 6-digit code to your email. Enter it above.'); return; }
-                if (e?.error === 'email_otp_invalid') { show2fa('That 6-digit code was invalid. Try again.'); return; }
-                if (e?.error === 'email_otp_expired') { show2fa('That code expired. Click “Send code” and try again.'); return; }
+                if (e?.error === 'email_otp_invalid') { show2fa('That 6-digit code was invalid. Try again.'); markError(byId('dp-totp')); return; }
+                if (e?.error === 'email_otp_expired') { show2fa('That code expired. Click “Send code” and try again.'); markError(byId('dp-totp')); return; }
                 if (e?.error) msg(`Login failed: ${e.error}`); else msg('Login failed');
             }
         };
@@ -646,25 +565,12 @@ body.dp-noscroll { overflow: hidden !important; }
             ev.preventDefault();
             try {
                 await fetchCsrf();
-                await api('/auth/password/reset/request', {
-                    method: 'POST',
-                    body: JSON.stringify({ identifier: idInput.value.trim() })
-                });
+                await api('/auth/password/reset/request', { method: 'POST', body: JSON.stringify({ identifier: idInput.value.trim() }) });
                 msg('Reset link sent to Dev Mailbox.');
-            } catch {
-                msg('Reset failed.');
-            }
+            } catch { msg('Reset failed.'); }
         };
 
         upsertAuthOverlayTheme();
-    }
-
-    function ensureAuthThemeLast() {
-        const s = document.getElementById('dp-auth-overlay-theme');
-        if (s && s !== document.head.lastElementChild) {
-            document.head.removeChild(s);
-            document.head.appendChild(s);
-        }
     }
 
     function renderRegister() {
@@ -689,7 +595,7 @@ body.dp-noscroll { overflow: hidden !important; }
       <label>Password <span class="req" aria-hidden="true">*</span></label>
       <input id="dp-pw" type="hidden" value="">
       <input id="dp-pw-vis" type="text" autocomplete="new-password" placeholder="Min 7, < 32, 1 capital, 1 number, 1 symbol">
- 
+
       <label>Confirm password <span class="req" aria-hidden="true">*</span></label>
       <input id="dp-pw2" type="hidden" value="">
       <input id="dp-pw2-vis" type="text" autocomplete="new-password" placeholder="Re-enter your password">
@@ -710,6 +616,9 @@ body.dp-noscroll { overflow: hidden !important; }
         attachAsteriskMask('dp-pw-vis', 'dp-pw');
         attachAsteriskMask('dp-pw2-vis', 'dp-pw2');
 
+        attachErrorClearOnInput(['dp-username', 'dp-email', 'dp-email2', 'dp-phone', 'dp-pw-vis', 'dp-pw2-vis', 'dp-optin']);
+        bindEnter(c, 'dp-reg');
+
         const inputEmail = byId('dp-email');
         const inputEmail2 = byId('dp-email2');
         const inputPhone = byId('dp-phone');
@@ -725,7 +634,7 @@ body.dp-noscroll { overflow: hidden !important; }
         });
 
         byId('dp-reg').onclick = async () => {
-            msg('');
+            msg(''); clearErrors(c);
 
             const usernameRaw = byId('dp-username').value.trim();
             const emailRaw = inputEmail.value;
@@ -738,67 +647,58 @@ body.dp-noscroll { overflow: hidden !important; }
             const password2 = byId('dp-pw2').value;
             const optin = byId('dp-optin').checked;
 
+            let missing = false;
+            if (!usernameRaw) { markErrorById('dp-username'); missing = true; }
+            if (!email) { markErrorById('dp-email'); missing = true; }
+            if (!email2) { markErrorById('dp-email2'); missing = true; }
+            if (!password) { markErrorById('dp-pw-vis'); missing = true; }
+            if (!password2) { markErrorById('dp-pw2-vis'); missing = true; }
+            if (!optin) { markErrorById('dp-optin'); missing = true; }
+            if (missing) { msg('Please fill the highlighted fields.'); focusFirstError(c); return; }
+
             const u = validateUsername(usernameRaw);
-            if (!u.ok) { msg(u.reason); return; }
+            if (!u.ok) { markErrorById('dp-username'); msg(u.reason); return; }
 
-            if (!email) { msg('Email is required.'); return; }
-            if (!isEmail(email)) { msg('Invalid email.'); return; }
-            if (!email2) { msg('Please confirm your email.'); return; }
-            if (email !== email2) { msg('Emails do not match.'); return; }
+            if (!isEmail(email)) { markErrorById('dp-email'); msg('Invalid email.'); return; }
+            if (!isEmail(email2)) { markErrorById('dp-email2'); msg('Invalid confirmation email.'); return; }
+            if (email !== email2) { markErrorById('dp-email'); markErrorById('dp-email2'); msg('Emails do not match.'); return; }
 
-            if (phone && !isPhone(phone)) { msg('Invalid phone number.'); return; }
+            if (phone && !isPhone(phone)) { markErrorById('dp-phone'); msg('Invalid phone number.'); return; }
 
             const p = validatePassword(password);
-            if (!p.ok) { msg('Password needs: ' + p.reasons.join(', ') + '.'); return; }
-            if (!password2) { msg('Please confirm your password.'); return; }
-            if (password !== password2) { msg('Passwords do not match.'); return; }
-
-            if (!optin) { msg('Please check the email consent box to continue.'); return; }
+            if (!p.ok) { markErrorById('dp-pw-vis'); msg('Password needs: ' + p.reasons.join(', ') + '.'); return; }
+            if (password !== password2) { markErrorById('dp-pw-vis'); markErrorById('dp-pw2-vis'); msg('Passwords do not match.'); return; }
 
             try {
                 await fetchCsrf().catch((e) => { throw { ...e, action: 'Fetch CSRF' }; });
-
                 await api('/auth/register', {
                     method: 'POST',
-                    body: JSON.stringify({
-                        username: u.username,
-                        email,
-                        phone: phone || null,
-                        password,
-                        consent_emails: true
-                    })
+                    body: JSON.stringify({ username: u.username, email, phone: phone || null, password, consent_emails: true })
                 }).catch((e) => { throw { ...e, action: 'Register' }; });
 
-                // carry over local save to the account (best-effort)
                 try {
                     const localSave = JSON.parse(localStorage.getItem('dp_save') || 'null');
                     if (localSave) {
-                        await api('/saves/sync', {
-                            method: 'POST',
-                            body: JSON.stringify({ localSave })
-                        }).catch((e) => { throw { ...e, action: 'Carry-over saves (sync)' }; });
+                        await api('/saves/sync', { method: 'POST', body: JSON.stringify({ localSave }) })
+                            .catch((e) => { throw { ...e, action: 'Carry-over saves (sync)' }; });
                     }
                 } catch (e) {
-                    showSpecificError('Carry-over saves (sync)', {
-                        method: 'POST',
-                        path: '/saves/sync',
-                        detail: String(e?.message || e),
-                    });
+                    showSpecificError('Carry-over saves (sync)', { method: 'POST', path: '/saves/sync', detail: String(e?.message || e) });
                 }
 
                 msg('Account created. You are signed in.');
-                state.overlay.classList.remove('dp-open');
+                closeOverlay('register-success');
                 if (window.DP && DP.syncAfterLogin) {
                     Promise.resolve(DP.syncAfterLogin()).catch((err) => {
                         showSpecificError('Post-register sync', { method: 'POST', path: '(custom sync)', detail: String(err?.message || err) });
                     });
                 }
             } catch (e) {
-                if (e?.error === 'invalid_username') { msg('Username must be 3–24 characters: letters, numbers, underscore.'); return; }
-                if (e?.error === 'username_banned') { msg('That username is not allowed. Pick a different one.'); return; }
-                if (e?.error === 'username_taken') { msg('That username is taken. Try another.'); return; }
-                if (e?.error === 'user_exists') { msg('Email or phone already in use.'); return; }
-                if (e?.error === 'weak_password') { msg('Password too weak. Use a stronger one.'); return; }
+                if (e?.error === 'invalid_username') { markErrorById('dp-username'); msg('Username must be 3–24 characters: letters, numbers, underscore.'); return; }
+                if (e?.error === 'username_banned') { markErrorById('dp-username'); msg('That username is not allowed. Pick a different one.'); return; }
+                if (e?.error === 'username_taken') { markErrorById('dp-username'); msg('That username is taken. Try another.'); return; }
+                if (e?.error === 'user_exists') { markErrorById('dp-email'); msg('Email or phone already in use.'); return; }
+                if (e?.error === 'weak_password') { markErrorById('dp-pw-vis'); msg('Password too weak. Use a stronger one.'); return; }
                 showSpecificError(e.action || 'Register', e);
             }
         };
@@ -807,41 +707,21 @@ body.dp-noscroll { overflow: hidden !important; }
     }
 
     /* ===================== EXPORTS & AUTOBIND ===================== */
-
     window.DP = window.DP || {};
-    window.DP.init = (opts = {}) => {
-        if (opts.apiBase) state.apiBase = opts.apiBase;
-        log('DP.init', opts);
-    };
-    window.DP.openAuth = (startTab = 'login') => {
-        log('DP.openAuth called with', startTab);
-        showOverlay(startTab);
-    };
+    window.DP.init = (opts = {}) => { if (opts.apiBase) state.apiBase = opts.apiBase; log('DP.init', opts); };
+    window.DP.openAuth = (startTab = 'login') => { log('DP.openAuth called with', startTab); showOverlay(startTab); };
     window.DP.syncAfterLogin = window.DP.syncAfterLogin || (async () => { log('syncAfterLogin (default noop)'); });
 
-    // Wire the page button if it exists; also add a delegated fallback
     window.addEventListener('DOMContentLoaded', () => {
         log('DOMContentLoaded: binding triggers');
         const btn = document.getElementById('dp-login-btn');
-        if (btn) {
-            log('#dp-login-btn found — binding click');
-            btn.addEventListener('click', () => showOverlay('login'));
-        } else {
-            warn('#dp-login-btn not found at DOMContentLoaded');
-        }
-
-        // delegated fallback: any future element with this id
+        if (btn) { log('#dp-login-btn found — binding click'); btn.addEventListener('click', () => showOverlay('login')); }
+        else { warn('#dp-login-btn not found at DOMContentLoaded'); }
         document.addEventListener('click', (e) => {
             const t = e.target;
-            if (t && t.id === 'dp-login-btn') {
-                log('delegated click on #dp-login-btn');
-                showOverlay('login');
-            }
+            if (t && t.id === 'dp-login-btn') { log('delegated click on #dp-login-btn'); showOverlay('login'); }
         }, { capture: true });
     });
 
-    // quick self-test hook
-    window.addEventListener('load', () => {
-        log('window.load: DP available =', !!window.DP);
-    });
+    window.addEventListener('load', () => { log('window.load: DP available =', !!window.DP); });
 })();

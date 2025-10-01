@@ -10,6 +10,97 @@ const router = express.Router();
 
 /* ---------------- helpers ---------------- */
 
+/* ---------------- analytics/settings schema ---------------- */
+
+function ensureUserExtrasSchema() {
+    db.exec(`
+    PRAGMA foreign_keys = ON;
+
+    CREATE TABLE IF NOT EXISTS user_settings (
+      user_id       INTEGER PRIMARY KEY,
+      consent_emails INTEGER NOT NULL DEFAULT 0,  -- 0/1
+      tos_version    TEXT,                        -- e.g. "2025-09-30"
+      region         TEXT,                        -- free-form short label (e.g. "NA","EU","LATAM")
+      language       TEXT,                        -- BCP-47-ish (e.g. "en", "en-US", "es")
+      created_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TRIGGER IF NOT EXISTS trg_user_settings_updated
+    AFTER UPDATE ON user_settings
+    FOR EACH ROW BEGIN
+      UPDATE user_settings SET updated_at = CURRENT_TIMESTAMP WHERE user_id = NEW.user_id;
+    END;
+
+    CREATE TABLE IF NOT EXISTS user_friends (
+      user_id               INTEGER NOT NULL,
+      friend_user_id        INTEGER NOT NULL,
+      friend_first_username TEXT    NOT NULL,     -- snapshot of OG username
+      created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, friend_user_id),
+      FOREIGN KEY(user_id)        REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(friend_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_friends_user ON user_friends(user_id);
+
+    CREATE TABLE IF NOT EXISTS user_blocks (
+      user_id                INTEGER NOT NULL,
+      blocked_user_id        INTEGER NOT NULL,
+      blocked_first_username TEXT    NOT NULL,    -- snapshot of OG username
+      created_at             TEXT DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, blocked_user_id),
+      FOREIGN KEY(user_id)         REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(blocked_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_blocks_user ON user_blocks(user_id);
+
+    CREATE TABLE IF NOT EXISTS user_time_daily (
+      user_id  INTEGER NOT NULL,
+      day      TEXT    NOT NULL,                 -- YYYY-MM-DD in UTC
+      seconds  INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, day),
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_time_daily_user_day ON user_time_daily(user_id, day);
+
+    CREATE TABLE IF NOT EXISTS plea_reads (
+      user_id      INTEGER NOT NULL,
+      plea_num     INTEGER NOT NULL,             -- your plea identifier
+      completed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, plea_num),
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_plea_reads_user ON plea_reads(user_id);
+  `);
+}
+ensureUserExtrasSchema();
+
+/* ---------------- tiny helpers for new routes ---------------- */
+
+function dayKeyUTC(d = new Date()) {
+    // YYYY-MM-DD in UTC
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+}
+
+function clamp(n, min, max) {
+    n = Number(n); if (!Number.isFinite(n)) return min;
+    return Math.max(min, Math.min(max, n));
+}
+
+function resolveUserByEither(uname, firstUname) {
+    if (firstUname) {
+        return db.prepare(`SELECT id, username, first_username FROM users WHERE LOWER(first_username)=LOWER(?)`).get(firstUname);
+    }
+    if (uname) {
+        return db.prepare(`SELECT id, username, first_username FROM users WHERE LOWER(username)=LOWER(?)`).get(uname);
+    }
+    return null;
+}
+
 function resolveUid(req) {
     const sid = req.cookies && req.cookies.sid;
     if (!sid) return 0;
@@ -427,6 +518,259 @@ router.get('/users/:slug/activity', (req, res) => {
         : 0;
 
     res.json({ ok: true, total, offset, limit, has_more, items, is_me: viewerId === targetId });
+});
+
+
+/* ===================== SETTINGS ===================== */
+/**
+ * GET /api/users/me/settings
+ * Returns private settings (consent, TOS version, region, language)
+ */
+router.get('/users/me/settings', requireAuth, (req, res) => {
+    const row = db.prepare(`SELECT consent_emails, tos_version, region, language FROM user_settings WHERE user_id = ?`).get(req.userId);
+    res.json({ ok: true, settings: row || { consent_emails: 0, tos_version: null, region: null, language: null } });
+});
+
+/**
+ * PATCH /api/users/me/settings
+ * Body: { consent_emails?: boolean, tos_version?: string, region?: string, language?: string }
+ */
+router.patch('/users/me/settings', requireAuth, (req, res) => {
+    let { consent_emails, tos_version, region, language } = req.body || {};
+
+    // Normalize
+    if (consent_emails !== undefined) consent_emails = !!consent_emails ? 1 : 0;
+    if (tos_version !== undefined) tos_version = String(tos_version || '').slice(0, 32);
+    if (region !== undefined) region = String(region || '').slice(0, 32);
+    if (language !== undefined) language = String(language || '').slice(0, 32);
+
+    db.transaction(() => {
+        db.prepare(`
+      INSERT INTO user_settings(user_id, consent_emails, tos_version, region, language)
+      VALUES (?,?,?,?,?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        consent_emails = COALESCE(excluded.consent_emails, user_settings.consent_emails),
+        tos_version    = COALESCE(excluded.tos_version,    user_settings.tos_version),
+        region         = COALESCE(excluded.region,         user_settings.region),
+        language       = COALESCE(excluded.language,       user_settings.language)
+    `).run(
+            req.userId,
+            consent_emails ?? null,
+            tos_version ?? null,
+            region ?? null,
+            language ?? null
+        );
+    })();
+
+    const out = db.prepare(`SELECT consent_emails, tos_version, region, language FROM user_settings WHERE user_id = ?`).get(req.userId);
+    res.json({ ok: true, settings: out });
+});
+
+/* ===================== FRIENDS (OG usernames) ===================== */
+/**
+ * POST /api/users/me/friends
+ * Body: { username?: string, first_username?: string }
+ * Saves friend relation using snapshot of friend's first_username (OG).
+ */
+router.post('/users/me/friends', requireAuth, (req, res) => {
+    const { username, first_username } = req.body || {};
+    const friend = resolveUserByEither(username, first_username);
+    if (!friend) return res.status(404).json({ error: 'friend_not_found' });
+    if (friend.id === req.userId) return res.status(400).json({ error: 'cannot_friend_self' });
+
+    db.prepare(`
+    INSERT INTO user_friends(user_id, friend_user_id, friend_first_username)
+    VALUES (?,?,?)
+    ON CONFLICT(user_id, friend_user_id) DO NOTHING
+  `).run(req.userId, friend.id, friend.first_username);
+
+    const rows = db.prepare(`
+    SELECT f.friend_user_id, f.friend_first_username, u.username
+    FROM user_friends f
+    LEFT JOIN users u ON u.id = f.friend_user_id
+    WHERE f.user_id = ?
+    ORDER BY f.created_at DESC
+  `).all(req.userId);
+
+    res.json({
+        ok: true,
+        friends: rows.map(r => ({
+            username: r.username || null,
+            first_username: r.friend_first_username
+        }))
+    });
+});
+
+/**
+ * DELETE /api/users/me/friends/:username
+ * Removes a friend (resolve by current username or OG name)
+ */
+router.delete('/users/me/friends/:username', requireAuth, (req, res) => {
+    const key = String(req.params.username || '').trim();
+    if (!key) return res.status(400).json({ error: 'missing_username' });
+
+    const friend = resolveUserByEither(key, null) || resolveUserByEither(null, key);
+    if (!friend) return res.status(404).json({ error: 'friend_not_found' });
+
+    db.prepare(`DELETE FROM user_friends WHERE user_id = ? AND friend_user_id = ?`).run(req.userId, friend.id);
+    res.json({ ok: true });
+});
+
+/**
+ * GET /api/users/me/friends
+ */
+router.get('/users/me/friends', requireAuth, (req, res) => {
+    const rows = db.prepare(`
+    SELECT f.friend_user_id, f.friend_first_username, u.username
+    FROM user_friends f
+    LEFT JOIN users u ON u.id = f.friend_user_id
+    WHERE f.user_id = ?
+    ORDER BY f.created_at DESC
+  `).all(req.userId);
+
+    res.json({
+        ok: true,
+        friends: rows.map(r => ({
+            username: r.username || null,
+            first_username: r.friend_first_username
+        }))
+    });
+});
+
+/* ===================== BLOCKED USERS ===================== */
+/**
+ * POST /api/users/me/blocks
+ * Body: { username?: string, first_username?: string }
+ */
+router.post('/users/me/blocks', requireAuth, (req, res) => {
+    const { username, first_username } = req.body || {};
+    const target = resolveUserByEither(username, first_username);
+    if (!target) return res.status(404).json({ error: 'user_not_found' });
+    if (target.id === req.userId) return res.status(400).json({ error: 'cannot_block_self' });
+
+    db.prepare(`
+    INSERT INTO user_blocks(user_id, blocked_user_id, blocked_first_username)
+    VALUES (?,?,?)
+    ON CONFLICT(user_id, blocked_user_id) DO NOTHING
+  `).run(req.userId, target.id, target.first_username);
+
+    res.json({ ok: true });
+});
+
+/**
+ * DELETE /api/users/me/blocks/:username
+ */
+router.delete('/users/me/blocks/:username', requireAuth, (req, res) => {
+    const key = String(req.params.username || '').trim();
+    const target = resolveUserByEither(key, null) || resolveUserByEither(null, key);
+    if (!target) return res.status(404).json({ error: 'user_not_found' });
+
+    db.prepare(`DELETE FROM user_blocks WHERE user_id = ? AND blocked_user_id = ?`).run(req.userId, target.id);
+    res.json({ ok: true });
+});
+
+/**
+ * GET /api/users/me/blocks
+ */
+router.get('/users/me/blocks', requireAuth, (req, res) => {
+    const rows = db.prepare(`
+    SELECT b.blocked_user_id, b.blocked_first_username, u.username
+    FROM user_blocks b
+    LEFT JOIN users u ON u.id = b.blocked_user_id
+    WHERE b.user_id = ?
+    ORDER BY b.created_at DESC
+  `).all(req.userId);
+
+    res.json({
+        ok: true,
+        blocked: rows.map(r => ({
+            username: r.username || null,
+            first_username: r.blocked_first_username
+        }))
+    });
+});
+
+/* ===================== TIME SPENT (last 30 days) ===================== */
+/**
+ * POST /api/users/me/time
+ * Body: { seconds: number, day?: "YYYY-MM-DD" (UTC) }
+ * Accumulates seconds for a UTC day key.
+ */
+router.post('/users/me/time', requireAuth, (req, res) => {
+    let { seconds, day } = req.body || {};
+    seconds = clamp(seconds, 0, 24 * 60 * 60); // sane daily bound
+    if (!seconds) return res.status(400).json({ error: 'missing_seconds' });
+
+    if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+        day = dayKeyUTC();
+    }
+
+    db.prepare(`
+    INSERT INTO user_time_daily(user_id, day, seconds)
+    VALUES (?,?,?)
+    ON CONFLICT(user_id, day) DO UPDATE SET seconds = user_time_daily.seconds + excluded.seconds
+  `).run(req.userId, day, seconds);
+
+    res.json({ ok: true });
+});
+
+/**
+ * GET /api/users/me/time?days=30
+ * Returns an array of { day, seconds, hours }
+ */
+router.get('/users/me/time', requireAuth, (req, res) => {
+    const days = clamp(req.query.days || 30, 1, 90);
+    const today = new Date();
+    const keys = Array.from({ length: days }, (_, i) => {
+        const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+        d.setUTCDate(d.getUTCDate() - i);
+        return dayKeyUTC(d);
+    }).reverse();
+
+    const rows = db.prepare(`SELECT day, seconds FROM user_time_daily WHERE user_id = ? AND day BETWEEN ? AND ?`)
+        .all(req.userId, keys[0], keys[keys.length - 1]);
+
+    const map = new Map(rows.map(r => [r.day, r.seconds | 0]));
+    const data = keys.map(k => {
+        const s = map.get(k) | 0;
+        return { day: k, seconds: s, hours: +(s / 3600).toFixed(3) };
+    });
+
+    res.json({ ok: true, days, data });
+});
+
+/* ===================== PLEAS FULLY READ ===================== */
+/**
+ * POST /api/users/me/reads
+ * Body: { plea_num: integer }
+ * Marks a plea as fully read (idempotent).
+ */
+router.post('/users/me/reads', requireAuth, (req, res) => {
+    const plea_num = Number(req.body?.plea_num);
+    if (!Number.isInteger(plea_num) || plea_num < 0) return res.status(400).json({ error: 'bad_plea_num' });
+
+    db.prepare(`INSERT INTO plea_reads(user_id, plea_num) VALUES (?, ?) ON CONFLICT(user_id, plea_num) DO NOTHING`)
+        .run(req.userId, plea_num);
+
+    const count = db.prepare(`SELECT COUNT(*) AS n FROM plea_reads WHERE user_id = ?`).get(req.userId)?.n | 0;
+    res.json({ ok: true, total_read: count });
+});
+
+/**
+ * GET /api/users/me/reads/count
+ */
+router.get('/users/me/reads/count', requireAuth, (req, res) => {
+    const count = db.prepare(`SELECT COUNT(*) AS n FROM plea_reads WHERE user_id = ?`).get(req.userId)?.n | 0;
+    res.json({ ok: true, total_read: count });
+});
+
+/**
+ * GET /api/users/me/reads
+ * Optional: list back the IDs you’ve fully read
+ */
+router.get('/users/me/reads', requireAuth, (req, res) => {
+    const rows = db.prepare(`SELECT plea_num, completed_at FROM plea_reads WHERE user_id = ? ORDER BY completed_at DESC`).all(req.userId);
+    res.json({ ok: true, items: rows });
 });
 
 module.exports = { router };

@@ -3,59 +3,54 @@
 <head>
     <meta charset="utf-8">
     <title>Terms & Conditions — 2025-09-30</title>
+
+    <!-- SEO / Social -->
+    <meta name="description" content="Terms & Conditions for The Daily Plea.">
+    <meta property="og:title" content="Terms & Conditions — 2025-09-30">
+    <meta property="og:description" content="Terms & Conditions for The Daily Plea.">
+    <meta property="og:image" content="https://raw.githubusercontent.com/TurtleHellMax/DailyPlea/refs/heads/main/icons/Banner/dailypleaBanner.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://dailyplea.com/terms-and-conditions/9-30-2025">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Terms & Conditions — 2025-09-30">
+    <meta name="twitter:description" content="Terms & Conditions for The Daily Plea.">
+    <meta name="twitter:image" content="https://raw.githubusercontent.com/TurtleHellMax/DailyPlea/refs/heads/main/icons/Banner/dailypleaBanner.png">
+
+    <link rel="canonical" href="/terms-and-conditions/9-30-2025">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
-    <link rel="canonical" href="/terms-and-conditions/9-30-2025">
 
-    <!-- Preload your custom font (update paths if needed) -->
-    <link rel="preload" as="font" type="font/woff2" href="/fonts/Voice1-Regular.woff2" crossorigin>
-    <link rel="preload" as="font" type="font/woff2" href="/fonts/Voice1-Bold.woff2" crossorigin>
+    <!-- Favicon set (same as your example) -->
+    <link rel="icon" href="/icons/Voice2/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/Voice2/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/Voice2/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/Voice2/apple-touch-icon.png">
 
+    <!-- Load fonts & site CSS exactly like your other pages -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
+
+    <!-- Optional: GA (same as your example) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-DLEP08J8FL"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-DLEP08J8FL');
+    </script>
+
+    <!-- Page-local minimal styles (scoped) -->
     <style>
-        /* ===== Load your custom family ===== */
-        @font-face {
-            font-family: 'Voice1';
-            src: local('Voice1 Regular'), local('Voice1-Regular'), url('/fonts/Voice1-Regular.woff2') format('woff2'), url('/fonts/Voice1-Regular.woff') format('woff');
-            font-weight: 400;
-            font-style: normal;
-            font-display: swap;
-        }
-
-        @font-face {
-            font-family: 'Voice1';
-            src: local('Voice1 Bold'), local('Voice1-Bold'), url('/fonts/Voice1-Bold.woff2') format('woff2'), url('/fonts/Voice1-Bold.woff') format('woff');
-            font-weight: 700;
-            font-style: normal;
-            font-display: swap;
-        }
-
-        /* ===== Site look — dark, square borders, Voice stack ===== */
-        :root {
-            --bg: #000;
-            --fg: #fff;
-            --muted: rgba(255,255,255,.85);
-            --border: #fff;
-            --accent: #fff;
-            --maxw: 900px;
-        }
-
-        html, body {
-            height: 100%;
-            background: var(--bg);
-            color: var(--fg);
-            font-family: 'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-        }
-
-        /* Fade in from black (respect reduced motion) */
+        /* fade-in from black, but respect reduced motion */
         @media (prefers-reduced-motion:no-preference) {
-            body {
+            body.tc-page {
                 opacity: 0;
-                animation: pageFade .48s ease-out forwards;
+                animation: tcFade .48s ease-out forwards;
             }
 
-            @keyframes pageFade {
+            @keyframes tcFade {
                 from {
                     opacity: 0
                 }
@@ -66,234 +61,214 @@
             }
         }
 
-        /* Page shell */
-        .wrap {
+        /* ensure dark look even if global CSS changes later */
+        body.tc-page {
+            background: #000;
+            color: #fff;
+            font-family: 'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .tc-wrap {
             box-sizing: border-box;
+            max-width: 900px;
             margin: 0 auto;
             padding: 24px;
-            max-width: var(--maxw);
         }
 
-        .panel {
-            border: 2px solid var(--border);
-            border-radius: 0;
-            padding: 24px;
-            box-shadow: 0 10px 40px rgba(0,0,0,.5);
-            background: var(--bg);
-        }
-
-        /* Typography */
-        h1, h2, h3 {
-            margin: 0 0 10px;
-            font-weight: 800;
-        }
-
-        h1 {
-            font-size: clamp(24px,3.2vw,34px);
-        }
-
-        h2 {
-            font-size: clamp(18px,2.4vw,22px);
-            margin-top: 22px;
-        }
-
-        h3 {
-            font-size: clamp(16px,2vw,18px);
-            margin-top: 18px;
-        }
-
-        p, li {
-            line-height: 1.55;
-        }
-
-        p {
-            margin: 10px 0;
-        }
-
-        .muted {
-            color: var(--muted);
-        }
-
-        hr {
-            border: 0;
-            border-top: 2px solid var(--border);
-            margin: 18px 0;
-        }
-
-        a {
-            color: var(--fg);
-            text-decoration: none;
-        }
-
-            a:hover {
-                text-decoration: underline;
-            }
-
-        /* Lists */
-        ul, ol {
-            margin: 8px 0 14px 20px;
-        }
-
-        li + li {
-            margin-top: 6px;
-        }
-
-        /* Top bar */
-        .topbar {
+        .tc-topbar {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 12px;
-            margin: 0 0 14px;
+            margin-bottom: 14px;
         }
 
-            .topbar .brand {
+        .tc-brand {
+            font-weight: 800;
+            letter-spacing: .02em;
+        }
+
+        .tc-btn {
+            border: 2px solid #fff;
+            padding: 8px 12px;
+            border-radius: 0;
+            font-weight: 700;
+            line-height: 1;
+            display: inline-block;
+            color: #fff;
+            text-decoration: none;
+        }
+
+            .tc-btn:hover {
+                background: #fff;
+                color: #000;
+                text-decoration: none;
+            }
+
+        .tc-panel {
+            background: #000;
+            color: #fff;
+            border: 2px solid #fff;
+            border-radius: 0;
+            box-shadow: 0 10px 40px rgba(0,0,0,.5);
+            padding: 24px;
+        }
+
+            .tc-panel h1, .tc-panel h2, .tc-panel h3 {
+                margin: 0 0 10px;
                 font-weight: 800;
-                letter-spacing: .02em;
             }
 
-            .topbar a.btn {
-                border: 2px solid var(--border);
-                padding: 8px 12px;
-                border-radius: 0;
-                font-weight: 700;
-                line-height: 1;
-                display: inline-block;
+            .tc-panel h1 {
+                font-size: clamp(24px, 3.2vw, 34px);
+                text-align: left;
             }
 
-                .topbar a.btn:hover {
-                    background: var(--accent);
-                    color: #000;
-                    text-decoration: none;
-                }
+            .tc-panel h2 {
+                font-size: clamp(18px, 2.4vw, 22px);
+                margin-top: 22px;
+            }
 
-        /* Foot */
-        .foot {
+            .tc-panel h3 {
+                font-size: clamp(16px, 2vw, 18px);
+                margin-top: 18px;
+            }
+
+        .tc-muted {
+            color: rgba(255,255,255,.85);
+        }
+
+        .tc-panel p {
+            margin: 10px 0;
+            line-height: 1.55;
+        }
+
+        .tc-panel ul, .tc-panel ol {
+            margin: 8px 0 14px 20px;
+        }
+
+        .tc-panel li + li {
+            margin-top: 6px;
+        }
+
+        .tc-hr {
+            border: 0;
+            border-top: 2px solid #fff;
+            margin: 18px 0;
+        }
+
+        .tc-foot {
             text-align: center;
             margin-top: 18px;
-            color: var(--muted);
+            color: rgba(255,255,255,.85);
             font-size: 14px;
         }
 
-        /* Flow */
-        .panel > * + * {
+        .tc-panel > * + * {
             margin-top: 12px;
         }
 
-        .section + .section {
+        .tc-section + .tc-section {
             margin-top: 8px;
         }
+
+        .tc-panel a {
+            color: #fff;
+            text-decoration: none;
+        }
+
+            .tc-panel a:hover {
+                text-decoration: underline;
+            }
     </style>
 </head>
-<body>
-    <div class="wrap">
-        <div class="topbar">
-            <div class="brand">Terms &amp; Conditions</div>
-            <a class="btn" href="/" aria-label="Back to site">Back</a>
+<body class="tc-page">
+    <div class="tc-wrap">
+        <div class="tc-topbar">
+            <div class="tc-brand">Terms &amp; Conditions</div>
+            <a class="tc-btn" href="/" aria-label="Back to site">Back</a>
         </div>
 
-        <article class="panel" role="article">
+        <article class="tc-panel" role="article">
             <header>
                 <h1>Terms &amp; Conditions</h1>
-                <div class="muted">Version: <strong>2025-09-30</strong> · Last Updated: September&nbsp;30,&nbsp;2025</div>
+                <div class="muted">Last updated: <strong>September&nbsp;30,&nbsp;2025</strong></div>
             </header>
 
             <section class="section">
-                <h2>1. Acceptance of Terms</h2>
-                <p>By registering for an account or using the Service, you agree to these Terms and any policies referenced herein (collectively, the “Agreement”). If you do not agree, do not use the Service.</p>
+                <h2>1) Acceptance</h2>
+                <p>By using The Daily Plea (the “Service”), you agree to these Terms. If you don’t agree, do not use the Service. Contact: <a href="mailto:maxwell.farber.work@gmail.com">maxwell.farber.work@gmail.com</a>.</p>
             </section>
 
             <section class="section">
-                <h2>2. The Service</h2>
-                <p>The Service enables users to post and discover “pleas” and related content, receive updates, and interact with other users. We may modify, suspend, or discontinue any part of the Service at any time.</p>
+                <h2>2) Eligibility</h2>
+                <p>You must be at least 13 years old (or the age of digital consent in your region).</p>
             </section>
 
             <section class="section">
-                <h2>3. Eligibility</h2>
+                <h2>3) What We Collect (Analytics)</h2>
                 <ul>
-                    <li>You must be at least 13 years old (or the age of digital consent in your region).</li>
-                    <li>You represent that you have the authority to enter into this Agreement.</li>
+                    <li>Whether you opened or finished reading a plea (including plea ID and timestamps).</li>
+                    <li>How many pleas you’ve read.</li>
+                    <li>How many comments/replies you post and <strong>the content</strong> of those comments/replies.</li>
+                    <li>Your social graph on the Service: how many friends you have and <strong>who you connect with</strong> (identifiers/handles).</li>
                 </ul>
+                <p>We also use cookies/local storage to remember settings and measure usage. We may aggregate or anonymize analytics for reporting and improvement.</p>
             </section>
 
             <section class="section">
-                <h2>4. Accounts &amp; Security</h2>
-                <ul>
-                    <li>You are responsible for safeguarding your login credentials and for all activity under your account.</li>
-                    <li>Provide accurate information and keep it up to date.</li>
-                    <li>Notify us promptly of any unauthorized use or security incident.</li>
-                </ul>
+                <h2>4) Your Content &amp; License</h2>
+                <p>You keep your rights to content you submit. You grant us a non-exclusive, worldwide license to host, store, reproduce, and display your content as needed to run, promote, and improve the Service.</p>
             </section>
 
             <section class="section">
-                <h2>5. Communications &amp; Consent</h2>
-                <p>By registering, you agree to receive emails and notifications about new pleas and related Service updates (you can manage preferences in-app or by using unsubscribe options, where available).</p>
+                <h2>5) Speech &amp; Moderation</h2>
+                <p>We aim to allow any speech that is not hate speech or harassment.</p>
+                <p><strong>Hate speech</strong> means <strong>any text that encourages violence or harassment, or supports an organization deemed to do that</strong>.</p>
+                <p>We may remove content or suspend accounts that violate this rule or applicable law.</p>
             </section>
 
             <section class="section">
-                <h2>6. User Content</h2>
-                <ul>
-                    <li>You retain rights to content you submit (“User Content”).</li>
-                    <li>You grant us a worldwide, non-exclusive license to host, store, reproduce, and display User Content as needed to operate the Service.</li>
-                    <li>Do not post content that is unlawful, infringing, hateful, harassing, or otherwise violates these Terms.</li>
-                </ul>
+                <h2>6) Prohibited Conduct</h2>
+                <p>No illegal activity, spam, scraping, hacking, interference with the Service, or infringement of others’ rights.</p>
             </section>
 
             <section class="section">
-                <h2>7. Prohibited Conduct</h2>
-                <ul>
-                    <li>No illegal activity, spam, scraping, or unauthorized access.</li>
-                    <li>No attempts to reverse engineer or disrupt the Service.</li>
-                    <li>Respect others’ rights and follow all applicable laws.</li>
-                </ul>
+                <h2>7) Notices &amp; Contact</h2>
+                <p>We may send Service-related emails/notifications (you can adjust settings where available). Questions: <a href="mailto:maxwell.farber.work@gmail.com">maxwell.farber.work@gmail.com</a>.</p>
             </section>
 
             <section class="section">
-                <h2>8. Intellectual Property</h2>
-                <p>The Service, including software, design, and trademarks, is protected by intellectual property laws. Except as permitted by this Agreement, you may not use our marks or copy our materials.</p>
+                <h2>8) Disclaimers</h2>
+                <p class="muted">The Service is provided “as is” and “as available,” without warranties.</p>
             </section>
 
             <section class="section">
-                <h2>9. Disclaimers</h2>
-                <p class="muted">THE SERVICE IS PROVIDED “AS IS” AND “AS AVAILABLE.” TO THE MAXIMUM EXTENT PERMITTED BY LAW, WE DISCLAIM ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.</p>
+                <h2>9) Limitation of Liability</h2>
+                <p class="muted">To the maximum extent allowed by law, we won’t be liable for indirect or consequential damages, or loss of data, profits, or revenue.</p>
             </section>
 
             <section class="section">
-                <h2>10. Limitation of Liability</h2>
-                <p class="muted">TO THE MAXIMUM EXTENT PERMITTED BY LAW, WE WILL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF DATA, PROFITS, OR REVENUE, ARISING FROM OR RELATED TO YOUR USE OF THE SERVICE.</p>
+                <h2>10) Termination</h2>
+                <p>You may stop using the Service at any time. We may suspend or terminate access if you violate these Terms or for operational reasons.</p>
             </section>
 
             <section class="section">
-                <h2>11. Indemnification</h2>
-                <p>You will defend, indemnify, and hold us harmless from any claims, damages, liabilities, and expenses arising from your use of the Service or violation of this Agreement.</p>
+                <h2>11) Changes</h2>
+                <p>We may update these Terms; continued use means you accept the changes. We’ll post the new date above when we do.</p>
             </section>
 
             <section class="section">
-                <h2>12. Termination</h2>
-                <p>We may suspend or terminate your access at any time if you violate this Agreement or if we discontinue the Service. Upon termination, your rights to use the Service cease immediately.</p>
+                <h2>12) Governing Law</h2>
+                <p>These Terms are governed by the laws applicable where you reside, unless required otherwise by law.</p>
             </section>
-
-            <section class="section">
-                <h2>13. Changes to These Terms</h2>
-                <p>We may update these Terms from time to time. Material changes will be posted here with a new version date. Continued use after changes constitutes acceptance of the updated Terms.</p>
-            </section>
-
-            <section class="section">
-                <h2>14. Governing Law</h2>
-                <p>These Terms are governed by the laws of your applicable jurisdiction, without regard to conflict-of-laws rules. Venue for disputes will be an appropriate court located in our principal place of business unless otherwise required by law.</p>
-            </section>
-
-            <section class="section">
-                <h2>15. Contact</h2>
-                <p>Questions about these Terms? Contact us at <a href="mailto:support@example.com">support@example.com</a>.</p>
-            </section>
-
-            <hr>
-
-            <footer class="foot">© <span id="y"></span> Your Company. All rights reserved.</footer>
         </article>
     </div>
 
+    <!-- Your site JS (same include pattern) -->
+    <script src="/js/main.js" defer></script>
     <script>
         document.getElementById('y').textContent = new Date().getFullYear();
     </script>
