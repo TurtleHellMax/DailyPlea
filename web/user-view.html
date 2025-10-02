@@ -353,7 +353,35 @@
                 box-shadow: 0 0 0 0 rgba(52,211,153,0);
             }
         }
+    </style>
 
+    <style id="friend-btn-css">
+             /* More-specific rules to beat the global .btn:hover */
+             .btn.btn-friend {
+                 position: relative;
+             }
+
+                 /* Pending request: keep it white even when not hovering */
+                 .btn.btn-friend.is-pending {
+                     background: #fff !important;
+                     color: #000 !important;
+                     border-color: #fff !important;
+                 }
+
+                     /* Pending + hover: go black & invert text color (size stays fixed) */
+                     .btn.btn-friend.is-pending:hover {
+                         background: #000 !important;
+                         color: #fff !important;
+                         border-color: #fff !important;
+                     }
+
+                 /* “Remove Friend” uses normal dark look; on hover it’ll still go white
+        (from your global rules). We only swap the label via JS. */
+
+                 /* Optional: cursor hint when the action requires hover-confirm */
+                 .btn.btn-friend.is-confirm-warn:hover {
+                     cursor: pointer;
+                 }
     </style>
 </head>
 <body class="theme-editor">
@@ -574,16 +602,16 @@
 
                 // Build: [▲/▼] [abs(karma)] • [dot] [N] Friends Online
                 slot.innerHTML = `
-    <span class="karma-seg" title="Karma = likes − dislikes">
-      ${arrow ? `${arrow} ` : ""}${kNum}
-    </span>
-    <span class="sep">•</span>
-    <a class="friends-seg" id="friends-link" href="${friendsHref}" aria-label="Friends online">
-      <span class="status-dot" id="friends-dot" aria-hidden="true"></span>
-      <span class="friends-count" id="friends-count">0</span>
-      <span class="friends-label">Friends Online</span>
-    </a>
-  `;
+            <span class="karma-seg" title="Karma = likes − dislikes">
+              ${arrow ? `${arrow} ` : ""}${kNum}
+            </span>
+            <span class="sep">•</span>
+            <a class="friends-seg" id="friends-link" href="${friendsHref}" aria-label="Friends online">
+              <span class="status-dot" id="friends-dot" aria-hidden="true"></span>
+              <span class="friends-count" id="friends-count">0</span>
+              <span class="friends-label">Friends Online</span>
+            </a>
+          `;
                 slot.style.display = "inline-flex";
 
                 const dot = slot.querySelector("#friends-dot");
@@ -762,11 +790,11 @@
                 const ed = document.createElement("div");
                 ed.className = "comment reply-editor";
                 ed.innerHTML = `
-                  <textarea style="width:100%;min-height:80px" class="field-box">${escapeHtml(opts.initial || "")}</textarea>
-                  <div class="actions" style="margin-top:8px">
-                    <button class="btn primary js-ok">Post</button>
-                    <button class="btn js-cancel" type="button">Cancel</button>
-                  </div>`;
+                          <textarea style="width:100%;min-height:80px" class="field-box">${escapeHtml(opts.initial || "")}</textarea>
+                          <div class="actions" style="margin-top:8px">
+                            <button class="btn primary js-ok">Post</button>
+                            <button class="btn js-cancel" type="button">Cancel</button>
+                          </div>`;
                 const ta = ed.querySelector("textarea");
                 ed.querySelector(".js-ok").addEventListener("click", async () => {
                     const val = ta.value.trim(); if (!val) return; await opts.onSubmit(val, ed);
@@ -1136,13 +1164,13 @@
 @media (max-width:480px){ :root{ --hub-scale:2; } }
 @media (min-width:1024px){ :root{ --hub-scale:4; } }
 .plea-hub-btn{
-          position:fixed; top:calc(var(--hub-gap) + env(safe-area-inset-top));
-          right:calc(var(--hub-gap) + env(safe-area-inset-right) + var(--sbw,0px));
-          width:calc(var(--hub-native) * var(--hub-scale) * 1px);
-          height:calc(var(--hub-native) * var(--hub-scale) * 1px);
-          display:inline-flex; align-items:center; justify-content:center;
-          padding:0; border:none; background:transparent; border-radius:0; text-decoration:none;
-          z-index:10050; opacity:0; transition:opacity .3s ease; pointer-events:auto; touch-action:manipulation; overflow:hidden;
+                  position:fixed; top:calc(var(--hub-gap) + env(safe-area-inset-top));
+                  right:calc(var(--hub-gap) + env(safe-area-inset-right) + var(--sbw,0px));
+                  width:calc(var(--hub-native) * var(--hub-scale) * 1px);
+                  height:calc(var(--hub-native) * var(--hub-scale) * 1px);
+                  display:inline-flex; align-items:center; justify-content:center;
+                  padding:0; border:none; background:transparent; border-radius:0; text-decoration:none;
+                  z-index:10050; opacity:0; transition:opacity .3s ease; pointer-events:auto; touch-action:manipulation; overflow:hidden;
 }
 .plea-hub-btn.is-show{ opacity:.5; }
 .plea-hub-btn:hover, .plea-hub-btn:focus-visible{ opacity:.8; }
@@ -1234,32 +1262,32 @@
                 s.id = "dp-authbar-style";
                 s.textContent = `
 #dp-authbar{
-          position:fixed; top:12px; left:12px; z-index:10060;
-          display:flex; align-items:center; gap:10px;
-          background:transparent; color:#fff; padding:0; border:none; border-radius:0;
-          font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important; line-height:1;
+                  position:fixed; top:12px; left:12px; z-index:10060;
+                  display:flex; align-items:center; gap:10px;
+                  background:transparent; color:#fff; padding:0; border:none; border-radius:0;
+                  font-family:'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important; line-height:1;
 }
 #dp-authprefix{ opacity:.95; }
 #dp-authlink{
-          display:inline-flex; align-items:center; gap:8px;
-          color:#fff; text-decoration:none; cursor:pointer; outline:none;
+                  display:inline-flex; align-items:center; gap:8px;
+                  color:#fff; text-decoration:none; cursor:pointer; outline:none;
 }
 #dp-authlink:hover{ text-decoration:underline; }
 #dp-authlink:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
 #dp-authname{ font-weight:600; }
 #dp-authavatar{
-          width:26px; height:26px; display:block; border-radius:50%; object-fit:cover; background:#000; border:2px solid #fff;
+                  width:26px; height:26px; display:block; border-radius:50%; object-fit:cover; background:#000; border:2px solid #fff;
 }
 #dp-logout-btn{ display:none; }`;
                 document.head.appendChild(s);
             }
 
             const AVATAR_FALLBACK = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
-                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
-                  <rect width="100%" height="100%" fill="#000"/>
-                  <circle cx="32" cy="24" r="14" fill="#fff"/>
-                  <rect x="10" y="40" width="44" height="16" rx="8" fill="#fff"/>
-                </svg>`);
+                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+                          <rect width="100%" height="100%" fill="#000"/>
+                          <circle cx="32" cy="24" r="14" fill="#fff"/>
+                          <rect x="10" y="40" width="44" height="16" rx="8" fill="#fff"/>
+                        </svg>`);
 
             async function resolveProfileHrefFor(user) {
                 const first = (user?.first_username || user?.firstUsername || "").trim();
@@ -1289,10 +1317,10 @@
                 const bar = document.createElement("div");
                 bar.id = "dp-authbar";
                 bar.innerHTML = `
-                  <span id="dp-authprefix" aria-hidden="true">User:</span>
-                  <a id="dp-authlink" href="#"></a>
-                  <button id="dp-logout-btn" type="button">Sign out</button>
-                `;
+                          <span id="dp-authprefix" aria-hidden="true">User:</span>
+                          <a id="dp-authlink" href="#"></a>
+                          <button id="dp-logout-btn" type="button">Sign out</button>
+                        `;
                 document.body.appendChild(bar);
 
                 const authLink = bar.querySelector("#dp-authlink");
@@ -1326,9 +1354,9 @@
                     authLink.setAttribute("data-state", "logged-in");
                     authLink.setAttribute("href", href || "#");
                     authLink.innerHTML = `
-                    <img id="dp-authavatar" alt="" src="${pfp}">
-                    <span id="dp-authname">${uname}</span>
-                  `;
+                            <img id="dp-authavatar" alt="" src="${pfp}">
+                            <span id="dp-authname">${uname}</span>
+                          `;
                     authLink.onclick = null;
                 } else {
                     prefixEl.style.display = "none";
@@ -1355,6 +1383,353 @@
                 document.addEventListener("DOMContentLoaded", () => ensure(), { once: true });
             } else {
                 ensure();
+            }
+        })();
+    </script>
+    <script>
+        (() => {
+            "use strict";
+            const API = "http://localhost:3000/api";
+
+            const Q = sel => document.querySelector(sel);
+            const $ = id => document.getElementById(id);
+
+            // extend labels
+            const LABELS = {
+                add: "Add Friend",
+                pending: "Request Sent",
+                pendingHover: "Cancel Request?",
+                accept: "Accept Request",          // <—
+                remove: "Remove Friend",
+                removeHover: "Are you sure?"
+            };
+
+            /* ---------- tiny http helpers ---------- */
+            async function getJSON(url, opts = {}) {
+                const r = await fetch(url, { credentials: "include", ...opts });
+                const t = await r.text(); let j; try { j = t ? JSON.parse(t) : {}; } catch { j = { raw: t }; }
+                if (!r.ok) { const e = new Error(j?.error || r.statusText); e.status = r.status; e.detail = j?.detail || t; throw e; }
+                return j;
+            }
+            async function csrfToken() {
+                try {
+                    const r = await fetch(API.replace("/api", "") + "/api/csrf?_=" + Date.now(), { credentials: "include" });
+                    const j = await r.json().catch(() => ({}));
+                    if (!r.ok || !j.token) throw 0;
+                    return j.token;
+                } catch { return null; }
+            }
+            async function postJSON(url, body) {
+                const tok = await csrfToken();
+                return getJSON(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", ...(tok ? { "X-CSRF-Token": tok } : {}) },
+                    body: JSON.stringify(body || {})
+                });
+            }
+            async function delJSON(url) {
+                const tok = await csrfToken();
+                const r = await fetch(url, {
+                    method: "DELETE",
+                    credentials: "include",
+                    headers: tok ? { "X-CSRF-Token": tok } : {}
+                });
+                const text = await r.text();
+                let json; try { json = text ? JSON.parse(text) : null; } catch { json = { raw: text }; }
+
+                console.log("[DELETE]", url, "->", r.status, json);
+
+                if (!r.ok && r.status !== 204) {
+                    const msg = json?.error || json?.raw || r.statusText;
+                    throw new Error(`${r.status} ${msg}`);
+                }
+                return { status: r.status, body: json };
+            }
+
+            /* ---------- login + target ---------- */
+            async function getMe() {
+                try { const j = await getJSON(API + "/auth/me"); return j?.user || null; }
+                catch { return null; }
+            }
+            function getSlug() {
+                const fromDom = ($("#hdr-slug")?.textContent || "").trim();
+                if (fromDom) return fromDom;
+                const m = location.pathname.match(/^\/user\/([^\/?#]+)/i);
+                return m ? decodeURIComponent(m[1]) : "";
+            }
+
+            /* ---------- requests list helpers ---------- */
+            async function listRequests(direction) {
+                // returns [{ id, slug }]
+                const urls = [
+                    API + `/friends/requests?direction=${direction}`,
+                    API + `/users/me/friends/requests?direction=${direction}`,
+                    API + `/users/me/friends/requests/${direction}` // some backends expose /out /in
+                ];
+                for (const u of urls) {
+                    try {
+                        const j = await getJSON(u);
+                        const arr = Array.isArray(j?.items) ? j.items : Array.isArray(j) ? j : [];
+                        return arr.map(row => {
+                            const id = row.id || row.request_id || row.requestId || null;
+                            const user = direction === "out" ? (row.to_user || row.user || row) : (row.from_user || row.user || row);
+                            const slug = (user?.first_username || user?.firstUsername || user?.username || "").trim();
+                            return { id, slug };
+                        }).filter(x => x.slug);
+                    } catch { /* try next */ }
+                }
+                return [];
+            }
+            async function findOutgoingRequestId(targetSlug) {
+                const out = await listRequests("out");
+                const hit = out.find(x => x.slug.toLowerCase() === targetSlug.toLowerCase());
+                return hit?.id || null;
+            }
+            async function findIncomingRequest(targetSlug) {
+                const inn = await listRequests("in");
+                const hit = inn.find(x => x.slug.toLowerCase() === targetSlug.toLowerCase());
+                return hit || null; // {id, slug} or null
+            }
+
+            /* ---------- relationship discovery (read-only) ---------- */
+            // replace getRelationship() with this:
+            async function getRelationship(targetSlug) {
+                try {
+                    const j = await getJSON(API + `/relationships/${encodeURIComponent(targetSlug)}?_=` + Date.now());
+                    const s = j?.status;
+                    return (s === "friend" || s === "requested_by_me" || s === "requested_of_me" || s === "none") ? s : "none";
+                } catch { return "none"; }
+            }
+
+            /* ---------- friend actions (request-only) ---------- */
+            // replace addFriendRequest() with this:
+            async function addFriendRequest(target) {
+                const slug = (target.first_username || target.username || "").trim();
+                const tries = [
+                    { url: API + "/friends/requests", body: { to_username: slug } },
+                    { url: API + "/users/me/friends/requests", body: { to_username: slug } },
+                ];
+                for (const t of tries) {
+                    try {
+                        const resp = await postJSON(t.url, t.body);
+                        return (resp?.status === "accepted") ? "friend" : "requested_by_me";
+                    } catch (e) {
+                        // Normalize common conflicts to server truth
+                        if (e?.status === 409) return await getRelationship(slug);
+                    }
+                }
+                return "none";
+            }
+
+            async function acceptIncomingRequest(targetSlug) {
+                // accept by id if possible; try a few shapes
+                const req = await findIncomingRequest(targetSlug);
+                const id = req?.id || targetSlug; // fall back to slug if API allows it
+                const urls = [
+                    API + `/friends/requests/${encodeURIComponent(id)}/accept`,
+                    API + `/users/me/friends/requests/${encodeURIComponent(id)}/accept`,
+                    API + `/friends/accept/${encodeURIComponent(id)}`
+                ];
+                for (const u of urls) {
+                    try { await postJSON(u, {}); return true; } catch { }
+                }
+                return false;
+            }
+
+            async function cancelOutgoingRequest(targetSlug) {
+                const id = await findOutgoingRequestId(targetSlug);
+                if (!id) return false;
+                const urls = [
+                    API + `/friends/requests/${encodeURIComponent(id)}/cancel`, // add server route for this
+                    API + `/friends/requests/${encodeURIComponent(id)}`,        // optional legacy DELETE
+                ];
+                for (const u of urls) { try { await del(u); return true; } catch { } }
+                return false;
+            }
+
+            async function resolveUser(slug) {
+                const tries = [
+                    API + `/users/by-first/${encodeURIComponent(slug)}`,
+                    API + `/users/by_username/${encodeURIComponent(slug)}`,
+                    API + `/users/resolve?username=${encodeURIComponent(slug)}`
+                ];
+                for (const u of tries) {
+                    try {
+                        const j = await getJSON(u);
+                        const user = j?.user || j;
+                        if (user && (user.id || user.user_id || user.username || user.first_username)) {
+                            return {
+                                id: user.id || user.user_id || null,
+                                first: (user.first_username || user.firstUsername || "").trim(),
+                                uname: (user.username || "").trim()
+                            };
+                        }
+                    } catch { }
+                }
+                return { id: null, first: slug, uname: slug };
+            }
+
+            async function removeFriend(targetSlug) {
+                try {
+                    const resp = await delJSON(API + `/users/me/friends/${encodeURIComponent(targetSlug)}`);
+                    console.log("[removeFriend] resp:", resp);
+                    return true;
+                } catch (e) {
+                    console.warn("[removeFriend] failed:", e);
+                    return false;
+                }
+            }
+
+            /* ---------- UI ---------- */
+            function ensureFriendButtonSlot() {
+                const actionsWrap = Q('header .actions');
+                if (!actionsWrap) return null;
+                let btn = $("#btn-friend");
+                if (!btn) {
+                    btn = document.createElement("button");
+                    btn.id = "btn-friend";
+                    btn.className = "btn btn-friend";
+                    btn.type = "button";
+                    actionsWrap.prepend(btn);
+                }
+                btn.style.display = "";
+                return btn;
+            }
+
+            function fixStableWidth(btn, labels) {
+                const keep = btn.textContent;
+                let max = 0;
+                for (const label of labels) {
+                    btn.textContent = label;
+                    btn.style.width = "auto";
+                    const w = Math.ceil(btn.getBoundingClientRect().width);
+                    if (w > max) max = w;
+                }
+                btn.style.width = max + "px";
+                btn.style.minWidth = btn.style.width;
+                btn.textContent = keep;
+            }
+
+            function wireButtonBehavior(btn, target, initialState) {
+                let state = initialState;          // "none" | "requested_by_me" | "requested_of_me" | "friend"
+                let armed = false;                 // replaces the hover requirement
+                let armTimer = null;
+
+                const setLabel = (txt) => { btn.textContent = txt; };
+                const setPendingLook = (on) => {
+                    btn.classList.toggle("is-pending", !!on);
+                };
+                const setWarnLook = (on) => {
+                    btn.classList.toggle("is-confirm-warn", !!on);
+                };
+
+                const render = () => {
+                    if (state === "friend") {
+                        setPendingLook(false);
+                        setWarnLook(armed);
+                        setLabel(armed ? LABELS.removeHover : LABELS.remove);
+                    } else if (state === "requested_by_me") {
+                        setPendingLook(true);
+                        setWarnLook(armed);
+                        setLabel(armed ? LABELS.pendingHover : LABELS.pending);
+                    } else if (state === "requested_of_me") {
+                        setPendingLook(false);
+                        setWarnLook(false);
+                        setLabel(LABELS.accept);
+                    } else {
+                        setPendingLook(false);
+                        setWarnLook(false);
+                        setLabel(LABELS.add);
+                    }
+                };
+
+                function armOnce() {
+                    armed = true;
+                    clearTimeout(armTimer);
+                    armTimer = setTimeout(() => { armed = false; render(); }, 2000);
+                    render();
+                }
+
+                btn.addEventListener("click", async () => {
+                    try {
+                        btn.disabled = true;
+                        const slug = (target.first_username || target.username || "").trim();
+
+                        if (state === "none") {
+                            state = await addFriendRequest(target);
+                            armed = false;
+
+                        } else if (state === "requested_by_me") {
+                            if (!armed) { armOnce(); return; }
+                            clearTimeout(armTimer); armed = false;
+                            await cancelOutgoingRequest(slug);
+                            state = "none";
+
+                        } else if (state === "requested_of_me") {
+                            const ok = await acceptIncomingRequest(slug);
+                            state = ok ? "friend" : "requested_of_me";
+                            armed = false;
+
+                        } else if (state === "friend") {
+                            if (!armed) { armOnce(); return; }
+                            clearTimeout(armTimer); armed = false;
+                            const ok = await removeFriend(slug);
+
+                            // Optimistically flip to "none" so the label changes immediately,
+                            // then reconcile with server truth.
+                            state = ok ? "none" : "friend";
+                            render();
+
+                            try {
+                                const truth = await getRelationship(slug); // you already cache-bust here
+                                if (truth !== state) { state = truth; render(); }
+                            } catch { }
+                        }
+
+                        render();
+                    } catch (e) {
+                        console.warn("[friend-btn]", e);
+                    } finally {
+                        btn.disabled = false;
+                    }
+                });
+
+                // Keep your fixed width so labels don’t jiggle:
+                fixStableWidth(btn, [
+                    LABELS.add, LABELS.pending, LABELS.pendingHover, LABELS.remove, LABELS.removeHover, LABELS.accept
+                ]);
+
+                render();
+            }
+
+            async function bootFriendButton() {
+                const slug = getSlug();
+                if (!slug) return;
+
+                const me = await getMe();
+                if (!me) return; // not logged in
+
+                const myFirst = (me.first_username || me.firstUsername || me.username || "").toLowerCase();
+                if (myFirst && myFirst === slug.toLowerCase()) return; // your own profile
+
+                const target = {
+                    first_username: ($("#hdr-slug")?.textContent || slug).trim(),
+                    username: ($("#uname")?.textContent || "").replace(/^@/, "").trim() || slug
+                };
+
+                let rel = "none";
+                try { rel = await getRelationship(target.first_username || target.username || ""); } catch { }
+
+                const btn = ensureFriendButtonSlot();
+                if (!btn) return;
+
+                wireButtonBehavior(btn, target, rel);
+            }
+
+            if (document.readyState === "complete" || document.readyState === "interactive") {
+                setTimeout(bootFriendButton, 0);
+            } else {
+                document.addEventListener("DOMContentLoaded", bootFriendButton, { once: true });
             }
         })();
     </script>

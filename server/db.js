@@ -3,6 +3,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 
 const dbPath = path.join(__dirname, 'data.sqlite');
+console.log(`[db] Using SQLite at: ${dbPath}`);
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
@@ -127,9 +128,11 @@ function ensureFriendsTables() {
     try {
         db.exec(`
       CREATE VIEW IF NOT EXISTS user_friend_edges AS
-      SELECT user_id_a AS user_id, user_id_b AS friend_id, created_at FROM friendships
+      SELECT user_id_a AS user_id, user_id_b AS friend_id, rowid AS created_at
+      FROM friendships
       UNION ALL
-      SELECT user_id_b AS user_id, user_id_a AS friend_id, created_at FROM friendships;
+      SELECT user_id_b AS user_id, user_id_a AS friend_id, rowid AS created_at
+      FROM friendships;
     `);
     } catch { /* view exists or SQLite without CREATE VIEW IF NOT EXISTS */ }
 }
@@ -518,4 +521,4 @@ function migrate() {
     ensureCommentsAndVotes();
 }
 
-module.exports = { db, migrate };
+module.exports = { db, migrate, dbPath };

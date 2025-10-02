@@ -612,15 +612,62 @@ router.post('/users/me/friends', requireAuth, (req, res) => {
  * DELETE /api/users/me/friends/:username
  * Removes a friend (resolve by current username or OG name)
  */
+/**
+ * DELETE /api/users/me/friends/:username
+ * Removes friend everywhere:
+ *  - user_friends (your snapshot table)
+ *  - friendships  (undirected a<b store)
+ *  - friend_requests (any lingering requests either way)
+ */
 router.delete('/users/me/friends/:username', requireAuth, (req, res) => {
     const key = String(req.params.username || '').trim();
     if (!key) return res.status(400).json({ error: 'missing_username' });
 
-    const friend = resolveUserByEither(key, null) || resolveUserByEither(null, key);
+    // Resolve by current username OR first_username
+    const friend =
+        resolveUserByEither(key, null) ||
+        resolveUserByEither(null, key);
+
     if (!friend) return res.status(404).json({ error: 'friend_not_found' });
 
-    db.prepare(`DELETE FROM user_friends WHERE user_id = ? AND friend_user_id = ?`).run(req.userId, friend.id);
-    res.json({ ok: true });
+    const me = req.userId;
+    const other = friend.id;
+    const a = Math.min(me, other);
+    const b = Math.max(me, other);
+
+    const removed = { user_friends: 0, friendships: 0, friend_requests: 0 };
+
+    const tx = db.transaction(() => {
+        // Snapshot table (both directions)
+        removed.user_friends += db.prepare(`
+      DELETE FROM user_friends
+      WHERE (user_id=? AND friend_user_id=?) OR (user_id=? AND friend_user_id=?)
+    `).run(me, other, other, me).changes | 0;
+
+        // Undirected canonical friendships (be liberal: delete either orientation)
+        removed.friendships += db.prepare(`
+      DELETE FROM friendships
+      WHERE (user_id_a=? AND user_id_b=?) OR (user_id_a=? AND user_id_b=?)
+    `).run(a, b, b, a).changes | 0;
+
+        // Any pending/lingering requests between the pair
+        removed.friend_requests += db.prepare(`
+      DELETE FROM friend_requests
+      WHERE (from_user_id=? AND to_user_id=?) OR (from_user_id=? AND to_user_id=?)
+    `).run(me, other, other, me).changes | 0;
+    });
+
+    tx();
+
+    console.log('[unfriend]', {
+        me,
+        other,
+        key,
+        removed
+    });
+
+    // Give you numbers to confirm it actually removed from the canonical table
+    return res.status(200).json({ ok: true, removed });
 });
 
 /**
@@ -811,6 +858,39 @@ router.get('/users/me/friends/summary', requireAuth, (req, res) => {
       AND p.seen_at >= datetime('now', ?)
   `).get(req.userId, `-${windowMinutes} minutes`)?.n | 0;
     res.json({ ok: true, total, online, window_minutes: windowMinutes });
+});
+
+// Inspect all rows for me <-> :key across the three places
+router.get('/__debug/pair/:key', requireAuth, (req, res) => {
+    const key = String(req.params.key || '').trim();
+    const friend =
+        resolveUserByEither(key, null) ||
+        resolveUserByEither(null, key);
+
+    if (!friend) return res.status(404).json({ error: 'friend_not_found' });
+
+    const me = req.userId;
+    const other = friend.id;
+    const a = Math.min(me, other);
+    const b = Math.max(me, other);
+
+    const out = {
+        me, other, a, b,
+        friendships: db.prepare(`
+      SELECT * FROM friendships
+      WHERE (user_id_a=? AND user_id_b=?) OR (user_id_a=? AND user_id_b=?)
+    `).all(a, b, b, a),
+        friend_requests: db.prepare(`
+      SELECT * FROM friend_requests
+      WHERE (from_user_id=? AND to_user_id=?) OR (from_user_id=? AND to_user_id=?)
+    `).all(me, other, other, me),
+        user_friends: db.prepare(`
+      SELECT * FROM user_friends
+      WHERE (user_id=? AND friend_user_id=?) OR (user_id=? AND friend_user_id=?)
+    `).all(me, other, other, me)
+    };
+
+    res.json(out);
 });
 
 module.exports = { router };

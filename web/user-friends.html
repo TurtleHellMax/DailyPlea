@@ -211,6 +211,11 @@
             overflow: hidden;
         }
 
+        .person .actions {
+            display: flex;
+            gap: 8px;
+        }
+
         #friends-list {
             margin-top: 12px;
         }
@@ -248,7 +253,6 @@
         (() => {
             "use strict";
 
-            /* ====== DEBUG ====== */
             const DEBUG = /\bdebug=1\b/.test(location.search) || window.DP_DEBUG === true;
             const log = (...a) => { if (DEBUG) console.log("[friends]", ...a); };
 
@@ -264,6 +268,7 @@
 
             const state = {
                 slug: "",
+                meSlug: "",         // logged-in user's first_username/username (lowercased)
                 friendsOffset: 0,
                 friendsLimit: 10,
                 friendsTotal: 0,
@@ -326,6 +331,14 @@
                 const name = fx || u.username || state.slug;
                 return "/user/" + encodeURIComponent(name);
             }
+            const slugOf = (u) => (u?.first_username || u?.firstUsername || u?.username || "").toLowerCase();
+            const normalizeUser = (u) => u ? ({
+                username: u.username || null,
+                first_username: u.first_username || u.firstUsername || null,
+                profile_photo: u.profile_photo || u.photo || null,
+                bio_html: u.bio_html || null,
+                bio: u.bio || null
+            }) : ({ username: null, first_username: null, profile_photo: null, bio_html: null, bio: null });
 
             /* ---------------- API ---------------- */
             async function csrf() {
@@ -346,6 +359,15 @@
                 let data; try { data = txt ? JSON.parse(txt) : {}; } catch { data = { raw: txt }; }
                 if (!r.ok) { const e = new Error(data?.error || r.statusText); e.status = r.status; e.detail = data?.detail || txt; throw e; }
                 return data;
+            }
+
+            async function getMe() {
+                try {
+                    const j = await api("/auth/me");
+                    const u = j?.user;
+                    state.meSlug = (u?.first_username || u?.firstUsername || u?.username || "").toLowerCase();
+                    log("me:", state.meSlug || "(anon)");
+                } catch { state.meSlug = ""; }
             }
 
             async function fetchProfile(slug) {
@@ -370,6 +392,31 @@
                 return null;
             }
 
+            // ---- choose the OTHER party vs the logged-in user, robustly ----
+            function pickCounterparty(row, direction) {
+                const me = state.meSlug;
+                const inCandidates = [
+                    row.from_user, row.requester, row.sender, row.actor, row.user_from, row.requested_by, row.other_user, row.user
+                ];
+                const outCandidates = [
+                    row.to_user, row.target_user, row.user_to, row.recipient, row.other_user, row.user
+                ];
+
+                const list = direction === "in" ? inCandidates : outCandidates;
+                for (const cand of list) {
+                    if (cand && slugOf(cand)) {
+                        if (!me || slugOf(cand) !== me) return normalizeUser(cand);
+                    }
+                }
+                // fallback: whichever of from/to isn't me
+                for (const cand of [row.from_user, row.to_user]) {
+                    if (cand && slugOf(cand) && (!me || slugOf(cand) !== me)) return normalizeUser(cand);
+                }
+                // absolute last resort: anything with a name
+                const fallback = row.from_user || row.to_user || row.requester || row.sender || row.user || row;
+                return normalizeUser(fallback);
+            }
+
             async function fetchRequests(direction) {
                 const tries = [
                     `/friends/requests?direction=${direction}`,
@@ -381,13 +428,24 @@
                         const j = await api(p);
                         const arr = Array.isArray(j?.items) ? j.items : Array.isArray(j) ? j : [];
                         return arr.map(row => ({
-                            request_id: row.id || row.request_id || null,
-                            user: direction === "in" ? (row.from_user || row.user || row) : (row.to_user || row.user || row)
+                            request_id: row.id || row.request_id || row.requestId || null,
+                            user: pickCounterparty(row, direction)
                         }));
                     } catch { /* soft-fail */ }
                 }
                 return [];
             }
+
+            async function cancelOutgoingRequest(id) {
+                // Try DELETE first (new route), fall back to POST /cancel for compatibility
+                try {
+                    await api(`/friends/requests/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                    return { ok: true };
+                } catch (_) {
+                    return api(`/friends/requests/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+                }
+            }
+
             async function acceptRequest(id) { return api(`/friends/requests/${encodeURIComponent(id)}/accept`, { method: 'POST' }); }
             async function ignoreRequest(id) { return api(`/friends/requests/${encodeURIComponent(id)}/ignore`, { method: 'POST' }); }
 
@@ -420,8 +478,10 @@
           </a>
           <div>
             <div class="name"><a href="${href}">@${user.username || user.first_username || "user"}</a></div>
-            <div class="bio" title="${firstNonEmpty(user.bio?.replace?.(/<[^>]+>/g, '') || '',
-                    user.bio_html?.replace?.(/<[^>]+>/g, '') || '')}">
+            <div class="bio" title="${firstNonEmpty(
+                    user.bio?.replace?.(/<[^>]+>/g, '') || '',
+                    user.bio_html?.replace?.(/<[^>]+>/g, '') || ''
+                )}">
               ${firstNonEmpty(user.bio_html, user.bio) || ""}
             </div>
           </div>
@@ -430,43 +490,100 @@
                 return el;
             }
 
-            function attachReqButtons(cardEl, request_id, after) {
+            function attachIncomingButtons(cardEl, request_id, els, after) {
                 const actions = cardEl.querySelector(".actions");
                 const ok = document.createElement("button"); ok.className = "btn primary"; ok.textContent = "Accept";
                 const no = document.createElement("button"); no.className = "btn"; no.textContent = "Ignore";
                 actions.append(ok, no);
+
                 const lock = (b) => { ok.disabled = no.disabled = b; };
+
                 ok.addEventListener("click", async () => {
-                    try { lock(true); await acceptRequest(request_id); cardEl.remove(); after('accepted'); }
-                    catch { alert("Failed to accept"); } finally { lock(false); }
+                    try {
+                        lock(true);
+                        const res = await acceptRequest(request_id); // server returns { ok, friend }
+                        // remove request row
+                        cardEl.remove();
+                        // immediately show new friend
+                        const friend = res && res.friend ? res.friend : null;
+                        if (friend) {
+                            els.empty.style.display = 'none';
+                            els.friendsList.prepend(renderPersonCard(friend, false));
+                            state.friendsTotal = (state.friendsTotal | 0) + 1;
+                        }
+                        after('accepted');
+                    } catch (e) {
+                        alert("Failed to accept");
+                    } finally {
+                        lock(false);
+                    }
                 });
+
                 no.addEventListener("click", async () => {
-                    try { lock(true); await ignoreRequest(request_id); cardEl.remove(); after('ignored'); }
-                    catch { alert("Failed to ignore"); } finally { lock(false); }
+                    try {
+                        lock(true);
+                        await ignoreRequest(request_id);
+                        cardEl.remove();
+                        after('ignored');
+                    } catch (e) {
+                        alert("Failed to ignore");
+                    } finally {
+                        lock(false);
+                    }
                 });
             }
 
-            function renderReqPanel(kind, items) {
+            function attachOutgoingButtons(cardEl, request_id, els, after) {
+                const actions = cardEl.querySelector(".actions");
+                const cancel = document.createElement("button"); cancel.className = "btn"; cancel.textContent = "Cancel request";
+                actions.append(cancel);
+
+                cancel.addEventListener("click", async () => {
+                    try {
+                        cancel.disabled = true;
+                        await cancelOutgoingRequest(request_id);
+                        cardEl.remove();
+                        after('canceled');
+                    } catch (e) {
+                        alert("Failed to cancel");
+                    } finally {
+                        cancel.disabled = false;
+                    }
+                });
+            }
+
+            function renderReqPanel(kind, items, opts) {
                 if (!items.length) return null;
+                const { type, els } = opts || {}; // type: 'in' | 'out'
+
                 const det = document.createElement('details');
                 det.className = 'req-panel';
                 det.innerHTML = `
-          <summary>
-            <span class="caret"></span>
-            <span class="sumtitle">${kind} Requests</span>
-            <span class="sumcount" id="cnt">${items.length}</span>
-          </summary>
-          <div class="panel-body"><div class="list" id="list"></div></div>
-        `;
+    <summary>
+      <span class="caret"></span>
+      <span class="sumtitle">${kind} Requests</span>
+      <span class="sumcount" id="cnt">${items.length}</span>
+    </summary>
+    <div class="panel-body"><div class="list" id="list"></div></div>
+  `;
                 const list = det.querySelector('#list');
                 const cntEl = det.querySelector('#cnt');
+
                 for (const it of items) {
                     const card = renderPersonCard(it.user, true);
-                    attachReqButtons(card, it.request_id, () => {
+                    const after = () => {
                         const left = Math.max(0, parseInt(cntEl.textContent, 10) - 1);
                         cntEl.textContent = String(left);
                         if (left === 0) det.remove();
-                    });
+                    };
+
+                    if (type === 'out') {
+                        // Outgoing: only "Cancel request"
+                        attachOutgoingButtons(card, it.request_id, els, after);
+                    } else {
+                        // Incoming: "Accept" + "Ignore"
+                        attachIncomingButtons(card, it.request_id, els, after);
+                    }
                     list.appendChild(card);
                 }
                 return det;
@@ -476,13 +593,11 @@
                 el.requestPanels.innerHTML = "";
                 try {
                     const [incoming, outgoing] = await Promise.all([fetchRequests('in'), fetchRequests('out')]);
-                    const a = renderReqPanel('Incoming', incoming);
-                    const b = renderReqPanel('Outgoing', outgoing);
+                    const a = renderReqPanel('Incoming', incoming, { type: 'in', els: el });
+                    const b = renderReqPanel('Outgoing', outgoing, { type: 'out', els: el });
                     if (a) el.requestPanels.appendChild(a);
                     if (b) el.requestPanels.appendChild(b);
-                } catch (e) {
-                    log("requests error", e);
-                }
+                } catch (e) { log("requests error", e); }
             }
 
             async function loadMoreFriends(el) {
@@ -513,33 +628,31 @@
             async function init() {
                 log("boot", { readyState: document.readyState, path: location.pathname });
 
-                // 1) Force-known DOM
                 rebuildBodySkeleton();
                 const el = collectEls();
                 if (!haveAll(el)) { console.error("[friends] DOM rebuild failed", el); return; }
 
-                // 2) Slug & immediate header defaults
                 state.slug = extractSlug(location.pathname);
                 if (!state.slug) { console.error("[friends] bad URL"); return; }
+
                 el.uname.textContent = state.slug;
                 el.pfp.src = AVATAR_FALLBACK;
                 el.back.href = "/user/" + encodeURIComponent(state.slug);
-                el.empty.style.display = '';     // default empty
+                el.empty.style.display = '';
                 el.loadMore.style.display = 'none';
 
-                // 3) Hydrate header (best-effort)
+                // who am I? (used to pick the counterparty correctly)
+                await getMe();
+
                 try {
                     const prof = await fetchProfile(state.slug);
                     if (prof) {
                         el.uname.textContent = prof.username || prof.first_username || state.slug;
                         el.pfp.src = prof.profile_photo || AVATAR_FALLBACK;
                     }
-                } catch { /* ignore */ }
+                } catch { }
 
-                // 4) Requests (soft-fail if unauth)
                 try { await refreshRequests(el); } catch { }
-
-                // 5) Friends first page + handler
                 try {
                     await loadMoreFriends(el);
                     el.loadMore.addEventListener('click', () => loadMoreFriends(el));
@@ -547,13 +660,11 @@
             }
 
             if (document.readyState === "complete" || document.readyState === "interactive") {
-                // run immediately after current tick to let any parser work finish
                 setTimeout(init, 0);
             } else {
                 document.addEventListener("DOMContentLoaded", init, { once: true });
             }
         })();
     </script>
-
 </body>
 </html>
