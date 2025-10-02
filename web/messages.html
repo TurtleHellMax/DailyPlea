@@ -1,0 +1,1219 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Messages</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/web/site.css">
+
+<style>
+    :root {
+        color-scheme: dark;
+        --bg: #0a0b0d;
+        --panel: #0e1116;
+        --panel-2: #12161c;
+        --border: #e6e6e6;
+        --soft: rgba(255,255,255,.12);
+        --text: #fff;
+        --muted: #b8b8b8;
+        --bw: 2px;
+    }
+
+    /* Font */
+    @font-face {
+        font-family: 'Voice1';
+        src: url('/fonts/Voice1.woff2') format('woff2'), url('/fonts/Voice1.woff') format('woff'), url('/fonts/Voice1.ttf') format('truetype');
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: swap;
+    }
+
+    /* Global font + square borders everywhere */
+    html, body {
+        font-family: 'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
+    }
+
+    *, :before, :after {
+        border-radius: 0 !important;
+        box-sizing: border-box;
+    }
+
+    input, textarea, button, select {
+        font-family: 'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
+        -webkit-appearance: none;
+        appearance: none;
+        color: var(--text);
+        border: var(--bw) solid var(--border);
+        background: #0e1116;
+    }
+
+    ::placeholder {
+        color: var(--muted);
+        opacity: 1;
+    }
+
+    body {
+        margin: 0;
+        color: var(--text);
+        background: #0a0b0d;
+        height: 100vh;
+        overflow: hidden;
+    }
+
+    .wrap {
+        height: 100vh;
+        display: grid;
+        grid-template-columns: 320px 1fr;
+    }
+
+    /* LEFT */
+    .left {
+        background: linear-gradient(180deg,#12161c,#0e1116);
+        border-right: var(--bw) solid var(--border);
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        min-height: 0;
+    }
+
+        .left .head {
+            padding: 12px 14px;
+            border-bottom: var(--bw) solid var(--border);
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .left .tools {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 8px;
+            padding: 10px 12px;
+            border-bottom: var(--bw) solid var(--border);
+        }
+
+    #convs {
+        overflow: auto;
+        padding-bottom: 10px;
+    }
+
+    .search-input {
+        width: 100%;
+        height: 40px;
+        padding: 9px 12px;
+        border: var(--bw) solid var(--border);
+        background: #0e1116;
+        color: #fff;
+        box-shadow: 0 1px 0 var(--soft) inset;
+    }
+
+    .btn {
+        padding: 10px 14px;
+        border: var(--bw) solid var(--border);
+        background: #0e1116;
+        color: #fff;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 1px 0 var(--soft) inset;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+        .btn:hover {
+            background: #fff !important;
+            color: #000;
+            border-color: #fff;
+        }
+
+    .iconbtn {
+        border: var(--bw) solid var(--border);
+        background: #0e1116;
+        cursor: pointer;
+        opacity: .9;
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+    }
+
+        .iconbtn:hover {
+            background: #151921;
+        }
+
+        .iconbtn img {
+            width: 22px;
+            height: 22px;
+            display: block;
+            image-rendering: pixelated;
+        }
+
+    .conv {
+        display: grid;
+        grid-template-columns: 44px 1fr;
+        gap: 10px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--soft);
+        cursor: pointer;
+    }
+
+        .conv:hover {
+            background: rgba(255,255,255,.06);
+        }
+
+        .conv.active {
+            background: rgba(255,255,255,.10);
+            outline: 2px solid #fff;
+        }
+
+    .avatar {
+        width: 44px;
+        height: 44px;
+        border: 2px solid #fff;
+        background: #000;
+        object-fit: cover;
+    }
+
+    .conv .name {
+        font-weight: 700;
+    }
+
+    .conv .preview {
+        color: var(--muted);
+        font-size: 13px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    /* RIGHT */
+    .right {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        min-height: 0;
+        position: relative;
+    }
+
+    .chat-head {
+        padding: 10px 14px;
+        border-bottom: var(--bw) solid var(--border);
+        background: linear-gradient(180deg,#12161c,#0e1116);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .chat-pfp {
+        width: 28px;
+        height: 28px;
+        border: var(--bw) solid var(--border);
+        object-fit: cover;
+        background: #000;
+    }
+
+    .chat-title {
+        font-weight: 700;
+    }
+
+    .msgs {
+        background: #000;
+        padding: 12px 14px;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-height: 0;
+    }
+
+    #pad-top, #pad-bottom {
+        height: 0;
+    }
+
+    /* Messages wrap */
+    .msg {
+        max-width: 70%;
+        padding: 10px 12px;
+        margin: 0;
+        border: var(--bw) solid var(--border);
+        background: #0b0e12;
+        box-shadow: 0 1px 0 var(--soft) inset;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+        .msg > div {
+            white-space: pre-wrap;
+        }
+
+    .me {
+        align-self: flex-end;
+        background: #0f1216;
+    }
+
+    .meta {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 4px;
+    }
+
+    .att {
+        margin-top: 6px;
+    }
+
+    /* Composer (stacked) */
+    .composer {
+        border-top: var(--bw) solid var(--border);
+        background: #0b0e12;
+        padding: 10px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+        .composer > * {
+            min-width: 0;
+        }
+
+        .composer textarea {
+            width: 100%;
+            min-height: 48px;
+            max-height: 200px;
+            resize: vertical;
+            background: #0e1116;
+            color: #fff;
+            border: var(--bw) solid var(--border);
+            padding: 12px;
+            caret-color: #fff;
+            line-height: 1.25;
+        }
+
+    .col {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+    }
+
+    .chips {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+    }
+
+    .chip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--soft);
+        padding: 6px 8px;
+        font-size: 13px;
+    }
+
+        .chip .x {
+            cursor: pointer;
+            opacity: .85;
+        }
+
+    .warn {
+        color: #ffdb74;
+        font-size: 12px;
+    }
+
+    /* Jump */
+    .jump {
+        position: absolute;
+        right: 14px;
+        bottom: calc(90px + env(safe-area-inset-bottom));
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .18s ease;
+        z-index: 5;
+    }
+
+        .jump.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+    @media (max-width:520px) {
+        .msg {
+            max-width: 100%;
+        }
+    }
+
+    /* Overlay */
+    .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.6);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+    }
+
+    .sheet {
+        width: min(720px,94vw);
+        max-height: 82vh;
+        overflow: auto;
+        background: linear-gradient(180deg,var(--panel-2),var(--panel));
+        border: var(--bw) solid var(--border);
+        box-shadow: 0 8px 18px rgba(0,0,0,.35);
+        padding: 12px;
+    }
+
+        .sheet h3 {
+            margin: 0 0 10px;
+        }
+
+    .picker-bar {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .list {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .person {
+        display: grid;
+        grid-template-columns: 44px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border: var(--bw) solid var(--border);
+        background: #0c0f13;
+        box-shadow: 0 1px 0 var(--soft) inset;
+    }
+
+    .pfp {
+        width: 44px;
+        height: 44px;
+        border: 2px solid #fff;
+        background: #000;
+        object-fit: cover;
+    }
+
+    .person .name {
+        font-weight: 700;
+    }
+
+    .person .bio {
+        color: var(--muted);
+        font-size: 13px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .sheet .bottom-center {
+        position: sticky;
+        bottom: 0;
+        display: flex;
+        justify-content: center;
+        padding-top: 10px;
+        margin-top: 10px;
+        background: linear-gradient(180deg,transparent,rgba(0,0,0,.35));
+    }
+
+    .checkbox {
+        transform: scale(1.2);
+    }
+
+    .avatar,
+    .pfp,
+    .chat-pfp {
+        border-radius: 999px !important; /* beats the global 0-radius */
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+    }
+</style>
+
+<div class="wrap">
+    <aside class="left">
+        <div class="head">Direct Messages</div>
+        <div class="tools">
+            <input id="conv-q" class="search-input" placeholder="Search conversations…">
+            <button id="btn-newdm" class="iconbtn" title="Start a conversation"><img src="/web/icons/new-dm.png" alt="+"></button>
+            <button id="btn-newgroup" class="iconbtn" title="Create a group"><img src="/web/icons/new-group.png" alt="◎"></button>
+        </div>
+        <div id="convs"></div>
+    </aside>
+
+    <main class="right">
+        <div class="chat-head">
+            <img id="chat-pfp" class="chat-pfp" src="/web/default-avatar.png" alt="">
+            <div class="chat-title" id="chat-title">Pick a conversation</div>
+        </div>
+
+        <div class="msgs" id="msgs">
+            <div id="pad-top"></div>
+            <!-- messages render here -->
+            <div id="pad-bottom"></div>
+        </div>
+
+        <button id="jump" class="jump btn" style="display:none">Jump to present ↓</button>
+
+        <div class="composer">
+            <div>
+                <textarea id="text" maxlength="10000" placeholder="Message…"></textarea>
+                <div class="chips" id="att-chips"></div>
+                <div class="warn" id="rec-warn" style="display:none"></div>
+            </div>
+            <div class="col">
+                <button class="btn" id="btn-attach">Attach</button>
+                <button class="btn" id="btn-voice">Hold to record</button>
+                <button class="btn" id="btn-send">Send</button>
+                <input type="file" id="file" multiple style="display:none">
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Overlay -->
+<div id="overlay" class="overlay" role="dialog" aria-modal="true">
+    <div class="sheet" id="sheet">
+        <h3 id="sheet-title">Start a conversation</h3>
+        <div class="picker-bar">
+            <input id="user-q" class="search-input" placeholder="Search friends…">
+        </div>
+        <div id="user-list" class="list"></div>
+        <div class="bottom-center" id="group-cta" style="display:none">
+            <button class="btn" id="btn-create-group">Create Group</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    (() => {
+        const API = 'http://localhost:3000/api';
+        const $ = id => document.getElementById(id);
+
+        /* ---------------- state ---------------- */
+        const state = {
+            convId: null, meId: 0,
+            allConvs: [], filteredConvs: [],
+            lastMsgId: 0, oldestMsgId: null, nextBefore: null,
+            es: null, poll: null,
+            uploading: false,
+            pendingFiles: [],
+            recording: { active: false, chunks: [], size: 0, rec: null, warnShown: false },
+
+            // convo + meta
+            convMeta: new Map(),         // convId -> { name:'@og', photo:url }
+            convRowEls: new Map(),       // convId -> DOM div.conv
+            convUserOg: new Map(),       // convId -> og username
+            userCache: new Map(),        // og -> { username, photo, display_name, raw }
+
+            convItems: new Map(),        // convId -> raw item (for debugging)
+        };
+        const LASTDM_KEY = 'dp:lastdm';
+
+        /* ---------------- utils ---------------- */
+        const afterPaint = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        function esc(s) { return String(s || '').replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])) }
+        function fmt(t) { try { return new Date(t).toLocaleString() } catch { return '' } }
+        function saveLastDM() { try { localStorage.setItem(LASTDM_KEY, JSON.stringify({ meId: state.meId | 0, convId: state.convId | 0, at: Date.now() })) } catch { } }
+        function loadLastDM() { try { return JSON.parse(localStorage.getItem(LASTDM_KEY) || 'null') } catch { return null } }
+        function nearBottom(px = 60) { const el = $('msgs'); return (el.scrollHeight - el.scrollTop - el.clientHeight) < px }
+        function scrollToBottom() { const el = $('msgs'); el.scrollTop = el.scrollHeight + 9999 }
+
+        const pickDisplay = o => o?.display_name || o?.name || null;
+        const pickUsername = o => o?.first_username || o?.username || o?.handle || null;
+
+        const isPlaceholder = (m) => !m || m.name === 'Direct Message' || !m.photo || m.photo === DEFAULT_PFP;
+        const scoreMeta = (m) => !m ? 0 : ((m.name && m.name !== 'Direct Message') ? 1 : 0) + ((m.photo && m.photo !== DEFAULT_PFP) ? 1 : 0);
+
+        // helpers already in your file:
+        const DEFAULT_PFP = '/web/default-avatar.png';
+        const pickPhoto = o => o?.profile_photo || o?.profile_photo_url || o?.photo || o?.photo_url || o?.avatar || o?.avatar_url || o?.picture || o?.image || o?.image_url || null;
+        const pickName = o => o?.display_name || o?.name || o?.username || o?.first_username || o?.handle || o?.title || null;
+
+        function mergeMeta(prev, next) {
+            // don't let placeholder stomp a good value
+            const out = { ...(prev || {}), ...(next || {}) };
+            if (prev) {
+                if (!next?.name || next.name === 'Direct Message') out.name = prev.name;
+                if (!next?.photo || next.photo === DEFAULT_PFP) out.photo = prev.photo;
+            }
+            return out;
+        }
+
+        async function fetchConvMeta(id) {
+            const prev = state.convMeta.get(id);
+            console.log('[DM] conv-detail:fetch', id, { prev });
+
+            try {
+                const j = await api(`/dm/conversations/${id}`);
+                console.log('[DM] conv-detail:ok', id, j);
+
+                let meta = { name: 'Direct Message', photo: DEFAULT_PFP };
+
+                if (j.is_group) {
+                    if ((j.title || '').trim()) meta.name = j.title.trim();
+                    // (if you ever store group photos: j.photo/avatar support)
+                    meta.photo = j.photo || j.avatar || meta.photo;
+                } else {
+                    const other = j.other || (Array.isArray(j.members) ? j.members.find(u => (u.id | 0) !== (state.meId | 0)) : null);
+                    meta.name = pickName(other) || meta.name;
+                    meta.photo = pickPhoto(other) || meta.photo;
+                }
+
+                const best = mergeMeta(prev, meta);
+                state.convMeta.set(id, best);
+                updateEverywhere(id);
+                console.log('[DM] meta:update', { id, source: 'conv-detail', prev, next: best });
+                return best;
+
+            } catch (e) {
+                console.warn('[DM] conv-detail fail', id, e?.status || '', e?.message || e);
+                // keep whatever good data we had
+                if (prev) return prev;
+                const fallback = { name: 'Direct Message', photo: DEFAULT_PFP };
+                state.convMeta.set(id, fallback);
+                return fallback;
+            }
+        }
+
+        function setConvMeta(id, meta, source = 'unknown') {
+            const prev = state.convMeta.get(id);
+            const ps = scoreMeta(prev), ns = scoreMeta(meta);
+            if (ns > ps) {
+                state.convMeta.set(id, meta);
+                console.debug('[DM] meta:update', { id, source, prev, next: meta, ps, ns });
+                updateEverywhere(id);
+            } else {
+                console.debug('[DM] meta:skip(downgrade)', { id, source, prev, next: meta, ps, ns });
+            }
+        }
+
+        // put near your other helpers
+        function setImgSafe(img, src) {
+            const want = src || DEFAULT_PFP;
+            if (!img) return;
+            if (img.dataset.srcApplied === want) return;      // don't re-apply same src
+
+            img.onload = () => console.debug('[DM] chat-pfp loaded');
+            img.onerror = () => {
+                console.debug('[DM] chat-pfp error, falling back to default');
+                img.src = DEFAULT_PFP;
+                img.dataset.srcApplied = DEFAULT_PFP;
+            };
+
+            img.src = want;
+            img.dataset.srcApplied = want;
+        }
+
+        function updateTopBar(meta) {
+            if (!meta) return;
+            console.debug('[DM] updateTopBar', meta);
+            $('chat-title').textContent = meta.name || 'Direct Message';
+            setImgSafe($('chat-pfp'), meta.photo);
+        }
+
+        function applySelectedHighlight() {
+            document.querySelectorAll('.conv.active').forEach(el => el.classList.remove('active'));
+            const el = state.convRowEls.get(state.convId);
+            if (el) el.classList.add('active');
+        }
+
+        /* ---------------- OG username extraction ---------------- */
+        function extractOgFromConvItem(it) {
+            // try explicit fields first
+            const direct = it?.other_username || it?.other?.first_username || it?.other?.username ||
+                it?.with?.first_username || it?.with?.username || null;
+            if (direct) return direct;
+
+            // array participants
+            const arr = it?.participants || it?.members || it?.users || it?.people || it?.user_list || [];
+            if (Array.isArray(arr) && arr.length) {
+                const other = arr.find(p => {
+                    const pid = (p?.id ?? p?.user?.id);
+                    return pid == null || (pid | 0) !== (state.meId | 0);
+                }) || arr[0];
+                const u = other?.user || other || {};
+                const og = pickUsername(u);
+                if (og) return og;
+            }
+            return null;
+        }
+
+        function extractOgFromConvDetail(j) {
+            const direct = j?.other_username || j?.other?.first_username || j?.other?.username ||
+                j?.with?.first_username || j?.with?.username || null;
+            if (direct) return direct;
+
+            const arr = j?.members || j?.participants || j?.users || j?.people || [];
+            if (Array.isArray(arr) && arr.length) {
+                const other = arr.find(p => {
+                    const pid = (p?.id ?? p?.user?.id);
+                    return pid == null || (pid | 0) !== (state.meId | 0);
+                }) || arr[0];
+                const u = other?.user || other || {};
+                return pickUsername(u) || null;
+            }
+            return null;
+        }
+
+        /* ---------------- Fetch user (by OG username) ---------------- */
+        async function fetchUserByOg(og) {
+            if (!og) throw new Error('no-og');
+            if (state.userCache.has(og)) {
+                console.debug('[DM] userCache hit', og, state.userCache.get(og));
+                return state.userCache.get(og);
+            }
+
+            const tries = [
+                `/users/${encodeURIComponent(og)}`,
+                `/users/${encodeURIComponent(og)}?view=basic`,
+                `/profiles/${encodeURIComponent(og)}`,
+                `/users/by_username/${encodeURIComponent(og)}`,
+                `/user/${encodeURIComponent(og)}`
+            ];
+
+            for (const path of tries) {
+                try {
+                    console.debug('[DM] fetchUserByOg try', og, API + path);
+                    const j = await api(path);
+                    // normalize
+                    const username = pickUsername(j) || og;
+                    const photo = pickPhoto(j);
+                    const display = pickDisplay(j);
+                    const result = { username, photo, display_name: display, raw: j };
+                    state.userCache.set(og, result);
+                    console.debug('[DM] fetchUserByOg ok', og, result);
+                    return result;
+                } catch (e) {
+                    console.debug('[DM] fetchUserByOg fail', og, API + path, e?.message || e);
+                }
+            }
+            throw new Error('user-not-found:' + og);
+        }
+
+        function metaFromUser(u) {
+            const nm = '@' + (u?.username || 'user');
+            const ph = u?.photo || DEFAULT_PFP;
+            return { name: nm, photo: ph };
+        }
+
+        /* ---------------- conversations list ---------------- */
+        function setConvRowContent(row, meta, preview) {
+            row.innerHTML = `
+      <img class="avatar" src="${meta?.photo || DEFAULT_PFP}" alt="">
+      <div>
+        <div class="name">${esc(meta?.name || 'Direct Message')}</div>
+        <div class="preview">${esc(preview || '…')}</div>
+      </div>`;
+        }
+
+        function updateEverywhere(id) {
+            const meta = state.convMeta.get(id);
+            if (!meta) return;
+
+            const row = state.convRowEls.get(id);
+            if (row) setConvRowContent(row, meta, row.querySelector('.preview')?.textContent || '');
+
+            if (state.convId === id) {
+                // only update the top bar if it's an upgrade or equal, never a downgrade
+                const current = { name: $('chat-title').textContent, photo: $('chat-pfp').getAttribute('src') };
+                const better = scoreMeta(meta) >= scoreMeta(current);
+                if (better) updateTopBar(meta);
+            }
+        }
+
+        function renderConvs(list) {
+            const wrap = $('convs'); wrap.innerHTML = '';
+            state.convRowEls.clear();
+
+            list.forEach(it => {
+                const row = document.createElement('div'); row.className = 'conv'; row.dataset.id = it.id;
+
+                // if startDmWith seeded correct meta, keep it; else start with a safe placeholder
+                   if (!state.convMeta.has(it.id)) {
+                         state.convMeta.set(it.id, { name: it.title || 'Direct Message', photo: DEFAULT_PFP });
+                   }
+                const meta = state.convMeta.get(it.id);
+                row.onclick = () => openConversation(it.id, meta?.name || it.title || 'Direct Message');
+                setConvRowContent(row, meta, it.preview);
+                state.convRowEls.set(it.id, row);
+                wrap.append(row);
+
+                // hydrate from server details and merge
+                fetchConvMeta(it.id).catch(() => { });
+            });
+
+            applySelectedHighlight();
+        }
+
+        function applyConvFilter() {
+            const q = $('conv-q').value.trim().toLowerCase();
+            state.filteredConvs = !q ? [...state.allConvs]
+                : state.allConvs.filter(c => {
+                    const name = (state.convMeta.get(c.id)?.name || c.title || 'Direct Message').toLowerCase();
+                    return name.includes(q) || (c.preview || '').toLowerCase().includes(q);
+                });
+            renderConvs(state.filteredConvs);
+        }
+
+        async function loadConversations() {
+            console.debug('[DM] loadConversations:start');
+            const j = await api('/dm/conversations');
+            state.allConvs = j.items || [];
+
+            // keep originals to reference for previews/etc.
+            state.allConvs.forEach(it => state.convItems.set(it.id, it));
+
+            // render immediately with best OG guess + async user fetches
+            renderConvs(state.allConvs);
+
+            // also try to resolve any missing OG via conversation detail (once)
+            for (const it of state.allConvs) {
+                if (state.convUserOg.has(it.id)) continue;
+                try {
+                    const det = await api(`/dm/conversations/${it.id}?include=members,participants,other`);
+                    const og = extractOgFromConvDetail(det);
+                    console.debug('[DM] detail->og', it.id, og, det);
+                    if (og) {
+                        state.convUserOg.set(it.id, og);
+                        setConvMeta(it.id, { name: '@' + og, photo: DEFAULT_PFP }, 'detail-og');
+                        fetchUserByOg(og).then(u => {
+                            setConvMeta(it.id, metaFromUser(u), 'user-fetch-detail');
+                        }).catch(e => console.debug('[DM] user-fetch fail (detail)', it.id, og, e?.message || e));
+                    }
+                } catch (e) {
+                    console.debug('[DM] conv-detail fail', it.id, e?.message || e);
+                }
+            }
+
+            console.debug('[DM] loadConversations:done', state.allConvs.length);
+        }
+        $('conv-q').addEventListener('input', applyConvFilter);
+
+        /* ---------------- API core ---------------- */
+        async function api(path, opts = {}) {
+            const headers = Object.assign({ 'Accept': 'application/json' }, opts.headers || {});
+            const isJSON = opts.body && !(opts.body instanceof FormData);
+            if (isJSON && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+            const url = API + path;
+            try {
+                const r = await fetch(url, { credentials: 'include', method: opts.method || 'GET', headers, body: isJSON ? JSON.stringify(opts.body) : opts.body });
+                const t = await r.text(); let d; try { d = t ? JSON.parse(t) : {} } catch { d = { raw: t } }
+                if (!r.ok) { console.debug('[DM] API ERR', url, r.status, d); const e = new Error(d?.error || r.statusText); e.detail = d?.detail || t; throw e; }
+                console.debug('[DM] API OK', url, d);
+                return d;
+            } catch (e) {
+                console.debug('[DM] API FAIL', url, e?.message || e);
+                throw e;
+            }
+        }
+        async function getMe() { const j = await api('/auth/me'); state.meId = j?.user?.id || 0; return state.meId; }
+
+        /* ---------------- virtualization (unchanged) ---------------- */
+        const MAX_DOM = 140, GAP = 6;
+        let bottomPadPx = 0, removedBottom = [];
+
+        function setBottomPad(px) { bottomPadPx = Math.max(0, px | 0); $('pad-bottom').style.height = bottomPadPx + 'px'; }
+
+        function renderMessage(m) {
+            const wrap = document.createElement('div');
+            wrap.className = 'msg' + (m.sender_id === state.meId ? ' me' : '');
+            if (m.text) wrap.insertAdjacentHTML('beforeend', '<div>' + esc(m.text) + '</div>');
+            (m.attachments || []).forEach(a => {
+                const url = `${API}/dm/attachments/${a.id}/download?inline=1`;
+                let v = '';
+                if ((a.mime_type || '').startsWith('image/')) v = `<img class="att" src="${url}" style="max-width:420px;display:block">`;
+                else if ((a.mime_type || '').startsWith('video/')) v = `<video class="att" src="${url}" controls style="max-width:420px;display:block"></video>`;
+                else if ((a.mime_type || '').startsWith('audio/')) v = `<audio class="att" src="${url}" controls></audio>`;
+                else v = `<a class="att" href="${url}">📎 ${esc(a.filename)}</a>`;
+                wrap.insertAdjacentHTML('beforeend', v);
+            });
+            wrap.insertAdjacentHTML('beforeend', `<div class="meta">${m.created_at ? fmt(m.created_at) : ''}</div>`);
+            wrap.querySelectorAll('img').forEach(img => img.addEventListener('load', () => { if (nearBottom(200)) scrollToBottom(); }, { once: true }));
+            wrap.querySelectorAll('video').forEach(v => v.addEventListener('loadedmetadata', () => { if (nearBottom(200)) scrollToBottom(); }, { once: true }));
+            return wrap;
+        }
+
+        function appendMessagesAscending(items) {
+            const anchor = $('pad-bottom');
+            items.forEach(m => {
+                const el = renderMessage(m);
+                anchor.before(el);
+                state.oldestMsgId = state.oldestMsgId === null ? m.id : Math.min(state.oldestMsgId, m.id);
+                state.lastMsgId = Math.max(state.lastMsgId, m.id);
+            });
+            maybeTrimBottom();
+        }
+        function prependOlderAscending(items) {
+            if (!items.length) return;
+            const box = $('msgs');
+            const prevTop = box.scrollTop, prevH = box.scrollHeight;
+            const frag = document.createDocumentFragment();
+            items.forEach(m => {
+                frag.append(renderMessage(m));
+                state.oldestMsgId = state.oldestMsgId === null ? m.id : Math.min(state.oldestMsgId, m.id);
+                state.lastMsgId = Math.max(state.lastMsgId, m.id);
+            });
+            const afterTop = $('pad-top').nextSibling || $('pad-bottom');
+            box.insertBefore(frag, afterTop);
+            box.scrollTop = prevTop + (box.scrollHeight - prevH);
+            maybeTrimBottom();
+        }
+        function maybeTrimBottom() {
+            const box = $('msgs');
+            if (nearBottom(200)) return;
+            while (true) {
+                const last = $('pad-bottom').previousElementSibling;
+                if (!last || !last.classList.contains('msg')) break;
+                const count = box.querySelectorAll('.msg').length;
+                if (count <= MAX_DOM) break;
+                const h = last.offsetHeight + GAP;
+                removedBottom.push({ el: last, h });
+                last.remove(); setBottomPad(bottomPadPx + h);
+            }
+        }
+        function maybeRestoreBottom(chunk = 24) {
+            if (!removedBottom.length) return;
+            const box = $('msgs'); const dist = (box.scrollHeight - box.clientHeight - box.scrollTop);
+            if (dist > 1200) return;
+            let n = 0; while (removedBottom.length && n < chunk) {
+                const { el, h } = removedBottom.pop();
+                $('pad-bottom').before(el); setBottomPad(bottomPadPx - h); n++;
+            }
+        }
+
+        const jumpBtn = (() => {
+            const el = $('jump');
+            function sync() { if (nearBottom(120)) { el.classList.remove('show'); el.style.display = 'none'; } else { el.style.display = ''; el.classList.add('show'); } }
+            el.addEventListener('click', () => { while (removedBottom.length) { const { el: n, h } = removedBottom.pop(); $('pad-bottom').before(n); setBottomPad(bottomPadPx - h); } scrollToBottom(); sync(); });
+            return { sync };
+        })();
+
+        /* ---------------- open/paging/realtime ---------------- */
+        async function openConversation(id) {
+            console.debug('[DM] openConversation:start', { id });
+
+            if (state.es) { try { state.es.close(); } catch { } state.es = null; }
+            if (state.poll) { clearInterval(state.poll); state.poll = null; }
+
+            state.convId = id; saveLastDM();
+            applySelectedHighlight();
+
+            // ✅ Seed header the SAME way the sidebar seeds rows: via convMeta, then let updateEverywhere drive the DOM.
+            if (!state.convMeta.has(id)) {
+                const seedItem = state.convItems.get(id) || {};
+                state.convMeta.set(id, { name: seedItem.title || 'Direct Message', photo: DEFAULT_PFP });
+            }
+            updateEverywhere(id);
+
+            // ✅ Kick off the SAME meta hydration hooks the sidebar uses.
+            // 1) Basic conversation detail → merge into convMeta
+            fetchConvMeta(id).catch(() => { });
+
+            // 2) Try to resolve OG then hydrate user → setConvMeta (same hooks the list uses)
+            const haveOg = state.convUserOg.has(id);
+            if (!haveOg) {
+                try {
+                    const det = await api(`/dm/conversations/${id}?include=members,participants,other`);
+                    const og = extractOgFromConvDetail(det);
+                    if (og) {
+                        state.convUserOg.set(id, og);
+                        setConvMeta(id, { name: '@' + og, photo: DEFAULT_PFP }, 'open->detail-og');
+                        fetchUserByOg(og)
+                            .then(u => setConvMeta(id, metaFromUser(u), 'open->detail-user'))
+                            .catch(e => console.debug('[DM] open detail user fail', id, og, e?.message || e));
+                    }
+                } catch (e) {
+                    console.debug('[DM] open detail fail', id, e?.message || e);
+                }
+            } else {
+                const og = state.convUserOg.get(id);
+                setConvMeta(id, { name: '@' + og, photo: DEFAULT_PFP }, 'open->og-seed');
+                fetchUserByOg(og)
+                    .then(u => setConvMeta(id, metaFromUser(u), 'open->user'))
+                    .catch(e => console.debug('[DM] open user fetch fail', id, og, e?.message || e));
+            }
+
+            // messages bootstrap (unchanged)
+            const box = $('msgs');
+            box.innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
+            setBottomPad(0); removedBottom = []; state.lastMsgId = 0; state.oldestMsgId = null; state.nextBefore = null;
+
+            const j = await api(`/dm/conversations/${id}/messages?limit=30`);
+            appendMessagesAscending(j.items || []);
+            state.nextBefore = j.next_before;
+
+            try { await (document.fonts && document.fonts.ready); } catch { }
+            await afterPaint(); await afterPaint();
+            scrollToBottom();
+
+            jumpBtn.sync();
+            openStream(id);
+            startCatchup();
+
+            // As an extra sanity: if OG still unknown, peek a sender and hydrate via the SAME hook
+            if (!state.convUserOg.get(id)) {
+                const otherMsg = (j.items || []).find(x => (x.sender_id | 0) !== (state.meId | 0));
+                const u = otherMsg?.sender;
+                const maybeOg = pickUsername(u);
+                if (maybeOg) {
+                    state.convUserOg.set(id, maybeOg);
+                    setConvMeta(id, { name: '@' + maybeOg, photo: DEFAULT_PFP }, 'open->peek-og');
+                    fetchUserByOg(maybeOg)
+                        .then(us => setConvMeta(id, metaFromUser(us), 'open->peek-user'))
+                        .catch(e => console.debug('[DM] open peek user fail', id, maybeOg, e?.message || e));
+                }
+            }
+        }
+
+        $('msgs').addEventListener('scroll', async () => {
+            jumpBtn.sync(); maybeRestoreBottom();
+            const box = $('msgs');
+            if (box.scrollTop <= 20 && state.nextBefore) {
+                const j = await api(`/dm/conversations/${state.convId}/messages?before=${state.nextBefore}&limit=20`);
+                prependOlderAscending(j.items || []); state.nextBefore = j.next_before;
+            }
+        });
+
+        function openStream(id) {
+            const es = new EventSource(`${API}/dm/conversations/${id}/stream`, { withCredentials: true });
+            state.es = es;
+            es.addEventListener('new', async () => {
+                const j = await api(`/dm/conversations/${state.convId}/messages?after=${state.lastMsgId}&limit=100`);
+                if (!j.items || !j.items.length) return;
+                const stick = nearBottom(80);
+                appendMessagesAscending(j.items);
+                if (stick) { await afterPaint(); scrollToBottom(); }
+                loadConversations().catch(() => { });
+                jumpBtn.sync();
+            });
+        }
+        function startCatchup() { state.poll = setInterval(() => { fetchAfter(state.lastMsgId).catch(() => { }); }, 30000); }
+        async function fetchAfter(lastId) {
+            const j = await api(`/dm/conversations/${state.convId}/messages?after=${lastId}&limit=100`);
+            if (!j.items || !j.items.length) return;
+            const stick = nearBottom(80);
+            appendMessagesAscending(j.items);
+            if (stick) { await afterPaint(); scrollToBottom(); }
+            loadConversations().catch(() => { });
+            jumpBtn.sync();
+        }
+
+        /* ---------------- attachments + voice ---------------- */
+        const MAX = 1024 * 1024;
+        const chips = $('att-chips'); const recWarn = $('rec-warn');
+
+        function refreshChips() {
+            chips.innerHTML = '';
+            state.pendingFiles.forEach((f, i) => {
+                const c = document.createElement('div'); c.className = 'chip';
+                c.innerHTML = `<span>${esc(f.name)} · ${(f.size / 1024 | 0)} KB</span><span class="x">✕</span>`;
+                c.querySelector('.x').onclick = () => { state.pendingFiles.splice(i, 1); refreshChips(); };
+                chips.append(c);
+            });
+        }
+        function addPendingFile(o) { state.pendingFiles.push(o); refreshChips(); }
+
+        async function gzipBytes(uint8) {
+            if (!('CompressionStream' in window)) return { buf: uint8, encoding: null };
+            const cs = new CompressionStream('gzip'); const w = cs.writable.getWriter(); await w.write(uint8); await w.close();
+            const res = await new Response(cs.readable).arrayBuffer(); return { buf: new Uint8Array(res), encoding: 'gzip' };
+        }
+        async function compressImage(file, maxSide = 1280, q = .75) {
+            const img = await createImageBitmap(file);
+            let { width: w, height: h } = img; const s = Math.min(1, maxSide / Math.max(w, h)); w = (w * s) | 0; h = (h * s) | 0;
+            const canvas = new OffscreenCanvas(w, h); const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+            let blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: q });
+            while (blob.size > MAX && q > 0.4) { q -= 0.1; blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: q }); }
+            if (blob.size > MAX) throw new Error('Image too large even after compression');
+            return new Uint8Array(await blob.arrayBuffer());
+        }
+        async function compressGeneric(file) {
+            const uint = new Uint8Array(await file.arrayBuffer());
+            const { buf, encoding } = await gzipBytes(uint);
+            if (buf.length > MAX) throw new Error('File too large after compression');
+            return { buf, encoding };
+        }
+        async function handleFileInput(files) {
+            for (const file of files) {
+                try {
+                    const type = (file.type || '').toLowerCase();
+                    if (type.startsWith('image/')) {
+                        const buf = await compressImage(file);
+                        addPendingFile({ name: file.name.replace(/\.(png|webp|jpeg|jpg)$/i, '.jpg'), type: 'image/jpeg', buf, size: buf.length, encoding: null });
+                    } else {
+                        const { buf, encoding } = await compressGeneric(file);
+                        addPendingFile({ name: (encoding === 'gzip' && !/\.gz$/i.test(file.name)) ? file.name + '.gz' : file.name, type: file.type || 'application/octet-stream', buf, size: buf.length, encoding });
+                    }
+                } catch (e) { alert(`${file.name}: ${e.message || e}`); }
+            }
+        }
+
+        async function startRecording() {
+            if (state.recording.active) return;
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus', bitsPerSecond: 48000 });
+            state.recording = { active: true, chunks: [], size: 0, rec, warnShown: false };
+
+            rec.ondataavailable = (e) => {
+                if (!e.data || !e.data.size) return;
+                state.recording.chunks.push(e.data); state.recording.size += e.data.size;
+                if (!state.recording.warnShown && state.recording.size > 850 * 1024) { recWarn.style.display = ''; recWarn.textContent = 'Approaching 1MB limit…'; state.recording.warnShown = true; }
+                if (state.recording.size > 990 * 1024) { stopRecording(true); }
+            };
+            rec.onstop = async () => {
+                recWarn.style.display = 'none';
+                const blob = new Blob(state.recording.chunks, { type: 'audio/webm;codecs=opus' });
+                try { stream.getTracks().forEach(t => t.stop()); } catch { }
+                if (!blob.size) { state.recording = { active: false, chunks: [], size: 0, rec: null, warnShown: false }; return; }
+                try {
+                    const ab = await blob.arrayBuffer();
+                    const { buf, encoding } = await gzipBytes(new Uint8Array(ab));
+                    if (buf.length > MAX) throw new Error('Voice message too large');
+                    addPendingFile({ name: 'voice.webm', type: 'audio/webm', buf, size: buf.length, encoding });
+                } catch (e) { alert(e.message || e); }
+                state.recording = { active: false, chunks: [], size: 0, rec: null, warnShown: false };
+            };
+            rec.start(200);
+        }
+        function stopRecording(force = false) {
+            const r = state.recording.rec;
+            if (r && r.state !== 'inactive') { try { r.stop(); } catch { } }
+            state.recording.active = false;
+            if (force) recWarn.textContent = 'Stopped to keep under 1MB.';
+        }
+
+        /* ---------------- send ---------------- */
+        async function sendMessage() {
+            if (!state.convId || state.uploading) return;
+            let text = $('text').value;
+            if (!text && state.pendingFiles.length === 0) return;
+            if (text.length > 10000) { alert('Message is over 10,000 characters. Please shorten it.'); return; }
+            text = text.trim();
+
+            const fd = new FormData();
+            fd.append('text', text);
+            state.pendingFiles.forEach((f, i) => {
+                const blob = new Blob([f.buf], { type: f.type || 'application/octet-stream' });
+                const name = f.name || `file-${i}`;
+                fd.append('files', blob, name);
+                if (f.encoding) fd.append(`encoding_${name}`, f.encoding);
+            });
+
+            state.uploading = true;
+            try {
+                const r = await fetch(`${API}/dm/conversations/${state.convId}/messages`, { method: 'POST', credentials: 'include', body: fd });
+                const t = await r.text(); if (!r.ok) throw new Error(t || r.statusText);
+                const j = JSON.parse(t);
+                if (j && j.id) state.lastMsgId = Math.max(state.lastMsgId, j.id | 0);
+                $('text').value = ''; state.pendingFiles = []; refreshChips();
+                await fetchAfter(state.lastMsgId);
+                loadConversations().catch(() => { });
+                if (nearBottom()) { await afterPaint(); scrollToBottom(); }
+            } catch (e) { alert(e.message || e); }
+            finally { state.uploading = false; }
+        }
+
+        /* ---------------- overlay (friends / start DM) ---------------- */
+        const overlay = $('overlay'), userList = $('user-list');
+        const pageSlug = (location.pathname.match(/\/user\/([^\/]+)\/messages/i) || [])[1]
+            ? decodeURIComponent((location.pathname.match(/\/user\/([^\/]+)\/messages/i) || [])[1]) : '';
+
+        async function fetchFriends() {
+            try {
+                const j = await api(`/users/${encodeURIComponent(pageSlug || 'me')}/friends?offset=0&limit=500`);
+                return (j.items || []).map(u => ({ id: u.id, username: u.username || null, first_username: u.first_username || null, profile_photo: u.profile_photo || null, bio: u.bio || u.bio_html || '' }));
+            } catch {
+                const j = await api('/users/me/friends');
+                return (j.friends || []).map(u => ({
+                    id: null,
+                    username: u.username || null,
+                    first_username: u.first_username || null,
+                    profile_photo: null,
+                    bio: ''
+                }));
+            }
+        }
+        function renderFriends(list) {
+            userList.innerHTML = '';
+            const q = $('user-q').value.trim().toLowerCase();
+            list.filter(u => {
+                if (!q) return true;
+                return (u.username || '').toLowerCase().includes(q) || (u.first_username || '').toLowerCase().includes(q) || (u.bio || '').toLowerCase().includes(q);
+            }).forEach(u => {
+                const row = document.createElement('div'); row.className = 'person';
+                row.innerHTML = `
+        <img class="pfp" src="${u.profile_photo || DEFAULT_PFP}" alt="">
+        <div>
+          <div class="name">@${u.username || u.first_username || 'user'}</div>
+          <div class="bio">${esc(u.bio || '')}</div>
+        </div>
+        <div class="act"></div>`;
+                const go = document.createElement('button'); go.className = 'btn'; go.textContent = 'Message';
+                go.onclick = async (e) => { e.stopPropagation(); await startDmWith(u); };
+                row.querySelector('.act').append(go);
+                row.onclick = () => go.click();
+                userList.append(row);
+            });
+        }
+        async function openPicker() { overlay.style.display = 'flex'; $('user-q').value = ''; renderFriends(await fetchFriends()); }
+        function closePicker() { overlay.style.display = 'none'; }
+        $('btn-newdm').onclick = () => openPicker();
+        $('btn-newgroup').onclick = () => openPicker();
+        overlay.addEventListener('click', e => { if (e.target === overlay) closePicker(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closePicker(); });
+        $('user-q').addEventListener('input', async () => renderFriends(await fetchFriends()));
+
+        async function startDmWith(u) {
+            try {
+                const og = u.first_username || u.username;
+                const res = await api(`/dm/with/${encodeURIComponent(og)}`, { method: 'POST' });
+                closePicker(); await loadConversations();
+                const cid = res?.conversation_id || res?.id;
+
+                if (cid) {
+                    // pin OG and meta based on the same source as the picker
+                    state.convUserOg.set(cid, og);
+                    const meta = { name: '@' + og, photo: u.profile_photo || DEFAULT_PFP };
+                    setConvMeta(cid, meta, 'startDmWith');
+                    // also prime cache so header snaps instantly
+                    state.userCache.set(og, { username: og, photo: u.profile_photo || DEFAULT_PFP, display_name: null, raw: u });
+
+                    openConversation(cid);
+                } else if (state.allConvs[0]) {
+                    openConversation(state.allConvs[0].id);
+                }
+            } catch (e) { alert(e.message || e); }
+        }
+
+        /* ---------------- wire UI ---------------- */
+        $('btn-attach').onclick = () => $('file').click();
+        $('file').onchange = async e => { await handleFileInput(e.target.files); e.target.value = ''; };
+        $('btn-send').onclick = sendMessage;
+        $('text').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+
+        const voice = $('btn-voice');
+        const start = e => { e.preventDefault(); voice.textContent = 'Recording… release to stop'; startRecording(); };
+        const stop = e => { e.preventDefault(); voice.textContent = 'Hold to record'; stopRecording(false); };
+        voice.addEventListener('pointerdown', start);
+        voice.addEventListener('pointerup', stop);
+        voice.addEventListener('pointercancel', stop);
+        voice.addEventListener('mouseleave', () => { if (state.recording.active) stop(new Event('pointerup')); });
+
+        /* ---------------- boot ---------------- */
+        (async () => {
+            await getMe();
+            await loadConversations();
+
+            const last = loadLastDM();
+            if (last && (last.meId | 0) === (state.meId | 0)) {
+                const exists = state.allConvs.find(c => (c.id | 0) === (last.convId | 0));
+                if (exists) {
+                    await openConversation(exists.id);
+                    return;
+                }
+            }
+        })();
+    })();
+</script>

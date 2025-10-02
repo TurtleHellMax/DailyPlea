@@ -1,19 +1,22 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
-const { ipKeyGenerator } = require('express-rate-limit');
-const { issueCsrfToken } = require('./security');
 const path = require('path');
-const WEB_ROOT = path.join(__dirname, '..'); // repo root
 
+const { issueCsrfToken } = require('./security');
 const { db, migrate } = require('./db');
+const { requireAuth } = require('./routes-auth');
+const dm = require('./routes-dm');
+
+const WEB_ROOT = path.join(__dirname, '..'); // repo root
 migrate();
 
 const app = express();
 
+/* ---------------- helpers ---------------- */
 function listRoutes(app) {
     const out = [];
     const stack = app._router?.stack || [];
@@ -21,44 +24,45 @@ function listRoutes(app) {
         if (layer.route) {
             out.push({ base: '', path: layer.route.path, methods: Object.keys(layer.route.methods) });
         } else if (layer.name === 'router' && layer.handle?.stack) {
-            // mounted router (e.g. at /api)
             const mount = layer.regexp?.toString() || '';
             for (const r of layer.handle.stack) {
-                if (r.route) {
-                    out.push({
-                        base: mount, path: r.route.path,
-                        methods: Object.keys(r.route.methods)
-                    });
-                }
+                if (r.route) out.push({ base: mount, path: r.route.path, methods: Object.keys(r.route.methods) });
             }
         }
     }
     return out;
 }
+
+/* ---------------- middleware ---------------- */
 app.get('/api/_routes', (req, res) => res.json(listRoutes(app)));
+
 app.use(express.static(WEB_ROOT, {
     setHeaders(res, filePath) {
         if (filePath.endsWith('.js')) res.type('application/javascript; charset=utf-8');
         if (filePath.endsWith('.css')) res.type('text/css; charset=utf-8');
     }
 }));
+
 app.use(helmet({
-    contentSecurityPolicy: false,              // disable strict CSP in dev (we use inline scripts & data URLs)
-    crossOriginResourcePolicy: { policy: "cross-origin" }, // allow images/resources across localhost:3000/5500
-    crossOriginEmbedderPolicy: false,          // avoids COEP headaches with canvas in dev
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginEmbedderPolicy: false,
 }));
+
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
-app.use(
-    cors({
-        origin: ['http://localhost:5500', 'http://127.0.0.1:5500'],
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-User-Id'],
-    })
-);
+
+app.use(cors({
+    origin: ['http://localhost:5500', 'http://127.0.0.1:5500'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-User-Id'],
+}));
+
+/* ---------------- dev routes (optional) ---------------- */
 app.use('/api/dev', require('./routes-dev').router);
 
+/* ---------------- base info ---------------- */
 app.get('/api', (req, res) => {
     res.json({
         ok: true,
@@ -84,7 +88,10 @@ app.get('/api', (req, res) => {
     });
 });
 
-// CSRF middleware (double-submit). Allow GET/HEAD, protect POST/PUT/PATCH/DELETE
+/* ---------------- DM router BEFORE CSRF (multipart form doesn’t send CSRF) ---------------- */
+app.use('/api', dm.router);
+
+/* ---------------- CSRF ---------------- */
 app.use((req, res, next) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
     const cookieToken = req.cookies.csrf;
@@ -101,28 +108,28 @@ app.get('/api/csrf', (req, res) => {
     res.json({ token: t });
 });
 
-app.set('trust proxy', true); // keep this
-
+/* ---------------- rate limit ---------------- */
+app.set('trust proxy', true);
 const authLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: ipKeyGenerator,   // <-- use library helper
+    keyGenerator: (req) => req.ip,
     skipFailedRequests: true,
 });
-
 app.use('/api/auth', authLimiter);
 
+/* ---------------- health ---------------- */
 app.get('/health', (req, res) => res.json({ ok: true }));
 
+/* ---------------- static / other routers ---------------- */
 app.use('/web', express.static('web', {
     setHeaders: (res, p) => {
-        if (p.endsWith('.js') || p.endsWith('.mjs')) {
-            res.setHeader('Content-Type', 'application/javascript');
-        }
+        if (p.endsWith('.js') || p.endsWith('.mjs')) res.setHeader('Content-Type', 'application/javascript');
     }
 }));
+
 app.use('/api/auth', require('./routes-auth').router);
 app.use('/api', require('./routes-saves').router);
 app.use('/api', require('./routes-social').router);
@@ -130,43 +137,61 @@ app.use('/api', require('./routes-users').router);
 app.use('/api', require('./routes-friends').router);
 app.use('/api/admin', require('./routes-admin').router);
 
-// (optional) if you want /pleas/78 to work without a .html extension:
+/* ---------------- pretty routes for web shells ---------------- */
 app.get('/pleas/:id', (req, res, next) => {
     const f = path.join(WEB_ROOT, 'pleas', `${req.params.id}.html`);
     res.sendFile(f, err => err ? next() : undefined);
 });
 
 app.get('/user/:slug/friends', (req, res, next) => {
-    res.set('Cache-Control', 'no-store');         // <� important
+    res.set('Cache-Control', 'no-store');
     const f = path.join(WEB_ROOT, 'web', 'user-friends.html');
     res.sendFile(f, err => err ? next() : undefined);
 });
 
-// serve the user profile shell (same idea as /pleas/:id)
 app.get('/user/:slug/edit', (req, res, next) => {
-    const f = path.join(WEB_ROOT, 'web', 'user.html'); // editor shell
+    const f = path.join(WEB_ROOT, 'web', 'user.html');
     res.sendFile(f, err => err ? next() : undefined);
 });
 
-// VIEW page (separate, lightweight display shell)
+app.get('/user/:slug/messages', (req, res, next) => {
+    const f = path.join(WEB_ROOT, 'web', 'messages.html');
+    res.sendFile(f, err => err ? next() : undefined);
+});
+
 app.get('/user/:slug', (req, res, next) => {
-    const f = path.join(WEB_ROOT, 'web', 'user-view.html'); // new viewer shell
+    const f = path.join(WEB_ROOT, 'web', 'user-view.html');
     res.sendFile(f, err => err ? next() : undefined);
 });
 
-const port = +(process.env.PORT || 3000);
-app.listen(port, () => console.log('Server on http://localhost:' + port));
+/* ---------------- helper to create or reuse a 1:1 DM ----------------
+   This proxies to POST /api/dm/conversations so keys get created the same way. */
+app.post('/api/dm/with/:slug', requireAuth, (req, res, next) => { 
+    const slug = String(req.params.slug || '');
+    const other = db.prepare(
+        `SELECT id FROM users WHERE lower(username)=lower(?) OR lower(first_username)=lower(?) LIMIT 1`
+    ).get(slug, slug);
+    if (!other) return res.status(404).json({ error: 'user_not_found' });
+    if (other.id === req.userId) return res.status(400).json({ error: 'self' });
 
+    // Reuse the DM router’s /dm/conversations handler so conv key is created
+    req.body = { user_ids: [req.userId, other.id] };
+    req.url = '/dm/conversations';
+    req.method = 'POST';
+    return dm.router.handle(req, res, next); 
+});
+
+/* ---------------- error handler ---------------- */
 app.use((err, req, res, next) => {
     console.error('UNCAUGHT', req.method, req.url, '\n', err);
     if (res.headersSent) return next(err);
     res.status(500).json({
         error: 'server_error',
         route: `${req.method} ${req.path}`,
-        detail: String(err && err.message || err)
+        detail: String((err && err.message) || err)
     });
 });
 
-const social = require('./routes-social');
-console.log('routes-social keys:', Object.keys(social)); // should include 'router'
-app.use('/api', social.router);
+/* ---------------- start ---------------- */
+const port = +(process.env.PORT || 3000);
+app.listen(port, () => console.log('Server on http://localhost:' + port));

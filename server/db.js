@@ -508,6 +508,70 @@ function ensureCommentsAndVotes() {
     } catch { }
 }
 
+/* ---------- DMs ---------- */
+function ensureDMTables() {
+    db.exec(`
+  PRAGMA foreign_keys=ON;
+
+  -- Conversations (1:1 or group). Title optional (non-null for groups)
+  CREATE TABLE IF NOT EXISTS dm_conversations (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    is_group     INTEGER NOT NULL DEFAULT 0,
+    title        TEXT,
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  -- Members
+  CREATE TABLE IF NOT EXISTS dm_members (
+    conversation_id INTEGER NOT NULL,
+    user_id         INTEGER NOT NULL,
+    joined_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (conversation_id, user_id),
+    FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id)         REFERENCES users(id)             ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_dm_members_user ON dm_members(user_id);
+
+  -- Per-conversation key (encrypted using server master key)
+  CREATE TABLE IF NOT EXISTS dm_conversation_keys (
+    conversation_id INTEGER PRIMARY KEY,
+    key_cipher      BLOB NOT NULL,
+    key_nonce       BLOB NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE
+  );
+
+  -- Messages
+  CREATE TABLE IF NOT EXISTS dm_messages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    sender_id       INTEGER NOT NULL,
+    kind            TEXT NOT NULL DEFAULT 'text', -- 'text' | 'mix' | 'file'
+    body_cipher     BLOB,                         -- AES-GCM ciphertext of JSON { text }
+    body_nonce      BLOB,                         -- 12B nonce for body
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY(sender_id)       REFERENCES users(id)            ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_dm_messages_conv_id ON dm_messages(conversation_id, id DESC);
+
+  -- Attachments (encrypted bytes)
+  CREATE TABLE IF NOT EXISTS dm_attachments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id      INTEGER NOT NULL,
+    filename        TEXT NOT NULL,
+    mime_type       TEXT NOT NULL,
+    encoding        TEXT,            -- null or 'gzip'
+    size_bytes      INTEGER NOT NULL,
+    blob_cipher     BLOB NOT NULL,
+    blob_nonce      BLOB NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(message_id) REFERENCES dm_messages(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_dm_attachments_msg_id ON dm_attachments(message_id);
+  `);
+}
+
 /* ---------- master migration ---------- */
 function migrate() {
     // Order matters: users → credentials/sessions/2FA → resets → comments
@@ -519,6 +583,7 @@ function migrate() {
     ensureEmailOtpTable();
     ensurePasswordResetsTable();
     ensureCommentsAndVotes();
+    ensureDMTables();
 }
 
 module.exports = { db, migrate, dbPath };
