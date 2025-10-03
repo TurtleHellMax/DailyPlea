@@ -478,7 +478,6 @@ function ensureCommentsAndVotes() {
 }
 
 /* ---------- DMs ---------- */
-/* ---------- DMs ---------- */
 function ensureDMTables() {
     db.exec(`
     PRAGMA foreign_keys=ON;
@@ -532,6 +531,7 @@ function ensureDMTables() {
       mime_type       TEXT NOT NULL,
       encoding        TEXT,
       size_bytes      INTEGER NOT NULL,
+      duration_ms     INTEGER,
       blob_cipher     BLOB NOT NULL,
       blob_nonce      BLOB NOT NULL,
       created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -557,12 +557,51 @@ function ensureDMTables() {
       FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
       FOREIGN KEY(owner_id)        REFERENCES users(id) ON DELETE SET NULL
     );
+
+    CREATE TABLE IF NOT EXISTS dm_message_colors (
+      conversation_id INTEGER NOT NULL,
+      user_id         INTEGER NOT NULL,
+      color           TEXT,
+      updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(conversation_id, user_id),
+      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
+      FOREIGN KEY(user_id)         REFERENCES users(id)            ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS dm_hidden (
+      user_id            INTEGER NOT NULL,
+      conversation_id    INTEGER NOT NULL,
+      last_hidden_msg_id INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(user_id, conversation_id),
+      FOREIGN KEY(user_id)         REFERENCES users(id)             ON DELETE CASCADE,
+      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id)  ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_hidden_conv ON dm_hidden(conversation_id);
+
+    CREATE TABLE IF NOT EXISTS dm_conv_blocks (
+      user_id         INTEGER NOT NULL,
+      conversation_id INTEGER NOT NULL,
+      created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id, conversation_id),
+      FOREIGN KEY(user_id)         REFERENCES users(id)             ON DELETE CASCADE,
+      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id)  ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dm_msgcolors_conv ON dm_message_colors(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_dm_msgcolors_user ON dm_message_colors(user_id);
+    DROP TRIGGER IF EXISTS trg_dm_message_colors_updated_at;
+    CREATE TRIGGER trg_dm_message_colors_updated_at
+    AFTER UPDATE ON dm_message_colors
+    FOR EACH ROW BEGIN
+      UPDATE dm_message_colors SET updated_at = CURRENT_TIMESTAMP
+      WHERE conversation_id = NEW.conversation_id AND user_id = NEW.user_id;
+    END;
   `);
 
     // safety columns
     addColumnIfMissing('dm_conversations', `owner_id INTEGER`);
     addColumnIfMissing('dm_conversations', `deleted_at TEXT`);
     addColumnIfMissing('dm_conversations', `color TEXT`);
+    addColumnIfMissing('dm_attachments', `duration_ms INTEGER`);
 
     // backfill owner for old groups
     try {

@@ -114,6 +114,7 @@
         box-shadow: 0 1px 0 var(--soft) inset;
         line-height: 1;
         white-space: nowrap;
+        transition: background-color .12s ease, color .12s ease, border-color .12s ease;
     }
 
         .btn[disabled] {
@@ -123,8 +124,8 @@
 
         .btn:hover {
             background: #fff !important;
-            color: #000;
-            border-color: #fff;
+            color: #000 !important;
+            border-color: #fff !important;
         }
 
     .iconbtn {
@@ -136,6 +137,7 @@
         place-items: center;
         width: 38px;
         height: 38px;
+        transition: background-color .12s ease;
     }
 
         .iconbtn:hover {
@@ -166,6 +168,8 @@
             background: rgba(255,255,255,.10);
             outline: 2px solid #fff;
         }
+
+        .left .conv > div { min-width: 0; }
 
     .avatar {
         width: 44px;
@@ -215,6 +219,7 @@
         border: var(--bw) solid var(--border);
         object-fit: cover;
         background: #000;
+        border-radius: 999px !important;
     }
 
     .chat-title {
@@ -256,7 +261,7 @@
         flex-direction: column;
         gap: 6px;
         min-height: 0;
-        position: relative; /* ⬅️ add */
+        position: relative;
     }
 
     #pad-top, #pad-bottom {
@@ -366,9 +371,9 @@
     }
 
     .jump {
-        position: sticky; /* ⬅️ sits within the scroller */
-        bottom: 12px; /* ⬅️ floats just above the bottom edge */
-        align-self: center; /* ⬅️ centers horizontally in the flex column */
+        position: sticky;
+        bottom: 12px;
+        align-self: center;
         opacity: 0;
         pointer-events: none;
         transition: opacity .18s ease;
@@ -442,6 +447,7 @@
         border: 2px solid #fff;
         background: #000;
         object-fit: cover;
+        border-radius: 999px !important;
     }
 
     .person .name {
@@ -484,11 +490,11 @@
         .checkbox:hover:not(:checked) {
             opacity: .5;
         }
-        /* 50% opacity on hover when not selected */
+
         .checkbox:checked {
             background: #fff;
         }
-        /* filled white square when checked */
+
         .checkbox:disabled {
             opacity: .3;
             cursor: not-allowed;
@@ -505,12 +511,10 @@
         object-fit: cover;
     }
 
-        /* Default group icon tint helper */
         .chat-pfp.tinted-default {
             box-shadow: 0 0 0 2px var(--gc, #fff) inset;
         }
 
-    /* chips row in picker footer */
     #selected-chips {
         flex: 1;
         display: flex;
@@ -557,7 +561,72 @@
 
         #restyle-overlay .controls input[type="range"] {
             width: 100%;
+            background: transparent;
+            cursor: pointer;
         }
+
+    /* Square knobs + same track look as profile editor */
+    #restyle-overlay input[type="range"]::-webkit-slider-runnable-track {
+        height: 6px;
+        border-radius: 999px;
+        background: #1f2a37;
+    }
+
+    #restyle-overlay input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 0 !important; /* ⬅︎ square */
+        background: #3b82f6;
+        border: 2px solid transparent;
+        margin-top: -6px;
+    }
+
+    #restyle-overlay input[type="range"]::-moz-range-track {
+        height: 6px;
+        border-radius: 999px;
+        background: #1f2a37;
+    }
+
+    #restyle-overlay input[type="range"]::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 0 !important; /* ⬅︎ square */
+        background: #3b82f6;
+        border: 2px solid transparent;
+    }
+    /* hover invert */
+    #restyle-overlay input[type="range"]:hover::-webkit-slider-runnable-track {
+        background: #fff !important;
+    }
+
+    #restyle-overlay input[type="range"]:hover::-moz-range-track {
+        background: #fff !important;
+    }
+
+    #restyle-overlay input[type="range"]:hover::-webkit-slider-thumb {
+        background: #000 !important;
+    }
+
+    #restyle-overlay input[type="range"]:hover::-moz-range-thumb {
+        background: #000 !important;
+    }
+    /* active revert */
+    #restyle-overlay input[type="range"]:active::-webkit-slider-runnable-track {
+        background: #1f2a37 !important;
+    }
+
+    #restyle-overlay input[type="range"]:active::-moz-range-track {
+        background: #1f2a37 !important;
+    }
+
+    #restyle-overlay input[type="range"]:active::-webkit-slider-thumb {
+        background: #3b82f6 !important;
+    }
+
+    #restyle-overlay input[type="range"]:active::-moz-range-thumb {
+        background: #3b82f6 !important;
+    }
 
     #restyle-overlay .file-row {
         display: flex;
@@ -575,6 +644,7 @@
         background: #0d1520;
         border: 1px solid var(--border);
         cursor: pointer;
+        transition: background-color .12s ease, color .12s ease, border-color .12s ease;
     }
 
     #restyle-overlay .pf-preview {
@@ -592,10 +662,10 @@
         #restyle-overlay .pf-preview .thumb {
             width: 88px;
             height: 88px;
-            border-radius: 50%;
+            border-radius: 999px !important; /* ⬅︎ force round despite global reset */
             overflow: hidden;
             background: #0e1622;
-            border: var(--bw) solid #fff; /* thicker white ring like profile */
+            border: var(--bw) solid #fff; /* thick white ring */
             display: grid;
             place-items: center;
         }
@@ -605,6 +675,126 @@
             max-height: 100%;
             display: block;
         }
+
+        #restyle-overlay .pf-preview .thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* or 'cover' if you prefer a tighter crop */
+            display: block;
+        }
+
+        #restyle-overlay .pf-preview .thumb img.is-default {
+            transform: scale(1.12); /* tweak 1.05–1.2 to taste */
+        }
+
+    .msg img.att,
+    .msg video.att {
+        max-width: 100%;
+        width: 100%;
+        height: auto;
+        display: block;
+    }
+
+    .msg audio.att {
+        width: 100%;
+    }
+
+    /* Custom audio player */
+    .audp {
+        display: grid;
+        grid-template-columns: 38px 1fr auto;
+        gap: 10px;
+        align-items: center;
+        width: 100%;
+        border: 1px solid var(--border);
+        background: #0e1116;
+        padding: 8px;
+        box-shadow: 0 1px 0 var(--soft) inset;
+    }
+
+    .audp-btn {
+        width: 34px;
+        height: 34px;
+        border: var(--bw) solid var(--border);
+        background: #0e1116;
+        color: var(--text);
+        font-weight: 700;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+    }
+
+        .audp-btn:hover {
+            background: #151921;
+        }
+
+    .audp-track {
+        position: relative;
+        height: 6px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,.08);
+        cursor: pointer;
+    }
+
+    .audp-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 0%;
+        height: 100%;
+        background: #fff;
+    }
+
+    .audp-time {
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+    }
+
+    .audp audio {
+        display: none;
+    }
+
+
+    /* Audio duration chip overlay */
+    .att-audio {
+        position: relative;
+    }
+
+    .att-audio .aud-dur {
+        position: absolute;
+        right: 8px;
+        bottom: 8px;
+        padding: 2px 6px;
+        font-size: 12px;
+        background: rgba(0,0,0,.7);
+        border: 1px solid var(--border);
+        color: var(--text);
+        pointer-events: none;
+        user-select: none;
+    }
+
+    .msg .from {
+        font-weight: 700;
+        font-size: 12px;
+        color: var(--muted);
+        margin: -2px 0 6px;
+    }
+
+    /* let each bubble opt-in to its own border color via a CSS var */
+    .msg {
+        border-color: var(--mbc, var(--border));
+    }
+
+    .pixel {
+        image-rendering: pixelated;
+        image-rendering: crisp-edges; /* fallback */
+        image-rendering: -moz-crisp-edges; /* Firefox */
+    }
+
+    /* also ensure the default preview is pixelated */
+    #restyle-overlay .pf-preview .thumb img.is-default {
+        image-rendering: pixelated;
+    }
 </style>
 
 <div class="wrap">
@@ -690,6 +880,9 @@
             convItems: new Map(),        // convId -> raw item
 
             // group/menu
+            audioPlayers: new Map(), // attId -> { root, audio, btn, track, fill, curEl, totEl, totalMs, dragging }
+            audioDurEls: new Map(), // attId -> { audio: HTMLAudioElement, chip: HTMLElement }
+            msgColorsByConv: new Map(),
             convDetailById: new Map(),
             currentConvDetail: null,     // {id,is_group,title,owner_id,is_owner,members:[]}
             pickerMode: 'dm',            // 'dm' | 'group-create' | 'group-edit' | 'view-members'
@@ -736,6 +929,33 @@
         const pickPhoto = o => o?.profile_photo || o?.profile_photo_url || o?.photo || o?.photo_url || o?.avatar || o?.avatar_url || o?.picture || o?.image || o?.image_url || null;
         const pickName = o => o?.display_name || o?.name || o?.username || o?.first_username || o?.handle || o?.title || null;
 
+        const HIDE_BEFORE_KEY = 'dp:hideBefore';
+        function _getHideMap() { try { return JSON.parse(localStorage.getItem(HIDE_BEFORE_KEY) || '{}'); } catch { return {}; } }
+        function _setHideMap(m) { try { localStorage.setItem(HIDE_BEFORE_KEY, JSON.stringify(m)); } catch { } }
+        function getHideBeforeId(convId) { const m = _getHideMap(); return m[convId] | 0; }
+        function setHideBeforeId(convId, id) { const m = _getHideMap(); m[convId] = id | 0; _setHideMap(m); }
+        function clearHideBeforeId(convId) { const m = _getHideMap(); delete m[convId]; _setHideMap(m); }
+
+        function filterHidden(items, convId = state.convId) {
+            const cut = getHideBeforeId(convId) | 0;
+            if (!cut) return items || [];
+            return (items || []).filter(m => (m.id | 0) > cut);
+        }
+
+        function joinNames(arr) {
+            const a = (arr || []).filter(Boolean);
+            if (a.length === 0) return 'Group';
+            if (a.length === 1) return a[0];
+            if (a.length === 2) return a[0] + ' & ' + a[1];
+            return a.slice(0, -1).join(', ') + ' & ' + a[a.length - 1];
+        }
+        function labelForMember(u) {
+            return pickName(u) || 'user';
+        }
+        function computeDefaultGroupTitle(members) {
+            return joinNames((members || []).map(labelForMember));
+        }
+
         function saveMetaCache() {
             const out = {
                 convUserOg: Array.from(state.convUserOg.entries()),
@@ -775,6 +995,71 @@
             state.meSlug = j?.user?.first_username || j?.user?.username || '';
             return state.meId;
         }
+        // ---- Server-backed message color helpers ----
+        async function fetchMsgColors(convId) {
+            const j = await api(`/dm/conversations/${convId}/message_colors`);
+            return j?.colors || {}; // { [user_id]: '#hex' }
+        }
+
+        // Set ONLY my color (server infers me from auth)
+        async function setMyMsgColor(convId, color /* '#hex' or null to clear */) {
+            return api(`/dm/conversations/${convId}/message_colors/me`, {
+                method: 'PATCH',
+                body: { color }
+            });
+        }
+
+        // Patch multiple users' colors at once (used on create/add)
+        async function patchMsgColors(convId, colors /* { [user_id]: '#hex' } */) {
+            return api(`/dm/conversations/${convId}/message_colors`, {
+                method: 'PATCH',
+                body: { colors }
+            });
+        }
+
+        // In-memory utilities
+        function setColorMap(convId, map) { state.msgColorsByConv.set(convId, map || {}); }
+        function getColorMap(convId) { return state.msgColorsByConv.get(convId) || {}; }
+        function getBorderColorLS(convId, userId) {
+            const m = getBorderColorMap(convId);
+            return (m && m[userId]) || null;
+        }
+
+        async function syncMsgColors(convId, { retry = 0, backoff = 300 } = {}) {
+            try {
+                let map = await fetchMsgColors(convId);
+                let tries = retry;
+                let delay = backoff;
+                while ((!map || Object.keys(map).length === 0) && tries-- > 0) {
+                    await new Promise(r => setTimeout(r, delay));
+                    delay *= 2; // exponential backoff
+                    map = await fetchMsgColors(convId);
+                }
+                setColorMap(convId, map || {});
+                updateAllMessageBorders();
+                return map || {};
+            } catch {
+                setColorMap(convId, {});
+                return {};
+            }
+        }
+
+        // Choose distinct colors for given user IDs, avoiding already-used colors
+        function chooseUniqueColorsForUsers(userIds, existingMap = {}) {
+            const used = new Set(Object.values(existingMap || {}));
+            const palette = GROUP_COLORS.map(c => c.val);
+            const available = palette.filter(c => !used.has(c));
+            const out = {};
+            for (const uid of userIds) {
+                if (existingMap[uid]) continue;
+                let color = available.length ? available.splice((Math.random() * available.length) | 0, 1)[0]
+                    : palette[(Math.random() * palette.length) | 0];
+                out[uid] = color;
+                used.add(color);
+            }
+            return out; // only the newly-assigned entries
+        }
+
 
         /* ---------------- meta resolution ---------------- */
         async function fetchConvMeta(id) {
@@ -782,32 +1067,27 @@
             try {
                 const j = await api(`/dm/conversations/${id}`);
 
-                // Build meta for the left list/top bar
                 let meta = { name: 'Direct Message', photo: DEFAULT_PFP_DM, is_group: !!j.is_group, color: (j.color || null) };
                 if (j.is_group) {
-                    if ((j.title || '').trim()) meta.name = j.title.trim();
+                    const members = j.members || [];
+                    const autoDefault = computeDefaultGroupTitle(members);
+                    const serverTitle = (j.title || '').trim();
+                    const hasCustom = !!(serverTitle && serverTitle !== autoDefault);
+
+                    meta.name = hasCustom ? serverTitle : autoDefault;
                     meta.photo = j.photo || j.avatar || DEFAULT_PFP_GROUP;
                     meta.color = j.color || meta.color || '#ffffff';
+                    meta.auto_title = !hasCustom;
                 } else {
                     const other = j.other || (Array.isArray(j.members) ? j.members.find(u => (u.id | 0) !== (state.meId | 0)) : null);
                     meta.name = pickName(other) || meta.name;
                     meta.photo = pickPhoto(other) || DEFAULT_PFP_DM;
                 }
 
-                // Stable detail object
-                const detail = {
-                    id: j.id,
-                    is_group: !!j.is_group,
-                    title: j.title || null,
-                    owner_id: j.owner_id || null,
-                    is_owner: !!j.is_owner,
-                    members: j.members || []
-                };
-
+                const detail = { id: j.id, is_group: !!j.is_group, title: j.title || null, owner_id: j.owner_id || null, is_owner: !!j.is_owner, members: j.members || [] };
                 state.convDetailById.set(id, detail);
                 if ((state.convId | 0) === (id | 0)) state.currentConvDetail = detail;
 
-                // Merge/display meta
                 const best = { ...(prev || {}), ...meta };
                 state.convMeta.set(id, best);
                 if ((state.convId | 0) === (id | 0)) updateEverywhere(id);
@@ -847,10 +1127,13 @@
                 pfp.style.setProperty('--gc', gc);
                 const isDefaultGroup = (meta.photo === DEFAULT_PFP_GROUP);
                 pfp.classList.toggle('tinted-default', isDefaultGroup);
+                pfp.classList.toggle('pixel', isDefaultGroup);
                 pfp.style.background = isDefaultGroup ? gc : '#000';
             } else {
+                const isDefaultDm = (meta.photo === DEFAULT_PFP_DM);
                 pfp.style.borderColor = 'var(--border)';
                 pfp.classList.remove('tinted-default');
+                pfp.classList.toggle('pixel', isDefaultDm);
                 pfp.style.background = '#000';
             }
             renderChatMenu();
@@ -867,12 +1150,15 @@
         function setConvRowContent(row, meta, preview) {
             const photo = meta?.photo || (meta?.is_group ? DEFAULT_PFP_GROUP : DEFAULT_PFP_DM);
             const border = meta?.is_group ? (meta?.color || '#fff') : '#fff';
+            const isDefault = (photo === DEFAULT_PFP_GROUP) || (photo === DEFAULT_PFP_DM);
             row.innerHTML = `
-            <img class="avatar ${photo === DEFAULT_PFP_GROUP ? 'tinted-default' : ''}" src="${photo}" alt="" style="border-color:${border}; background:${photo === DEFAULT_PFP_GROUP ? border : '#000'}">
-            <div>
-                <div class="name">${esc(meta?.name || 'Direct Message')}</div>
-                <div class="preview">${esc(preview || '…')}</div>
-            </div>`;
+    <img class="avatar ${photo === DEFAULT_PFP_GROUP ? 'tinted-default' : ''} ${isDefault ? 'pixel' : ''}"
+         src="${photo}" alt=""
+         style="border-color:${border}; background:${photo === DEFAULT_PFP_GROUP ? border : '#000'}">
+    <div>
+      <div class="name">${esc(meta?.name || 'Direct Message')}</div>
+      <div class="preview">${esc(preview || '…')}</div>
+    </div>`;
         }
 
         function applySelectedHighlight() {
@@ -881,7 +1167,6 @@
             if (el) el.classList.add('active');
         }
 
-        /* OG extraction for 1:1 fallback */
         function extractOgFromConvDetail(j) {
             const direct = j?.other_username || j?.other?.first_username || j?.other?.username ||
                 j?.with?.first_username || j?.with?.username || null;
@@ -923,8 +1208,8 @@
             throw new Error('user-not-found:' + og);
         }
         function metaFromUser(u) {
-            const nm = '@' + (u?.username || 'user');
-            const ph = u?.photo || DEFAULT_PFP_DM;
+            const nm = pickName(u) || 'Direct Message';
+            const ph = pickPhoto(u) || DEFAULT_PFP_DM;
             return { name: nm, photo: ph, is_group: false };
         }
 
@@ -934,19 +1219,18 @@
             state.convRowEls.clear();
             list.forEach(it => {
                 const row = document.createElement('div'); row.className = 'conv'; row.dataset.id = it.id;
-                const defaultMeta = {
-                    name: (it.is_group ? (it.title || 'Group') : (it.title || 'Direct Message')),
-                    photo: it.is_group ? DEFAULT_PFP_GROUP : DEFAULT_PFP_DM,
-                    is_group: !!it.is_group,
-                    color: it.color || null
-                };
+                const defaultMeta = { name: (it.is_group ? (it.title || 'Group') : (it.title || 'Direct Message')), photo: it.is_group ? DEFAULT_PFP_GROUP : DEFAULT_PFP_DM, is_group: !!it.is_group, color: it.color || null };
                 const meta = state.convMeta.get(it.id) || defaultMeta;
                 row.onclick = () => openConversation(it.id, meta?.name || defaultMeta.name);
-                setConvRowContent(row, meta, it.preview);
+
+                // If we have a cutoff for this convo, suppress the server preview (it points to old history)
+                const hasCut = !!getHideBeforeId(it.id);
+                const preview = hasCut ? '' : (it.preview || '');
+
+                setConvRowContent(row, meta, preview);
                 state.convRowEls.set(it.id, row);
                 wrap.append(row);
                 if (!state.convMeta.has(it.id)) state.convMeta.set(it.id, defaultMeta);
-                // Background hydrate
                 if (!state.convMeta.has(it.id)) fetchConvMeta(it.id).catch(() => { });
             });
             applySelectedHighlight();
@@ -965,7 +1249,6 @@
             state.allConvs = j.items || [];
             state.allConvs.forEach(it => state.convItems.set(it.id, it));
 
-            // Pre-seed meta
             for (const it of state.allConvs) {
                 if (!state.convMeta.has(it.id)) {
                     let meta = {
@@ -979,8 +1262,8 @@
                         let og = state.convUserOg.get(it.id) || extractOgFromConvDetail(it);
                         if (og) {
                             state.convUserOg.set(it.id, og);
-                            meta.name = '@' + og;
                             const cached = state.userCache.get(og);
+                            meta.name = pickName(cached?.raw || cached) || og;
                             if (cached?.photo) meta.photo = cached.photo;
                             scheduleSaveMeta();
                         }
@@ -1008,38 +1291,176 @@
         let bottomPadPx = 0, removedBottom = [];
         function setBottomPad(px) { bottomPadPx = Math.max(0, px | 0); $('pad-bottom').style.height = bottomPadPx + 'px'; }
 
-        function renderMessage(m) {
+        function renderMessage(m, showFrom = false) {
             const isSystem = (m.kind === 'system');
             const wrap = document.createElement('div');
             wrap.className = (isSystem ? 'msg sysmsg' : ('msg' + (m.sender_id === state.meId ? ' me' : '')));
+            if (!isSystem) wrap.dataset.senderId = m.sender_id || '';
+
+            // optional sender label for group chats
+            if (!isSystem && isGroupChat() && showFrom) {
+                const label = document.createElement('div');
+                label.className = 'from';
+                label.textContent = usernameFor(m.sender_id);
+                wrap.appendChild(label);
+            }
+
             if (m.text) wrap.insertAdjacentHTML('beforeend', '<div>' + esc(m.text) + '</div>');
             if (!isSystem) {
                 (m.attachments || []).forEach(a => {
                     const url = `${API}/dm/attachments/${a.id}/download?inline=1`;
-                    let v = '';
-                    if ((a.mime_type || '').startsWith('image/')) v = `<img class="att" src="${url}" style="max-width:420px;display:block">`;
-                    else if ((a.mime_type || '').startsWith('video/')) v = `<video class="att" src="${url}" controls style="max-width:420px;display:block"></video>`;
-                    else if ((a.mime_type || '').startsWith('audio/')) v = `<audio class="att" src="${url}" controls></audio>`;
-                    else v = `<a class="att" href="${url}">📎 ${esc(a.filename)}</a>`;
-                    wrap.insertAdjacentHTML('beforeend', v);
+                    if ((a.mime_type || '').startsWith('image/')) {
+                        wrap.insertAdjacentHTML('beforeend', `<img class="att" src="${url}">`);
+                    } else if ((a.mime_type || '').startsWith('video/')) {
+                        wrap.insertAdjacentHTML('beforeend', `<video class="att" src="${url}" controls></video>`);
+                    } else if ((a.mime_type || '').startsWith('audio/')) {
+                        // Custom player that always knows total duration
+                        wrap.insertAdjacentHTML('beforeend', `
+                    <div class="audp" data-att-id="${a.id}">
+                        <button class="audp-btn" type="button" aria-label="Play">▶</button>
+                        <div class="audp-track"><div class="audp-fill"></div></div>
+                        <div class="audp-time"><span class="cur">0:00</span> / <span class="tot">0:00</span></div>
+                        <audio class="aud-src" preload="metadata" data-src="${url}"></audio>
+                    </div>
+                `);
+                        const playerRoot = wrap.lastElementChild;
+                        // init after it’s in the DOM
+                        queueMicrotask(() => {
+                            initAudioPlayer(a.id, url, playerRoot);
+                            if (Number.isFinite(a.duration_ms) && a.duration_ms > 0) {
+                                setPlayerTotal(a.id, a.duration_ms);
+                            }
+                        });
+                    } else {
+                        wrap.insertAdjacentHTML('beforeend', `<a class="att" href="${url}">📎 ${esc(a.filename)}</a>`);
+                    }
                 });
+
+                // timestamp
                 wrap.insertAdjacentHTML('beforeend', `<div class="meta">${m.created_at ? fmt(m.created_at) : ''}</div>`);
+
+                // apply per-sender border color (if any)
+                const col = (getColorMap(state.convId) || {})[m.sender_id] || null;
+                if (col) wrap.style.setProperty('--mbc', col);
             }
-            wrap.querySelectorAll('img').forEach(img => img.addEventListener('load', () => { if (nearBottom(200)) scrollToBottom(); }, { once: true }));
-            wrap.querySelectorAll('video').forEach(v => v.addEventListener('loadedmetadata', () => { if (nearBottom(200)) scrollToBottom(); }, { once: true }));
+
+            // auto-scroll for media
+            wrap.querySelectorAll('img').forEach(img =>
+                img.addEventListener('load', () => { if (nearBottom(200)) scrollToBottom(); }, { once: true })
+            );
+            wrap.querySelectorAll('video').forEach(v =>
+                v.addEventListener('loadedmetadata', () => { if (nearBottom(200)) scrollToBottom(); }, { once: true })
+            );
+
             return wrap;
+        }
+
+        function ensureFiniteDuration(audio) {
+            // If we already injected a server duration, skip any hacks.
+            if (audio?.dataset?.serverMs) return;
+
+            if (Number.isFinite(audio.duration) && audio.duration > 0) return;
+
+            const onTU = () => {
+                if (Number.isFinite(audio.duration) && audio.duration > 0) {
+                    audio.removeEventListener('timeupdate', onTU);
+                    if (audio.paused) audio.currentTime = 0;
+                }
+            };
+
+            audio.addEventListener('timeupdate', onTU);
+            try { audio.currentTime = 1e101; } catch { }
+        }
+
+        function revokeAudioURLsIn(root) {
+            if (!root) return;
+            root.querySelectorAll('audio').forEach(a => {
+                const u = a.dataset.objurl;
+                if (u) {
+                    try { URL.revokeObjectURL(u); } catch { }
+                    delete a.dataset.objurl;
+                }
+            });
+        }
+
+        async function prepareFiniteAudio(attId, audio) {
+            try {
+                const original = audio.dataset.src || audio.src || '';
+                if (!original) return;
+
+                console.debug('[aud][dl] fetching audio for header probe:', { url: original });
+                const res = await fetch(original, { credentials: 'include' });
+                if (!res.ok) throw new Error(`bad status ${res.status}`);
+
+                const hdr = res.headers.get('X-Audio-Duration-Ms') || res.headers.get('x-audio-duration-ms');
+                console.debug('[aud][dl] response header X-Audio-Duration-Ms:', hdr);
+                const ms = hdr != null ? parseInt(hdr, 10) : NaN;
+                if (Number.isFinite(ms) && ms > 0) {
+                    audio.dataset.serverMs = String(ms);
+                    if (attId) setPlayerTotal(attId, ms);
+                } else {
+                    console.debug('[aud][dl] header missing or not a number.');
+                }
+
+                // Get the bytes once, use for both objectURL and WebAudio decode
+                const blob = await res.blob();
+
+                // Set playable src
+                const u = URL.createObjectURL(blob);
+                audio.src = u;
+                audio.dataset.objurl = u;
+                console.debug('[aud][dl] objectURL set for audio element');
+
+                // Ensure browsers with weird duration behavior settle to a finite value
+                audio.addEventListener('loadedmetadata', () => ensureFiniteDuration(audio), { once: true });
+                audio.addEventListener('play', () => ensureFiniteDuration(audio), { once: true });
+
+                // If server/header didn’t provide duration, decode to get it up-front
+                if (attId && (!audio.dataset.serverMs || audio.dataset.serverMs === '0')) {
+                    try {
+                        const ac = new (window.AudioContext || window.webkitAudioContext)();
+                        const ab = await blob.arrayBuffer();
+                        // Safari sometimes needs a copy; ab.slice(0) keeps it safe across engines
+                        const buf = await ac.decodeAudioData(ab.slice(0));
+                        const ms2 = Math.round(buf.duration * 1000);
+                        if (Number.isFinite(ms2) && ms2 > 0) setPlayerTotal(attId, ms2);
+                        try { ac.close(); } catch { }
+                    } catch (e) {
+                        console.debug('[aud][dl] decodeAudioData failed:', e);
+                    }
+                }
+            } catch (err) {
+                console.debug('[aud][dl] fallback path due to error:', err);
+                if (!audio.src && audio.dataset.src) audio.src = audio.dataset.src;
+                audio.addEventListener('loadedmetadata', () => ensureFiniteDuration(audio), { once: true });
+                audio.addEventListener('play', () => ensureFiniteDuration(audio), { once: true });
+            }
         }
 
         function appendMessagesAscending(items) {
             items = (items || []).filter(m => !state.renderedMsgIds.has(m.id));
+            if (!items.length) return;
+            // if we had a cutoff and new stuff arrived, clear it so previews can show again
+            const cut = getHideBeforeId(state.convId);
+            if (cut && items.some(m => (m.id | 0) > cut)) clearHideBeforeId(state.convId);
+
             const anchor = $('pad-bottom');
             items.forEach(m => {
                 state.renderedMsgIds.add(m.id);
-                const el = renderMessage(m);
+
+                // look at the message immediately before where we're inserting (chronological previous)
+                let prev = anchor.previousElementSibling;
+                while (prev && !prev.classList.contains('msg')) prev = prev.previousElementSibling;
+                const prevSender = (prev && !prev.classList.contains('sysmsg')) ? (+prev.dataset.senderId || null) : null;
+                const showFrom = isGroupChat() && prevSender !== (m.sender_id | 0);
+
+                const el = renderMessage(m, showFrom);
                 anchor.before(el);
+
                 state.oldestMsgId = state.oldestMsgId === null ? m.id : Math.min(state.oldestMsgId, m.id);
                 state.lastMsgId = Math.max(state.lastMsgId, m.id);
             });
+            updateAllMessageBorders();
             maybeTrimBottom();
         }
         function prependOlderAscending(items) {
@@ -1048,14 +1469,40 @@
             const box = $('msgs');
             const prevTop = box.scrollTop, prevH = box.scrollHeight;
             const frag = document.createDocumentFragment();
+
+            let prevSenderInThisBlock = null; // chronological previous inside this batch
             items.forEach(m => {
                 state.renderedMsgIds.add(m.id);
-                frag.append(renderMessage(m));
+                const showFrom = isGroupChat() && prevSenderInThisBlock !== (m.sender_id | 0);
+                const el = renderMessage(m, showFrom);
+                frag.append(el);
+                prevSenderInThisBlock = m.sender_id | 0;
+
                 state.oldestMsgId = state.oldestMsgId === null ? m.id : Math.min(state.oldestMsgId, m.id);
                 state.lastMsgId = Math.max(state.lastMsgId, m.id);
             });
+
             const afterTop = $('pad-top').nextSibling || $('pad-bottom');
             box.insertBefore(frag, afterTop);
+
+            /* fix the label on what USED TO be the first message,
+               because its "previous" just changed */
+            const newLastInserted = afterTop.previousElementSibling;
+            const oldFirst = afterTop; // the element that was first before
+            if (oldFirst && newLastInserted &&
+                oldFirst.classList.contains('msg') && !oldFirst.classList.contains('sysmsg') &&
+                newLastInserted.classList.contains('msg') && !newLastInserted.classList.contains('sysmsg')) {
+                const same = (+oldFirst.dataset.senderId || 0) === (+newLastInserted.dataset.senderId || 0);
+                const fromEl = oldFirst.querySelector('.from');
+                if (same && fromEl) fromEl.remove();
+                if (!same && isGroupChat() && !fromEl) {
+                    const label = document.createElement('div');
+                    label.className = 'from';
+                    label.textContent = usernameFor(+oldFirst.dataset.senderId || 0);
+                    oldFirst.insertBefore(label, oldFirst.firstChild);
+                }
+            }
+
             box.scrollTop = prevTop + (box.scrollHeight - prevH);
             maybeTrimBottom();
         }
@@ -1069,7 +1516,21 @@
                 if (count <= MAX_DOM) break;
                 const h = last.offsetHeight + GAP;
                 removedBottom.push({ el: last, h });
-                last.remove(); setBottomPad(bottomPadPx + h);
+
+                // revoke blob URLs
+                last.querySelectorAll('audio').forEach(a => {
+                    const u = a.dataset.objurl;
+                    if (u) {
+                        try { URL.revokeObjectURL(u); } catch { }
+                        delete a.dataset.objurl;
+                    }
+                });
+
+                // drop custom player registrations for this subtree
+                unregisterPlayersIn(last);
+
+                last.remove();
+                setBottomPad(bottomPadPx + h);
             }
         }
         function maybeRestoreBottom(chunk = 24) {
@@ -1094,25 +1555,38 @@
             if (state.es) { try { state.es.close(); } catch { } state.es = null; }
             if (state.poll) { clearInterval(state.poll); state.poll = null; }
 
-            state.convId = id; saveLastDM();
+            state.convId = id;
+            saveLastDM();
             state.currentConvDetail = state.convDetailById.get(id) || null;
             applySelectedHighlight();
 
+            // Seed (very brief) fallback meta if needed
             if (!state.convMeta.has(id)) {
-                const seedItem = state.convItems.get(id) || {};
-                state.convMeta.set(id, { name: seedItem.title || 'Direct Message', photo: DEFAULT_PFP_DM, is_group: !!seedItem.is_group, color: seedItem.color || null });
+                const seed = state.convItems.get(id) || {};
+                state.convMeta.set(id, {
+                    name: seed.title || 'Direct Message',
+                    photo: seed.is_group ? DEFAULT_PFP_GROUP : DEFAULT_PFP_DM,
+                    is_group: !!seed.is_group,
+                    color: seed.color || null
+                });
             }
-            updateEverywhere(id); // force header to current chat
 
-            // hydrate meta & detail
-            fetchConvMeta(id).catch(() => { });
+            // ⬇️ Wait for fresh server meta so header ring & list chips have the real color
+            try { await fetchConvMeta(id); } catch { }
 
+            // Now render messages
+            revokeAudioURLsIn($('msgs'));
             $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
+            state.audioPlayers.clear(); // <— add this
             state.renderedMsgIds.clear();
-            setBottomPad(0); removedBottom = []; state.lastMsgId = 0; state.oldestMsgId = null; state.nextBefore = null;
+            setBottomPad(0);
+            removedBottom = [];
+            state.lastMsgId = 0;
+            state.oldestMsgId = null;
+            state.nextBefore = null;
 
             const j = await api(`/dm/conversations/${id}/messages?limit=30`);
-            appendMessagesAscending(j.items || []);
+            appendMessagesAscending(filterHidden(j.items, id));
             state.nextBefore = j.next_before;
 
             try { await (document.fonts && document.fonts.ready); } catch { }
@@ -1122,6 +1596,10 @@
             jumpBtn.sync();
             openStream(id);
             startCatchup();
+
+            // ⬇️ do a color map fetch with retry (see next section)
+            await syncMsgColors(id, { retry: 3 });
+            updateAllMessageBorders();
         }
 
         $('msgs').addEventListener('scroll', async () => {
@@ -1129,7 +1607,8 @@
             const box = $('msgs');
             if (box.scrollTop <= 20 && state.nextBefore) {
                 const j = await api(`/dm/conversations/${state.convId}/messages?before=${state.nextBefore}&limit=20`);
-                prependOlderAscending(j.items || []); state.nextBefore = j.next_before;
+                prependOlderAscending(filterHidden(j.items));
+                state.nextBefore = j.next_before;
             }
         });
 
@@ -1137,6 +1616,78 @@
             const es = new EventSource(`${API}/dm/conversations/${id}/stream`, { withCredentials: true });
             state.es = es;
             es.addEventListener('new', async () => { await fetchAfter(state.lastMsgId); });
+            es.addEventListener('audio_meta', (e) => {
+                try {
+                    const d = JSON.parse(e.data || '{}');
+                    console.debug('[aud][sse] audio_meta received:', d);
+                    if (d?.attachment_id && Number.isFinite(d.duration_ms)) {
+                        setPlayerTotal(d.attachment_id, d.duration_ms | 0);
+                    } else {
+                        console.debug('[aud][sse] audio_meta ignored (missing fields).');
+                    }
+                } catch (err) {
+                    console.debug('[aud][sse] audio_meta parse error:', err);
+                }
+            });
+        }
+        function openGlobalStream() {
+            if (state.esGlobal) { try { state.esGlobal.close(); } catch { } }
+            const es = new EventSource(`${API}/dm/stream`, { withCredentials: true });
+            state.esGlobal = es;
+
+            let reloadTimer = null;
+            function scheduleConvsReload() {
+                clearTimeout(reloadTimer);
+                reloadTimer = setTimeout(() => { loadConversations().catch(() => { }); }, 200);
+            }
+
+            es.addEventListener('conv_new', (e) => {
+                try {
+                    const d = JSON.parse(e.data || '{}');
+                    const cid = d.conversation_id || d.id;
+                    if (cid) {
+                        // clear any stale local color map and refresh meta ASAP
+                        state.msgColorsByConv.delete(cid);
+                        fetchConvMeta(cid).catch(() => { });
+                    }
+                } catch { }
+                scheduleConvsReload();
+            });
+
+            es.addEventListener('message', (e) => {
+                // New message in some conversation (not necessarily open)
+                const d = JSON.parse(e.data || '{}');
+                if ((d.conversation_id | 0) !== (state.convId | 0)) scheduleConvsReload();
+            });
+
+            es.addEventListener('conv_meta', (e) => {
+                // Group color/icon changed; update meta and header/list without refresh
+                const d = JSON.parse(e.data || '{}');
+                const cid = d.conversation_id | 0;
+                const prev = state.convMeta.get(cid) || {};
+                const newPhoto = d.photo_ts ? `${API}/dm/conversations/${cid}/icon?ts=${encodeURIComponent(d.photo_ts)}` : prev.photo;
+                const next = {
+                    ...prev,
+                    is_group: true,
+                    color: (typeof d.color === 'string' && d.color) ? d.color : prev.color || null,
+                    photo: newPhoto || prev.photo
+                };
+                state.convMeta.set(cid, next);
+                updateEverywhere(cid);
+                if ((cid | 0) === (state.convId | 0)) updateTopBar(next);
+            });
+
+            es.addEventListener('color_change', (e) => {
+                const d = JSON.parse(e.data || '{}');
+                const cid = d.conversation_id | 0;
+                const uid = d.user_id | 0;
+                const cmap = { ...getColorMap(cid) };
+                if (d.color) cmap[uid] = d.color; else delete cmap[uid];
+                setColorMap(cid, cmap);
+                if ((cid | 0) === (state.convId | 0)) updateAllMessageBorders();
+            });
+
+            es.onerror = () => { /* keep alive is handled server-side; browser will retry */ };
         }
         function startCatchup() { state.poll = setInterval(() => { fetchAfter(state.lastMsgId).catch(() => { }); }, 30000); }
         async function fetchAfter(lastId) {
@@ -1144,14 +1695,12 @@
             state.fetchingAfter = true;
             try {
                 const j = await api(`/dm/conversations/${state.convId}/messages?after=${lastId}&limit=100`);
-                if (!j.items || !j.items.length) return;
-
-                const newOnes = j.items.filter(m => !state.renderedMsgIds.has(m.id));
-                if (!newOnes.length) return;
-
+                const filtered = filterHidden(j.items);
+                if (!filtered || !filtered.length) return;
                 const stick = nearBottom(80);
-                appendMessagesAscending(newOnes);
+                appendMessagesAscending(filtered);
                 if (stick) { await afterPaint(); scrollToBottom(); }
+
                 loadConversations().catch(() => { });
                 jumpBtn.sync();
             } finally {
@@ -1263,9 +1812,8 @@
                 btn.disabled = (state.selectedIds.size < 2);
             } else if (mode === 'group-edit') {
                 btn.textContent = 'Save Changes';
-                const total = 1 + state.selectedIds.size;
                 const changed = !eqSets(state.selectedIds, state.initialSelectedIds);
-                btn.disabled = !(changed && total >= 3);
+                btn.disabled = !changed;
             } else {
                 btn.textContent = 'Close';
                 btn.disabled = false;
@@ -1292,8 +1840,9 @@
             const mode = state.pickerMode;
             items.forEach(u => {
                 const row = document.createElement('div'); row.className = 'person';
-                const label = '@' + (u.username || u.first_username || 'user');
+                const label = friendDisplay(u);
                 const checked = state.selectedIds.has(u.id);
+                const isDefaultAvatar = !u.profile_photo; // <-- add this line
 
                 let right = '';
                 if (mode === 'dm') {
@@ -1307,7 +1856,7 @@
                 }
 
                 row.innerHTML = `
-                <img class="pfp" src="${u.profile_photo || DEFAULT_PFP_DM}" alt="">
+                <img class="pfp ${isDefaultAvatar ? 'pixel' : ''}" src="${u.profile_photo || DEFAULT_PFP_DM}" alt="">
                 <div>
                     <div class="name">${esc(label)}</div>
                     <div class="bio">${esc(u.bio || '')}</div>
@@ -1339,6 +1888,114 @@
             refreshSelectedChips();
         }
 
+        function isGroupChat() { return !!(state.currentConvDetail?.is_group); }
+
+        function usernameFor(userId) {
+            const det = state.currentConvDetail || {};
+            const m = (det.members || []).find(u => (u.id | 0) === (userId | 0));
+            const u = m || {};
+            return pickName(u) || 'user';
+        }
+
+        function borderColorKey(convId) { return `dp:msgColors:${convId}`; }
+        function getBorderColorMap(convId) {
+            try { return JSON.parse(localStorage.getItem(borderColorKey(convId)) || '{}'); } catch { return {}; }
+        }
+        function setBorderColorMap(convId, map) {
+            try { localStorage.setItem(borderColorKey(convId), JSON.stringify(map)); } catch { }
+        }
+        function getBorderColor(convId, userId) {
+            const m = getBorderColorMap(convId);
+            return m && m[userId] || null;
+        }
+        function updateAllMessageBorders() {
+            const cmap = getColorMap(state.convId);
+            document.querySelectorAll('.msgs .msg:not(.sysmsg)').forEach(el => {
+                const uid = +el.dataset.senderId || 0;
+                const col = cmap[uid] || null;
+                if (col) el.style.setProperty('--mbc', col);
+                else el.style.removeProperty('--mbc');
+            });
+        }
+
+        let myColorOverlay = null;
+        function ensureMyColorOverlay() {
+            if (myColorOverlay) return myColorOverlay;
+            myColorOverlay = document.createElement('div');
+            myColorOverlay.id = 'my-color-overlay';
+            myColorOverlay.className = 'overlay';
+            myColorOverlay.innerHTML = `
+    <div class="sheet" style="width:min(460px,94vw)">
+      <h3>My Message Color</h3>
+      <div class="person" style="cursor:default">
+        <img class="pfp" id="my-color-pfp" src="" alt="">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div class="name" id="my-color-name">@me</div>
+          <div class="bio">Change the border color of <b>your</b> messages in this group.</div>
+        </div>
+        <div class="act" style="display:flex;gap:8px;align-items:center">
+          <input class="colorpick" id="my-color-input" type="color" value="#e6e6e6">
+          <button class="btn" id="my-color-clear" type="button" title="Use default">Use default</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+        <button class="btn" id="my-color-cancel" type="button">Cancel</button>
+        <button class="btn" id="my-color-save" type="button">Save</button>
+      </div>
+    </div>`;
+            document.body.append(myColorOverlay);
+            myColorOverlay.addEventListener('click', e => { if (e.target === myColorOverlay) myColorOverlay.style.display = 'none'; });
+            return myColorOverlay;
+        }
+
+        async function openMyColorOverlay() {
+            const det = state.currentConvDetail || {};
+            if (!det.is_group) return;
+
+            const ov = ensureMyColorOverlay();
+            const nameEl = ov.querySelector('#my-color-name');
+            const pfpEl = ov.querySelector('#my-color-pfp');
+            const input = ov.querySelector('#my-color-input');
+            const btnClr = ov.querySelector('#my-color-clear');
+            const btnSav = ov.querySelector('#my-color-save');
+            const btnCan = ov.querySelector('#my-color-cancel');
+
+            // Fill in my display bits
+            const me = (det.members || []).find(u => (u.id | 0) === (state.meId | 0)) || {};
+            nameEl.textContent = pickName(me) || 'Me';
+            const isDefaultAvatar = !me.profile_photo;
+            pfpEl.classList.toggle('pixel', isDefaultAvatar);
+            pfpEl.src = me.profile_photo || DEFAULT_PFP_DM;
+
+            // Ensure we have the latest map
+            await syncMsgColors(state.convId);
+            const map = getColorMap(state.convId);
+            const current = map[state.meId] || '#e6e6e6';
+            input.value = /^#[0-9a-f]{6}$/i.test(current) ? current : '#e6e6e6';
+
+            btnClr.onclick = () => { input.value = '#e6e6e6'; };
+
+            btnSav.onclick = async () => {
+                const val = input.value.toLowerCase();
+                // treat default as "clear" (null)
+                const toSet = (val === '#e6e6e6') ? null : val;
+                try {
+                    await setMyMsgColor(state.convId, toSet);
+                    // reflect locally
+                    const m = { ...getColorMap(state.convId) };
+                    if (toSet) m[state.meId] = toSet; else delete m[state.meId];
+                    setColorMap(state.convId, m);
+                    updateAllMessageBorders();
+                    myColorOverlay.style.display = 'none';
+                } catch (e) {
+                    alert(e.detail || e.message || e);
+                }
+            };
+            btnCan.onclick = () => { myColorOverlay.style.display = 'none'; };
+
+            myColorOverlay.style.display = 'flex';
+        }
+
         async function openPicker(mode = 'dm', opts = {}) {
             state.pickerMode = mode;
             state.selectedIds = new Set(opts.preselectIds || []);
@@ -1359,6 +2016,85 @@
         }
         function closePicker() { $('overlay').style.display = 'none'; }
 
+        let colorOverlay = null;
+        function ensureColorOverlay() {
+            if (colorOverlay) return colorOverlay;
+            colorOverlay = document.createElement('div');
+            colorOverlay.id = 'color-overlay';
+            colorOverlay.className = 'overlay';
+            colorOverlay.innerHTML = `
+    <div class="sheet" style="width:min(640px,94vw)">
+      <h3>Message border colors</h3>
+      <div id="color-list" class="list"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+        <button class="btn" id="color-reset" type="button">Reset all</button>
+        <button class="btn" id="color-cancel" type="button">Cancel</button>
+        <button class="btn" id="color-save" type="button">Save</button>
+      </div>
+    </div>`;
+            document.body.append(colorOverlay);
+            colorOverlay.addEventListener('click', e => { if (e.target === colorOverlay) colorOverlay.style.display = 'none'; });
+            return colorOverlay;
+        }
+
+        function openBorderColorsOverlay() {
+            const det = state.currentConvDetail || {};
+            if (!det.is_group) return;
+            const ov = ensureColorOverlay();
+            const list = ov.querySelector('#color-list');
+            const map = getBorderColorMap(state.convId);
+            list.innerHTML = '';
+
+            (det.members || []).forEach(u => {
+                const username = pickName(u) || 'user';
+                const value = map[u.id] || '#e6e6e6';
+                const isDefault = !map[u.id];
+                const row = document.createElement('div');
+                row.className = 'person';
+                const isDefaultAvatar = !u.profile_photo;
+                row.innerHTML = `
+      <img class="pfp ${isDefaultAvatar ? 'pixel' : ''}" src="${u.profile_photo || DEFAULT_PFP_DM}" alt="">
+      <div>
+        <div class="name">${esc(username)}</div>
+        <div class="bio">Set a border color for ${esc(username)}’s messages</div>
+      </div>
+      <div class="act" style="display:flex;gap:8px;align-items:center">
+        <input class="colorpick" type="color" value="${value}">
+        <button class="btn clear" type="button" title="Use default">✕</button>
+      </div>`;
+                const colorInput = row.querySelector('.colorpick');
+                const clearBtn = row.querySelector('.clear');
+                clearBtn.onclick = e => { e.stopPropagation(); delete map[u.id]; colorInput.value = '#e6e6e6'; };
+                colorInput.oninput = () => { map[u.id] = colorInput.value; };
+                list.append(row);
+            });
+
+            ov.querySelector('#color-reset').onclick = () => { setBorderColorMap(state.convId, {}); updateAllMessageBorders(); ov.style.display = 'none'; };
+            ov.querySelector('#color-cancel').onclick = () => { ov.style.display = 'none'; };
+            ov.querySelector('#color-save').onclick = () => { setBorderColorMap(state.convId, map); updateAllMessageBorders(); ov.style.display = 'none'; };
+            ov.style.display = 'flex';
+        }
+
+        async function maybeAutoRenameGroup() {
+            const det = state.currentConvDetail || state.convDetailById.get(state.convId) || {};
+            if (!det?.is_group) return;
+
+            const meta = state.convMeta.get(state.convId) || {};
+            // only auto-manage title if user hasn't custom-named it
+            if (meta.auto_title === false) return;
+
+            const desired = computeDefaultGroupTitle(det.members || []);
+            const current = (det.title || meta.name || '').trim();
+            const stripAts = s => s.replace(/@/g, '');
+            const sameIgnoringAts = (a, b) => stripAts(a) === stripAts(b);
+
+            const isAutoNow = (current === '' || sameIgnoringAts(current, computeDefaultGroupTitle(det.members || [])));
+            if (isAutoNow && !sameIgnoringAts(current, desired)) {
+                await api(`/dm/conversations/${state.convId}/title`, { method: 'PATCH', body: { title: desired } });
+                setConvMeta(state.convId, { name: desired, auto_title: true });
+            }
+        }
+
         $('btn-newdm').onclick = () => openPicker('dm');
         $('btn-newgroup').onclick = () => openPicker('group-create');
 
@@ -1371,12 +2107,23 @@
         $('btn-group-submit').onclick = async () => {
             if (state.pickerMode === 'group-create') {
                 if (state.selectedIds.size < 2) return;
-                const ids = [...state.selectedIds];
-                const names = ids.map(id => friendDisplay(state.idToFriend.get(id)));
+                const ids = [...state.selectedIds]; // others (in pick order)
+                const others = ids.map(id => state.idToFriend.get(id)).filter(Boolean);
+                const meLabel = state.meSlug || 'Me'; // username is fine; no @
+                const names = [meLabel, ...others.map(u => friendDisplay(u) || 'User')];
                 const title = joinNames(names);
                 try {
                     const rc = randomGroupColor();
                     const res = await api('/dm/conversations', { method: 'POST', body: { user_ids: ids, title, color: rc.val } });
+                    // mark this conversation as using the default/auto title scheme
+                    setConvMeta(res.id, { name: title, is_group: true, auto_title: true });
+
+                    // Assign distinct colors to everyone (me + others)
+                    const allIds = [state.meId, ...ids];
+                    const initial = chooseUniqueColorsForUsers(allIds, {}); // fresh set
+                    try { await patchMsgColors(res.id, initial); } catch { }
+                    setColorMap(res.id, { ...initial });
+
                     closePicker();
                     await loadConversations({ blockingMeta: true });
                     if (res?.id) await openConversation(res.id);
@@ -1387,12 +2134,39 @@
                 const after = new Set(state.selectedIds);
                 const add = [...after].filter(x => !before.has(x));
                 const remove = [...before].filter(x => !after.has(x));
-                const total = 1 + after.size;
-                if (total < 3 || (add.length === 0 && remove.length === 0)) return;
+                if (add.length === 0 && remove.length === 0) return;
                 try {
-                    await api(`/dm/conversations/${state.convId}/members`, { method: 'PATCH', body: { add_user_ids: add, remove_user_ids: remove } });
+                    const resp = await api(`/dm/conversations/${state.convId}/members`, {
+                        method: 'PATCH',
+                        body: { add_user_ids: add, remove_user_ids: remove }
+                    });
+
+                    // keep this client-side nicety (server also assigns colors)
+                    if (add.length) {
+                        let existing = {};
+                        try { existing = await fetchMsgColors(state.convId); } catch { }
+                        const newOnes = chooseUniqueColorsForUsers(add, existing);
+                        if (Object.keys(newOnes).length) {
+                            try { await patchMsgColors(state.convId, newOnes); } catch { }
+                        }
+                    }
+
                     closePicker();
+
+                    if (resp?.deleted) {
+                        state.convId = null;
+                        state.currentConvDetail = null;
+                        $('chat-title').textContent = 'Pick a conversation';
+                        $('chat-pfp').src = DEFAULT_PFP_DM;
+                        $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
+                        state.audioDurEls.clear();
+                        await loadConversations({ blockingMeta: true });
+                        return;
+                    }
+
                     await fetchConvMeta(state.convId);
+                    await maybeAutoRenameGroup();
+                    await syncMsgColors(state.convId);
                     await fetchAfter(state.lastMsgId);
                     await loadConversations({ blockingMeta: true });
                 } catch (e) { alert(e.detail || e.message || e); }
@@ -1408,7 +2182,7 @@
                 closePicker(); await loadConversations({ blockingMeta: true });
                 const cid = res?.conversation_id || res?.id;
                 if (cid) {
-                    const meta = { name: '@' + og, photo: u.profile_photo || DEFAULT_PFP_DM, is_group: false };
+                    const meta = { name: friendDisplay(u), photo: u.profile_photo || DEFAULT_PFP_DM, is_group: false };
                     setConvMeta(cid, meta);
                     state.userCache.set(og, { username: og, photo: u.profile_photo || DEFAULT_PFP_DM, display_name: null, raw: u });
                     scheduleSaveMeta();
@@ -1438,18 +2212,18 @@
             const isGroup = !!det.is_group;
             const isOwner = !!det.is_owner;
 
-            // Always show menu; content varies
             chatMenuBtn.style.display = '';
 
             const items = [];
             if (isGroup) {
                 if (isOwner) {
                     items.push({ id: 'rename', label: 'Rename group' });
-                    items.push({ id: 'manage', label: 'Manage members' }); // owner: remove + make owner
+                    items.push({ id: 'manage', label: 'Manage members' });
                 } else {
                     items.push({ id: 'view-members', label: 'View members' });
                 }
-                items.push({ id: 'restyle', label: 'Restyle Group' }); // color + icon
+                items.push({ id: 'restyle', label: 'Restyle Group' });
+                items.push({ id: 'my-color', label: 'My Message Color' });
                 items.push({ id: 'leave', label: 'Leave group' });
                 items.push({ id: 'block-group', label: 'Block this group' });
             } else {
@@ -1470,6 +2244,7 @@
                         if (!trimmed) return;
                         try {
                             await api(`/dm/conversations/${state.convId}/title`, { method: 'PATCH', body: { title: trimmed } });
+                            setConvMeta(state.convId, { auto_title: false });
                             await fetchConvMeta(state.convId);
                             await fetchAfter(state.lastMsgId);
                             await loadConversations({ blockingMeta: true });
@@ -1514,9 +2289,13 @@
                     } else if (id === 'delete-dm') {
                         if (!confirm('Delete this chat for you? The other person will still see it.')) return;
                         try {
-                            const my = state.meSlug || 'Someone';
-                            await api(`/dm/conversations/${state.convId}/messages`, { method: 'POST', body: { text: `${my} deleted this chat.`, kind: 'system' } });
+                            // mark cutoff BEFORE we delete (so we hide everything up to current last)
+                            setHideBeforeId(state.convId, state.lastMsgId || Number.MAX_SAFE_INTEGER);
+
+                            // Personal delete on the backend (no system message)
                             await api(`/dm/conversations/${state.convId}/delete_for_me`, { method: 'POST' });
+
+                            // Reset UI
                             state.convId = null; state.currentConvDetail = null;
                             $('chat-title').textContent = 'Pick a conversation';
                             $('chat-pfp').src = DEFAULT_PFP_DM;
@@ -1530,6 +2309,8 @@
                             await api(`/blocks/users`, { method: 'POST', body: { user_id: other.id } });
                             alert('User blocked.');
                         } catch (e) { alert(e.detail || e.message || e); }
+                    } else if (id === 'my-color') {
+                        openMyColorOverlay();
                     }
                 };
             });
@@ -1548,7 +2329,6 @@
                 id: u.id, username: u.username, first_username: u.first_username, profile_photo: u.profile_photo, bio: ''
             }));
             renderFriends(members);
-            // Add action buttons to each member row
             Array.from(document.querySelectorAll('#user-list .person')).forEach((row, idx) => {
                 const m = members[idx];
                 const act = document.createElement('div');
@@ -1586,7 +2366,6 @@
         }
 
         /* ---------------- Restyle Group (color + icon) ---------------- */
-        /* ---------------- Restyle Group (color + icon) ---------------- */
         let restyleEl = null;
 
         function ensureRestyle() {
@@ -1601,6 +2380,11 @@
       <div class="pf-preview">
         <div class="thumb"><img id="restyle-preview" alt="preview"></div>
         <div class="muted">PNG will be generated at up to <b>512px</b> (longest side). Final file must be ≤ <b>1&nbsp;MB</b>.</div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 10px">
+        <div style="font-weight:700">Color</div>
+        <div id="restyle-color-choices" style="display:flex;flex-wrap:wrap;gap:8px"></div>
       </div>
 
       <div class="file-row">
@@ -1629,25 +2413,35 @@
           </div>
         </div>
 
-        <div class="actions">
+        <div class="actions" style="display:flex;gap:10px;margin-top:4px;justify-content:flex-end">
           <button class="btn secondary" id="restyle-cancel" type="button">Cancel</button>
           <button class="btn" id="restyle-save" disabled>Save changes</button>
         </div>
         <div class="note">Tips: drag the image to reposition. Use zoom/rotate. Output is PNG with transparency preserved.</div>
       </div>
-    </div>
-  `;
+    </div>`;
             document.body.append(restyleEl);
             restyleEl.addEventListener('click', (e) => { if (e.target === restyleEl) hideRestyle(); });
             return restyleEl;
         }
 
         function hideRestyle() { if (restyleEl) restyleEl.style.display = 'none'; }
-
         function openRestyleOverlay() {
             const meta = state.convMeta.get(state.convId) || {};
             const det = state.currentConvDetail || state.convDetailById.get(state.convId) || {};
             if (!det.is_group) return;
+
+            // ensure white knobs override (once)
+            if (!document.getElementById('restyle-white-range')) {
+                const st = document.createElement('style');
+                st.id = 'restyle-white-range';
+                st.textContent = `
+#restyle-overlay input[type="range"]::-webkit-slider-thumb { background:#fff !important; }
+#restyle-overlay input[type="range"]::-moz-range-thumb { background:#fff !important; }
+#restyle-overlay input[type="range"]:active::-webkit-slider-thumb { background:#fff !important; }
+#restyle-overlay input[type="range"]:active::-moz-range-thumb { background:#fff !important; }`;
+                document.head.appendChild(st);
+            }
 
             const el = ensureRestyle();
             el.style.display = 'flex';
@@ -1659,15 +2453,8 @@
             const saveBtn = el.querySelector('#restyle-save');
             const cancelBtn = el.querySelector('#restyle-cancel');
 
-            const colorBox = document.createElement('div');
-            colorBox.style.display = 'flex';
-            colorBox.style.gap = '8px';
-            colorBox.style.flexWrap = 'wrap';
-            colorBox.style.alignItems = 'center';
-            colorBox.style.margin = '12px 0 0';
-            colorBox.innerHTML = `<div style="font-weight:700">Color</div>`;
-            // insert before editor
-            el.querySelector('.editor').insertAdjacentElement('beforebegin', colorBox);
+            const colorBox = el.querySelector('#restyle-color-choices');
+            colorBox.innerHTML = '';
 
             const canvas = el.querySelector('#restyle-canvas');
             const ctx = canvas.getContext('2d');
@@ -1675,30 +2462,36 @@
             const zoomEl = el.querySelector('#restyle-zoom');
             const rotEl = el.querySelector('#restyle-rot');
 
-            // --- state ---
-            let selectedColor = meta.color || '#ffffff';
-            let selectedColorKey = (GROUP_COLORS.find(c => c.val === selectedColor)?.key) || null;
-
+            const hadCustomIcon = !!meta.photo && meta.photo !== DEFAULT_PFP_GROUP;
+            let clearedToDefault = false;
             let imgBitmap = null;
             let imgW = 0, imgH = 0;
             let pos = { x: 0, y: 0 };
             let dragging = false, last = { x: 0, y: 0 };
             let zoom = parseFloat(zoomEl.value);
             let rot = parseFloat(rotEl.value) * Math.PI / 180;
-            let usingDefault = (meta.photo === DEFAULT_PFP_GROUP);
-            let dirty = false;
+            let selectedColor = meta.color || '#ffffff';
+            let selectedColorKey = (GROUP_COLORS.find(c => c.val === selectedColor)?.key) || null;
 
-            // --- color chips (exact look via existing .btn polish) ---
+            let dirty = false;
+            function markDirty() { dirty = true; saveBtn.disabled = false; }
+            saveBtn.disabled = true;
+
+            // color chips
             GROUP_COLORS.forEach(c => {
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'btn';
                 b.style.cssText = `border-color:${c.val};background:${c.val};color:#000`;
                 b.textContent = c.key;
+                if (c.val === selectedColor) b.style.outline = '2px solid #fff';
                 b.onclick = () => {
                     selectedColor = c.val;
                     selectedColorKey = c.key;
-                    paintPreview(); markDirty();
+                    colorBox.querySelectorAll('.btn').forEach(x => x.style.outline = '');
+                    b.style.outline = '2px solid #fff';
+                    paintPreview();
+                    markDirty();
                 };
                 colorBox.append(b);
             });
@@ -1707,19 +2500,30 @@
                 img.onerror = () => { img.src = fallback; };
                 img.src = src || fallback;
             }
-            function paintPreview() {
-                const isDefault = usingDefault && !imgBitmap;
-                const fallback = DEFAULT_PFP_GROUP;
-                const active = isDefault ? fallback : (meta.photo || fallback);
-                setImgSafe(preview, active, fallback);
-                preview.style.borderColor = selectedColor;
-                preview.style.background = isDefault ? selectedColor : '#000';
-            }
-            function markDirty() { dirty = true; saveBtn.disabled = false; }
-            paintPreview(); saveBtn.disabled = true;
 
-            // --- draw current transform to editor canvas ---
-            function scaleForZoom() { return 0.5 + zoom * 2.5; } // 0.5x..3x
+            function paintPreview() {
+                const showDefault = (!hadCustomIcon || clearedToDefault) && !imgBitmap;
+                preview.classList.toggle('is-default', showDefault);
+
+                const activeSrc = showDefault ? DEFAULT_PFP_GROUP : (meta.photo || DEFAULT_PFP_GROUP);
+                setImgSafe(preview, activeSrc, DEFAULT_PFP_GROUP);
+
+                const thumb = el.querySelector('.pf-preview .thumb');
+                // border should reflect the chosen color (was stuck white)
+                thumb.style.borderColor = selectedColor;
+                // background stays tinted only when using the default icon
+                thumb.style.background = showDefault ? selectedColor : '#000';
+            }
+
+            paintPreview();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // stronger zoom range
+            function scaleForZoom() {
+                const MIN = 0.25, MAX = 6; // was 0.5..3; now 0.25..6
+                return MIN + zoom * (MAX - MIN);
+            }
+
             function redraw() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 if (!imgBitmap) return;
@@ -1732,15 +2536,12 @@
                 ctx.restore();
             }
 
-            // --- file -> bitmap ---
             function loadBitmapFromFile(file) {
                 return new Promise((resolve, reject) => {
                     const r = new FileReader();
                     r.onload = async () => {
-                        try {
-                            const bmp = await createImageBitmap(new Blob([r.result]));
-                            resolve(bmp);
-                        } catch (e) { reject(e); }
+                        try { resolve(await createImageBitmap(new Blob([r.result]))); }
+                        catch (e) { reject(e); }
                     };
                     r.onerror = () => reject(r.error);
                     r.readAsArrayBuffer(file);
@@ -1756,15 +2557,19 @@
                     zoom = 0.5; zoomEl.value = '0.5';
                     rot = 0; rotEl.value = '0';
                     fileName.textContent = file.name;
-                    usingDefault = false;
+                    clearedToDefault = false;
                     redraw();
                     const url = URL.createObjectURL(file);
-                    preview.src = url; preview.style.background = '#000';
+                    preview.src = url;
+                    const thumb = el.querySelector('.pf-preview .thumb');
+                    thumb.style.background = '#000';
                     markDirty();
-                } catch (e) { alert('Could not read image: ' + (e.message || e)); }
+                } catch (e) {
+                    alert('Could not read image: ' + (e.message || e));
+                }
             }
 
-            // drag & drop
+            // dnd
             drop.addEventListener('dragover', e => { e.preventDefault(); });
             drop.addEventListener('drop', e => {
                 e.preventDefault();
@@ -1785,9 +2590,10 @@
                 zoom = 0.5; zoomEl.value = '0.5';
                 rot = 0; rotEl.value = '0';
                 fileIn.value = ''; fileName.textContent = '';
-                usingDefault = true;
+                clearedToDefault = true;
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                paintPreview(); markDirty();
+                paintPreview();
+                markDirty();
             };
 
             // pan
@@ -1800,7 +2606,8 @@
                 const dx = e.clientX - last.x, dy = e.clientY - last.y;
                 last = { x: e.clientX, y: e.clientY };
                 pos.x += dx; pos.y += dy;
-                redraw(); markDirty();
+                redraw();
+                markDirty();
             });
             const endDrag = e => { dragging = false; try { canvas.releasePointerCapture(e.pointerId); } catch { } };
             canvas.addEventListener('pointerup', endDrag);
@@ -1813,7 +2620,6 @@
 
             cancelBtn.onclick = () => hideRestyle();
 
-            // export ≤512px and ≤1MB (PNG)
             async function exportPNGMax512() {
                 const BYTES_MAX = 1024 * 1024;
                 let size = 512;
@@ -1827,7 +2633,6 @@
                     if (imgBitmap) {
                         const s = scaleForZoom();
                         octx.save();
-                        // map editor offsets into output
                         octx.translate(px / 2 + (pos.x * (px / canvas.width)), px / 2 + (pos.y * (px / canvas.height)));
                         octx.rotate(rot);
                         const dw = imgW * s * (px / canvas.width);
@@ -1839,8 +2644,7 @@
                     let blob;
                     if (out.convertToBlob) blob = await out.convertToBlob({ type: 'image/png' });
                     else blob = await new Promise(res => out.toBlob(res, 'image/png'));
-                    const arr = new Uint8Array(await blob.arrayBuffer());
-                    return arr;
+                    return new Uint8Array(await blob.arrayBuffer());
                 }
 
                 let png = imgBitmap ? await renderTo(size) : null;
@@ -1852,35 +2656,24 @@
                 return { png, size };
             }
 
-            // save
             saveBtn.onclick = async () => {
                 try {
                     const fd = new FormData();
                     const beforeColor = meta.color || '#ffffff';
                     if (selectedColor && selectedColor !== beforeColor) fd.append('color', selectedColor);
 
-                    if (usingDefault && !imgBitmap) {
-                        fd.append('use_default_icon', '1');
-                    } else if (imgBitmap) {
+                    if (imgBitmap) {
                         const { png } = await exportPNGMax512();
-                        if (!png) fd.append('use_default_icon', '1');
-                        else fd.append('icon', new Blob([png], { type: 'image/png' }), 'group-icon.png');
+                        if (png) fd.append('icon', new Blob([png], { type: 'image/png' }), 'group-icon.png');
+                    } else if (clearedToDefault) {
+                        fd.append('use_default_icon', '1');
                     }
 
                     await fetch(`${API}/dm/conversations/${state.convId}/appearance`, { method: 'PATCH', credentials: 'include', body: fd });
 
-                    // mirror profile's system messages
-                    const my = state.meSlug || 'Someone';
+                    // Local UI polish; server will broadcast conv_meta + system messages
                     if (selectedColor && selectedColor !== beforeColor) {
-                        await api(`/dm/conversations/${state.convId}/messages`, {
-                            method: 'POST',
-                            body: { text: `${my} changed group color to ${selectedColorKey || selectedColor}.`, kind: 'system' }
-                        });
-                    }
-                    if (imgBitmap) {
-                        await api(`/dm/conversations/${state.convId}/messages`, { method: 'POST', body: { text: `${my} changed the group icon.`, kind: 'system' } });
-                    } else if (usingDefault) {
-                        await api(`/dm/conversations/${state.convId}/messages`, { method: 'POST', body: { text: `${my} changed the group icon to default.`, kind: 'system' } });
+                        setConvMeta(state.convId, { color: selectedColor });
                     }
 
                     await fetchConvMeta(state.convId);
@@ -1890,10 +2683,6 @@
                     alert(e.detail || e.message || e);
                 }
             };
-
-            // initial paint
-            paintPreview();
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
 
         /* ---------------- wire UI ---------------- */
@@ -1917,6 +2706,11 @@
             if (text.length > 10000) { alert('Message is over 10,000 characters. Please shorten it.'); return; }
             text = text.trim();
 
+            // log what we "think" before upload
+            const auds = state.pendingFiles.filter(f => (f.type || '').startsWith('audio/'))
+                .map(f => ({ name: f.name, bytes: f.size, mime: f.type, client_est_ms: f.durationMs || null }));
+            if (auds.length) console.debug('[aud][send] about to upload audio attachments:', auds);
+
             const fd = new FormData();
             fd.append('text', text);
             state.pendingFiles.forEach((f, i) => {
@@ -1928,16 +2722,24 @@
 
             state.uploading = true;
             try {
+                console.debug('[aud][send] POST /messages with', { files: state.pendingFiles.length, textLen: text.length });
                 const r = await fetch(`${API}/dm/conversations/${state.convId}/messages`, { method: 'POST', credentials: 'include', body: fd });
-                const t = await r.text(); if (!r.ok) throw new Error(t || r.statusText);
-                const j = JSON.parse(t);
+                const t = await r.text();
+                if (!r.ok) throw new Error(t || r.statusText);
+                let j = {};
+                try { j = JSON.parse(t); } catch { }
+                console.debug('[aud][send] server acknowledged message:', j);
                 if (j && j.id) state.lastMsgId = Math.max(state.lastMsgId, j.id | 0);
                 $('text').value = ''; state.pendingFiles = []; refreshChips();
                 await fetchAfter(state.lastMsgId);
                 loadConversations().catch(() => { });
                 if (nearBottom()) { await afterPaint(); scrollToBottom(); }
-            } catch (e) { alert(e.message || e); }
-            finally { state.uploading = false; }
+            } catch (e) {
+                console.debug('[aud][send] failed:', e);
+                alert(e.message || e);
+            } finally {
+                state.uploading = false;
+            }
         }
 
         /* ---------------- boot ---------------- */
@@ -1945,7 +2747,6 @@
             await getMe();
             loadMetaCache();
 
-            // normalize URL user slug
             const urlMatch = location.pathname.match(/\/user\/([^\/]+)\/messages/i);
             const urlSlug = urlMatch ? decodeURIComponent(urlMatch[1]) : '';
             if (state.meSlug && urlSlug && urlSlug.toLowerCase() !== state.meSlug.toLowerCase()) {
@@ -1953,6 +2754,7 @@
             }
 
             await loadConversations({ blockingMeta: true });
+            openGlobalStream();
             const last = loadLastDM();
             if (last && (last.meId | 0) === (state.meId | 0)) {
                 const exists = state.allConvs.find(c => (c.id | 0) === (last.convId | 0));
@@ -1961,36 +2763,284 @@
         })();
 
         /* ---------------- recording impl ---------------- */
+        function formatMs(ms) {
+            if (!Number.isFinite(ms) || ms <= 0) return '0:00';
+            const s = Math.round(ms / 1000);
+            const m = Math.floor(s / 60);
+            const ss = String(s % 60).padStart(2, '0');
+            return `${m}:${ss}`;
+        }
+
+        function setPlayerTotal(attId, ms) {
+            const p = state.audioPlayers.get(attId);
+            if (!p) return;
+            p.totalMs = ms | 0;
+            if (p.totEl) p.totEl.textContent = msToClock(p.totalMs);
+            const chip = state.audioDurEls.get(attId)?.chip;
+            if (chip) chip.textContent = msToClock(p.totalMs);
+        }
+
+        async function fetchAudioMeta(attId) {
+            try {
+                console.debug('[aud][meta] GET /dm/attachments/%s/meta …', attId);
+                const j = await api(`/dm/attachments/${attId}/meta`);
+                const ms = j?.duration_ms;
+                console.debug('[aud][meta] result:', { attId, ms });
+                if (Number.isFinite(ms) && ms > 0) setPlayerTotal(attId, ms);
+            } catch (err) {
+                console.debug('[aud][meta] failed:', err);
+            }
+        }
+
+        function unregisterPlayersIn(root) {
+            root.querySelectorAll('.audp').forEach(el => {
+                const id = +el.dataset.attId || 0;
+                if (id) {
+                    console.debug('[aud][ui] unregister player:', id);
+                    state.audioPlayers.delete(id);
+                }
+            });
+        }
+
+        function msToClock(ms) {
+            ms = Math.max(0, ms | 0);
+            const s = Math.round(ms / 1000);
+            const m = (s / 60) | 0;
+            const r = s % 60;
+            return m + ':' + String(r).padStart(2, '0');
+        }
+
+        async function initAudioPlayer(attId, url, root) {
+            console.debug('[aud][ui] initAudioPlayer:', { attId, url });
+            const audio = root.querySelector('.aud-src');
+            const btn = root.querySelector('.audp-btn');
+            const track = root.querySelector('.audp-track');
+            const fill = root.querySelector('.audp-fill');
+            const curEl = root.querySelector('.cur');
+            const totEl = root.querySelector('.tot');
+
+            state.audioPlayers.set(attId, { root, audio, btn, track, fill, curEl, totEl, totalMs: 0, dragging: false });
+
+            // Duration header + blob URL
+            prepareFiniteAudio(attId, audio).catch(err => console.debug('[aud][ui] prepareFiniteAudio error:', err));
+
+            // Backfill via /meta
+            (async () => {
+                try {
+                    console.debug('[aud][ui] asking server for meta', { attId });
+                    const j = await api(`/dm/attachments/${attId}/meta`);
+                    const ms = j?.duration_ms;
+                    console.debug('[aud][ui] server meta response:', { attId, ms });
+                    if (Number.isFinite(ms) && ms > 0) setPlayerTotal(attId, ms | 0);
+                } catch (err) {
+                    console.debug('[aud][ui] meta fetch failed:', err);
+                }
+            })();
+
+            // UI wiring
+            btn.addEventListener('click', () => {
+                if (audio.paused) { audio.play().then(() => { }).catch(e => console.debug('[aud][ui] play error:', e)); btn.textContent = '⏸'; }
+                else { audio.pause(); btn.textContent = '▶'; }
+            });
+
+            audio.addEventListener('timeupdate', () => {
+                const p = state.audioPlayers.get(attId);
+                if (!p) return;
+                const dur = p.totalMs ? p.totalMs / 1000 : (Number.isFinite(audio.duration) ? audio.duration : 0);
+                const t = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+                if (!p.dragging && dur > 0) fill.style.width = `${Math.min(100, (t / dur) * 100)}%`;
+                if (curEl) curEl.textContent = msToClock(t * 1000);
+                if (!p.totalMs && Number.isFinite(dur) && dur > 0) setPlayerTotal(attId, Math.round(dur * 1000));
+            });
+
+            const seek = (px) => {
+                const rect = track.getBoundingClientRect();
+                const ratio = Math.min(1, Math.max(0, (px - rect.left) / rect.width));
+                const dur = state.audioPlayers.get(attId)?.totalMs || (Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : 0);
+                if (dur > 0) {
+                    audio.currentTime = (ratio * dur) / 1000;
+                    fill.style.width = `${ratio * 100}%`;
+                }
+            };
+            track.addEventListener('mousedown', (e) => { const p = state.audioPlayers.get(attId); if (p) p.dragging = true; seek(e.clientX); });
+            window.addEventListener('mousemove', (e) => { const p = state.audioPlayers.get(attId); if (p?.dragging) seek(e.clientX); });
+            window.addEventListener('mouseup', () => { const p = state.audioPlayers.get(attId); if (p) p.dragging = false; });
+
+            audio.addEventListener('ended', () => { btn.textContent = '▶'; fill.style.width = '0%'; });
+        }
+
+        function updateAudioDuration(attId, ms) {
+            const ui = state.audioDurEls.get(attId);
+            if (!ui) return;
+            ui.chip.textContent = formatMs(ms);
+            if (ui.audio) {
+                ui.audio.dataset.serverMs = String(ms | 0); // lets us skip the heavy duration hack
+            }
+        }
+
+        function wireAudio(audioEl, attId) {
+            if (!attId || state.audioDurEls.has(attId)) return;
+
+            // add overlay chip (… until meta arrives)
+            const chip = document.createElement('div');
+            chip.className = 'aud-dur';
+            chip.textContent = '…';
+
+            // ensure we have a container for absolute-positioned chip
+            if (!audioEl.parentElement.classList.contains('att-audio')) {
+                const wrap = document.createElement('div');
+                wrap.className = 'att-audio';
+                audioEl.replaceWith(wrap);
+                wrap.append(audioEl, chip);
+            } else {
+                audioEl.parentElement.appendChild(chip);
+            }
+
+            state.audioDurEls.set(attId, { audio: audioEl, chip });
+
+            // fetch server-side duration (fast path—DB-backed or quick probe)
+            fetchAudioMeta(attId);
+
+            // fallback: if the browser computes duration later and we still have no server val
+            audioEl.addEventListener('loadedmetadata', () => {
+                const server = +(audioEl.dataset.serverMs || '0');
+                if (!server && Number.isFinite(audioEl.duration) && audioEl.duration > 0) {
+                    chip.textContent = formatMs(audioEl.duration * 1000);
+                }
+            }, { once: true });
+        }
+
+        function unregisterAudioIn(root) {
+            if (!root) return;
+            root.querySelectorAll('audio[data-att-id]').forEach(a => {
+                const id = +a.dataset.attId || 0;
+                if (id) state.audioDurEls.delete(id);
+            });
+        }
+        function canonicalAudioMime(mt) {
+            return (mt || '').split(';')[0] || 'audio/webm';
+        }
+        function pickAudioMimeType() {
+            const cands = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+            if (!('MediaRecorder' in window)) return '';
+            for (const t of cands) {
+                try { if (!MediaRecorder.isTypeSupported || MediaRecorder.isTypeSupported(t)) return t; } catch { }
+            }
+            return '';
+        }
+        function extForMime(mt) {
+            if ((mt || '').includes('ogg')) return 'ogg';
+            if ((mt || '').includes('mp4')) return 'm4a';
+            return 'webm';
+        }
+        async function probeAudioBlobMs(blob) {
+            return new Promise((resolve) => {
+                try {
+                    const a = document.createElement('audio');
+                    a.preload = 'metadata';
+                    const url = URL.createObjectURL(blob);
+                    a.src = url;
+                    const finish = (ms) => { try { URL.revokeObjectURL(url); } catch { } resolve(ms | 0); };
+                    a.onloadedmetadata = () => {
+                        const ms = Number.isFinite(a.duration) ? Math.round(a.duration * 1000) : 0;
+                        console.debug('[rec] client probe loadedmetadata duration_ms=', ms);
+                        finish(ms);
+                    };
+                    a.onerror = () => { console.debug('[rec] client probe failed to decode for duration'); finish(0); };
+                } catch {
+                    resolve(0);
+                }
+            });
+        }
         async function startRecording() {
             if (state.recording.active) return;
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus', bitsPerSecond: 48000 });
-            state.recording = { active: true, chunks: [], size: 0, rec, warnShown: false };
+            try {
+                console.debug('[rec] requesting microphone…');
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            rec.ondataavailable = (e) => {
-                if (!e.data || !e.data.size) return;
-                state.recording.chunks.push(e.data); state.recording.size += e.data.size;
-                if (!state.recording.warnShown && state.recording.size > 850 * 1024) { recWarn.style.display = ''; recWarn.textContent = 'Approaching 1MB limit…'; state.recording.warnShown = true; }
-                if (state.recording.size > 990 * 1024) { stopRecording(true); }
-            };
-            rec.onstop = async () => {
-                recWarn.style.display = 'none';
-                const blob = new Blob(state.recording.chunks, { type: 'audio/webm;codecs=opus' });
-                try { stream.getTracks().forEach(t => t.stop()); } catch { }
-                if (!blob.size) { state.recording = { active: false, chunks: [], size: 0, rec: null, warnShown: false }; return; }
-                try {
-                    const ab = await blob.arrayBuffer();
-                    const { buf, encoding } = await gzipBytes(new Uint8Array(ab));
-                    if (buf.length > MAX) throw new Error('Voice message too large');
-                    addPendingFile({ name: 'voice.webm', type: 'audio/webm', buf, size: buf.length, encoding });
-                } catch (e) { alert(e.message || e); }
-                state.recording = { active: false, chunks: [], size: 0, rec: null, warnShown: false };
-            };
-            rec.start(200);
+                const mime = pickAudioMimeType();
+                const opts = mime ? { mimeType: mime, audioBitsPerSecond: 64000 } : {};
+                console.debug('[rec] MediaRecorder opts:', opts);
+
+                const rec = new MediaRecorder(stream, opts);
+                state.recording = { active: true, chunks: [], size: 0, rec, warnShown: false, mime };
+
+                rec.onstart = () => console.debug('[rec] onstart');
+                rec.onerror = (e) => console.error('[rec] error', e);
+
+                rec.ondataavailable = (e) => {
+                    const sz = (e?.data?.size) || 0;
+                    if (!sz) return;
+                    state.recording.chunks.push(e.data);
+                    state.recording.size += sz;
+                    console.debug('[rec] chunk', { chunkBytes: sz, totalBytes: state.recording.size });
+
+                    if (!state.recording.warnShown && state.recording.size > 850 * 1024) {
+                        recWarn.style.display = '';
+                        recWarn.textContent = 'Approaching 1MB limit…';
+                        state.recording.warnShown = true;
+                    }
+                    if (state.recording.size > 990 * 1024) {
+                        console.debug('[rec] forcing stop to keep under 1MB');
+                        stopRecording(true);
+                    }
+                };
+
+                rec.onstop = async () => {
+                    console.debug('[rec] onstop, totalBytes=', state.recording.size);
+                    try { recWarn.style.display = 'none'; } catch { }
+
+                    try {
+                        const mt = canonicalAudioMime(state.recording.mime || 'audio/webm');
+                        let blob;
+                        try {
+                            blob = new Blob(state.recording.chunks, { type: mt });
+                        } catch (e) {
+                            console.error('[rec] Blob() failed', e);
+                            alert('Could not finalize recording.');
+                            return;
+                        }
+                        if (!blob.size) {
+                            console.warn('[rec] empty blob; nothing to attach');
+                            return;
+                        }
+
+                        // client-side best-effort duration probe
+                        const estMs = await probeAudioBlobMs(blob);
+
+                        const ab = await blob.arrayBuffer();
+                        const buf = new Uint8Array(ab);
+                        if (buf.length > MAX) {
+                            alert('Voice message too large');
+                            return;
+                        }
+
+                        const ext = extForMime(mt);
+                        const name = `voice.${ext}`;
+                        const ftype = mt;
+                        console.debug('[rec] attached file (client estimate):', { name, bytes: buf.length, mime: ftype, client_est_ms: estMs });
+                        addPendingFile({ name, type: ftype, buf, size: buf.length, encoding: null, durationMs: estMs });
+                    } catch (e) {
+                        console.error('[rec] finalize failed', e);
+                        alert(e.message || e);
+                    } finally {
+                        try { stream.getTracks().forEach(t => t.stop()); } catch { }
+                        state.recording = { active: false, chunks: [], size: 0, rec: null, warnShown: false, mime: state.recording.mime };
+                        try { $('btn-voice').textContent = 'Hold to record'; } catch { }
+                    }
+                };
+
+                rec.start(200);
+                console.debug('[rec] started with timeslice 200ms');
+            } catch (err) {
+                console.error('[rec] start failed', err);
+                alert('Could not start recording: ' + (err.message || err));
+            }
         }
         function stopRecording(force = false) {
             const r = state.recording.rec;
-            if (r && r.state !== 'inactive') { try { r.stop(); } catch { } }
+            console.debug('[rec] stopRecording called', { force, hasRecorder: !!r });
+            if (r && r.state !== 'inactive') { try { r.stop(); } catch (e) { console.error('[rec] stop error', e); } }
             state.recording.active = false;
             if (force) recWarn.textContent = 'Stopped to keep under 1MB.';
         }

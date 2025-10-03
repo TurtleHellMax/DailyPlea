@@ -17,6 +17,8 @@ migrate();
 
 const app = express();
 
+app.set('trust proxy', false);
+
 /* ---------------- helpers ---------------- */
 function listRoutes(app) {
     const out = [];
@@ -58,6 +60,7 @@ app.use(cors({
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-User-Id'],
+    exposedHeaders: ['X-Audio-Duration-Ms']
 }));
 
 /* ---------------- dev routes (optional) ---------------- */
