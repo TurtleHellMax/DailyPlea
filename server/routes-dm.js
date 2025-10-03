@@ -60,7 +60,7 @@ function ensureConvKey(convId) {
 }
 
 /** Always return a key. If missing, create one; if decrypt fails (e.g., master changed),
- * return null so callers can choose to continue without decryption. */
+ * return a rotated key to keep the convo writable. */
 function getOrCreateConvKey(convId) {
     let row = db.prepare(`SELECT key_cipher, key_nonce FROM dm_conversation_keys WHERE conversation_id=?`).get(convId);
     if (!row) {
@@ -99,7 +99,7 @@ function memberCount(convId) {
     return r?.n | 0;
 }
 function joinNames(names) {
-    const arr = names.filter(Boolean);
+    const arr = (names || []).filter(Boolean);
     if (arr.length === 0) return '';
     if (arr.length === 1) return arr[0];
     if (arr.length === 2) return `${arr[0]} and ${arr[1]}`;
@@ -111,7 +111,7 @@ function areFriends(a, b) {
     return !!r;
 }
 function getConv(convId) {
-    return db.prepare(`SELECT id, is_group, title, owner_id, deleted_at FROM dm_conversations WHERE id=?`).get(convId);
+    return db.prepare(`SELECT id, is_group, title, owner_id, color, deleted_at FROM dm_conversations WHERE id=?`).get(convId);
 }
 function ensureActiveGroup(convId) {
     const c = getConv(convId);
@@ -130,6 +130,33 @@ function addSystemMessage(convId, actorId, text) {
   `).run(convId, actorId, 'system', enc.cipher, enc.nonce).lastInsertRowid;
     broadcast(convId, 'new', { id }, String(id));
     return id;
+}
+
+function setGroupColor(convId, color) {
+    db.prepare(`UPDATE dm_conversations SET color=? WHERE id=?`).run(color || null, convId);
+}
+
+function upsertGroupIcon(convId, mime, plainBuf) {
+    const key = getOrCreateConvKey(convId);
+    if (!key) throw new Error('key_missing');
+    const enc = aeadEncrypt(key, plainBuf);
+    db.prepare(`
+    INSERT INTO dm_group_icons(conversation_id, mime_type, blob_cipher, blob_nonce, updated_at)
+    VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(conversation_id) DO UPDATE
+      SET mime_type=excluded.mime_type,
+          blob_cipher=excluded.blob_cipher,
+          blob_nonce=excluded.blob_nonce,
+          updated_at=CURRENT_TIMESTAMP
+  `).run(convId, mime || 'image/png', enc.cipher, enc.nonce);
+}
+
+function deleteGroupIcon(convId) {
+    db.prepare(`DELETE FROM dm_group_icons WHERE conversation_id=?`).run(convId);
+}
+
+function getGroupIcon(convId) {
+    return db.prepare(`SELECT mime_type, blob_cipher, blob_nonce FROM dm_group_icons WHERE conversation_id=?`).get(convId);
 }
 
 /* ====== SSE (simple) ====== */
@@ -190,11 +217,13 @@ router.post('/dm/with/:slug', requireAuth, (req, res) => {
 
     if (row) {
         ensureConvKey(row.id);
+        // Un-hide for both users if previously hidden
+        db.prepare(`DELETE FROM dm_hidden WHERE conversation_id=? AND user_id IN (?,?)`).run(row.id, req.userId, other.id);
         return res.json({ ok: true, conversation_id: row.id, id: row.id });
     }
 
     const tx = db.transaction(() => {
-        const r = db.prepare(`INSERT INTO dm_conversations(is_group, title, owner_id) VALUES(0, NULL, NULL)`).run();
+        const r = db.prepare(`INSERT INTO dm_conversations(is_group, title, owner_id, color) VALUES(0, NULL, NULL, NULL)`).run();
         const convId = r.lastInsertRowid;
         db.prepare(`INSERT INTO dm_members(conversation_id, user_id) VALUES(?,?)`).run(convId, req.userId);
         db.prepare(`INSERT INTO dm_members(conversation_id, user_id) VALUES(?,?)`).run(convId, other.id);
@@ -227,7 +256,7 @@ router.get('/dm/conversations/:id/stream', requireAuth, (req, res) => {
 
 /** Create group or 1:1 by ids; ensure key for existing 1:1 reuse. */
 router.post('/dm/conversations', requireAuth, (req, res) => {
-    let { user_ids = [], title = null } = req.body || {};
+    let { user_ids = [], title = null, color = null } = req.body || {};
     // De-dup, coerce to int, include me
     user_ids = Array.from(new Set([...(user_ids || []).map(n => +n).filter(Boolean), req.userId])).sort((a, b) => a - b);
     if (user_ids.length < 2) return res.status(400).json({ error: 'need_two_members' });
@@ -246,6 +275,7 @@ router.post('/dm/conversations', requireAuth, (req, res) => {
     `).get(user_ids[0], user_ids[1]);
         if (row) {
             ensureConvKey(row.id);
+            db.prepare(`DELETE FROM dm_hidden WHERE conversation_id=? AND user_id=?`).run(row.id, req.userId);
             return res.json({ ok: true, conversation_id: row.id, id: row.id });
         }
     } else {
@@ -255,13 +285,8 @@ router.post('/dm/conversations', requireAuth, (req, res) => {
 
     const tx = db.transaction(() => {
         const r = db.prepare(
-            `INSERT INTO dm_conversations(is_group, title, owner_id)
-     VALUES(?,?,?)`
-        ).run(
-            isGroup,
-            isGroup ? String(title || 'Group') : null,
-            isGroup ? req.userId : null
-        );
+            `INSERT INTO dm_conversations(is_group, title, owner_id, color) VALUES(?,?,?,?)`
+        ).run(isGroup, isGroup ? String(title || 'Group') : null, isGroup ? req.userId : null, isGroup ? (color || null) : null);
 
         const convId = r.lastInsertRowid;
         for (const uid of user_ids) {
@@ -279,16 +304,19 @@ router.post('/dm/conversations', requireAuth, (req, res) => {
 /** List conversations with preview (best-effort decrypt) */
 router.get('/dm/conversations', requireAuth, (req, res) => {
     const rows = db.prepare(`
-    SELECT c.id, c.is_group, c.title,
+    SELECT c.id, c.is_group, c.title, c.color,
            (SELECT sender_id FROM dm_messages WHERE conversation_id=c.id ORDER BY id DESC LIMIT 1) AS last_sender_id,
            (SELECT body_cipher FROM dm_messages WHERE conversation_id=c.id ORDER BY id DESC LIMIT 1) AS last_body_cipher,
            (SELECT body_nonce  FROM dm_messages WHERE conversation_id=c.id ORDER BY id DESC LIMIT 1) AS last_body_nonce,
            (SELECT id FROM dm_messages WHERE conversation_id=c.id ORDER BY id DESC LIMIT 1) AS last_msg_id
     FROM dm_conversations c
     JOIN dm_members m ON m.conversation_id=c.id
+    LEFT JOIN dm_hidden h ON h.conversation_id=c.id AND h.user_id=?
     WHERE m.user_id=? AND (c.deleted_at IS NULL)
+      AND (h.last_hidden_msg_id IS NULL OR
+           ( (SELECT id FROM dm_messages WHERE conversation_id=c.id ORDER BY id DESC LIMIT 1) > h.last_hidden_msg_id ))
     ORDER BY last_msg_id DESC NULLS LAST
-  `).all(req.userId);
+  `).all(req.userId, req.userId);
 
     const out = rows.map(r => {
         let preview = '';
@@ -299,11 +327,12 @@ router.get('/dm/conversations', requireAuth, (req, res) => {
                 preview = (body?.text || '').slice(0, 80);
             }
         } catch { }
-        return { id: r.id, is_group: !!r.is_group, title: r.title, preview };
+        return { id: r.id, is_group: !!r.is_group, title: r.title, color: r.color || null, preview };
     });
     res.json({ ok: true, items: out });
 });
 
+/** Conversation details (includes color + icon URL) */
 router.get('/dm/conversations/:id', requireAuth, (req, res) => {
     const convId = +req.params.id;
     const conv = getConv(convId);
@@ -321,6 +350,12 @@ router.get('/dm/conversations/:id', requireAuth, (req, res) => {
 
     const other = !conv.is_group ? (members.find(u => (u.id | 0) !== (req.userId | 0)) || null) : null;
 
+    const hasIcon = !!db.prepare(`SELECT 1 FROM dm_conv_icons WHERE conversation_id=? LIMIT 1`).get(convId);
+    const iconPath = hasIcon ? `/api/dm/conversations/${convId}/icon` : null;
+
+    const icon = db.prepare(`SELECT updated_at FROM dm_group_icons WHERE conversation_id=?`).get(convId);
+    const photo = icon ? `/api/dm/conversations/${convId}/icon?ts=${encodeURIComponent(icon.updated_at)}` : null;
+
     res.json({
         ok: true,
         id: conv.id,
@@ -328,6 +363,8 @@ router.get('/dm/conversations/:id', requireAuth, (req, res) => {
         title: conv.title,
         owner_id: conv.owner_id || null,
         is_owner: !!(conv.owner_id && (conv.owner_id | 0) === (req.userId | 0)),
+        color: conv.color || null,                 // NEW
+        photo,                                     // NEW (URL if present)
         members,
         other
     });
@@ -403,7 +440,7 @@ router.post('/dm/conversations/:id/messages', requireAuth, upload.array('files',
     const key = getOrCreateConvKey(convId);
     if (!key) return res.status(500).json({ error: 'key_missing' });
 
-    const kind = files.length ? (text ? 'mix' : 'file') : 'text';
+    const kind = files.length ? (text ? 'mix' : 'file') : (req.body?.kind || 'text');
     const encBody = encryptJSON(key, { text });
 
     const tx = db.transaction(() => {
@@ -461,6 +498,8 @@ router.patch('/dm/conversations/:id/members', requireAuth, (req, res) => {
     // Validate: only add friends of owner
     for (const uid of adds) {
         if (!areFriends(conv.owner_id, uid)) return res.status(400).json({ error: 'not_friends', user_id: uid });
+        const blocked = db.prepare(`SELECT 1 FROM dm_conv_blocks WHERE conversation_id=? AND user_id=?`).get(convId, uid);
+        if (blocked) return res.status(400).json({ error: 'user_blocked', user_id: uid });
     }
 
     // Compute final membership
@@ -485,9 +524,8 @@ router.patch('/dm/conversations/:id/members', requireAuth, (req, res) => {
             }
         }
 
-        // System messages (two separate messages if both happened)
+        // System messages
         const ownerName = getUserLabel(conv.owner_id);
-
         if (rems.length) {
             const names = rems.map(getUserLabel);
             addSystemMessage(convId, req.userId, `${ownerName} removed ${joinNames(names)} from the group`);
@@ -524,6 +562,27 @@ router.patch('/dm/conversations/:id/title', requireAuth, (req, res) => {
     res.json({ ok: true });
 });
 
+/** Transfer ownership (owner only). Body: { owner_id:number } */
+router.patch('/dm/conversations/:id/owner', requireAuth, (req, res) => {
+    const convId = +req.params.id;
+    const { conv, error } = ensureActiveGroup(convId);
+    if (error) return res.status(error === 'not_group' ? 400 : (error === 'deleted' ? 410 : 404)).json({ error });
+    if ((conv.owner_id | 0) !== (req.userId | 0)) return res.status(403).json({ error: 'owner_only' });
+
+    const newOwnerId = +req.body?.owner_id;
+    if (!newOwnerId || !isMember(convId, newOwnerId)) return res.status(400).json({ error: 'bad_owner' });
+
+    const tx = db.transaction(() => {
+        db.prepare(`UPDATE dm_conversations SET owner_id=? WHERE id=?`).run(newOwnerId, convId);
+        const oldName = getUserLabel(req.userId);
+        const newName = getUserLabel(newOwnerId);
+        addSystemMessage(convId, req.userId, `${oldName} made ${newName} the group owner.`);
+    });
+    tx();
+
+    res.json({ ok: true });
+});
+
 /** Leave group (non-owner). Enforce final size >= 3. */
 router.post('/dm/conversations/:id/leave', requireAuth, (req, res) => {
     const convId = +req.params.id;
@@ -546,7 +605,7 @@ router.post('/dm/conversations/:id/leave', requireAuth, (req, res) => {
     res.json({ ok: true });
 });
 
-/** Disband group (owner only). Also add to deleted-groups list with 30-day TTL. */
+/** (Optional) Disband group (owner only). Not used by client menu but kept available. */
 router.post('/dm/conversations/:id/disband', requireAuth, (req, res) => {
     const convId = +req.params.id;
     const { conv, error } = ensureActiveGroup(convId);
@@ -557,30 +616,46 @@ router.post('/dm/conversations/:id/disband', requireAuth, (req, res) => {
         // Mark deleted on conversation first (soft), then record & hard delete
         db.prepare(`UPDATE dm_conversations SET deleted_at = CURRENT_TIMESTAMP WHERE id=?`).run(convId);
         db.prepare(`INSERT INTO dm_deleted_groups(conversation_id, deleted_at) VALUES(?, CURRENT_TIMESTAMP)`).run(convId);
-
-        // Hard delete conversation rows (cascade via FKs)
         db.prepare(`DELETE FROM dm_conversations WHERE id=?`).run(convId);
     });
     tx();
 
-    // No system message; the group vanishes for everyone.
     res.json({ ok: true });
 });
 
-// (Optional: members-only endpoint still available)
-router.get('/dm/conversations/:id/members', requireAuth, (req, res) => {
+/** Delete chat for me (DM or group). Hides until a new message arrives. */
+router.post('/dm/conversations/:id/delete_for_me', requireAuth, (req, res) => {
     const convId = +req.params.id;
     if (!isMember(convId, req.userId)) return res.status(403).json({ error: 'forbidden' });
 
-    const members = db.prepare(`
-    SELECT u.id, u.username, u.first_username, u.profile_photo
-    FROM dm_members m
-    JOIN users u ON u.id = m.user_id
-    WHERE m.conversation_id=?
-    ORDER BY u.id
-  `).all(convId);
+    const lastMsg = db.prepare(`SELECT id FROM dm_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1`).get(convId);
+    const lastId = lastMsg?.id || 0;
 
-    res.json({ ok: true, members });
+    db.prepare(`
+    INSERT INTO dm_hidden(user_id, conversation_id, last_hidden_msg_id)
+    VALUES(?,?,?)
+    ON CONFLICT(user_id,conversation_id) DO UPDATE SET last_hidden_msg_id=excluded.last_hidden_msg_id
+  `).run(req.userId, convId, lastId);
+
+    res.json({ ok: true });
+});
+
+/** Block this group for me (prevents re-add). Also leaves if still a member. */
+router.post('/dm/conversations/:id/block', requireAuth, (req, res) => {
+    const convId = +req.params.id;
+    const conv = getConv(convId);
+    if (!conv) return res.status(404).json({ error: 'not_found' });
+
+    db.prepare(`INSERT OR IGNORE INTO dm_conv_blocks(user_id, conversation_id, created_at) VALUES(?,?,CURRENT_TIMESTAMP)`)
+        .run(req.userId, convId);
+
+    if (isMember(convId, req.userId) && conv.is_group) {
+        // try to leave quietly (do not enforce min_size for block)
+        db.prepare(`DELETE FROM dm_members WHERE conversation_id=? AND user_id=?`).run(convId, req.userId);
+        addSystemMessage(convId, req.userId, `${getUserLabel(req.userId)} left the group.`);
+    }
+
+    res.json({ ok: true });
 });
 
 /** Download attachment */
@@ -607,6 +682,59 @@ router.get('/dm/attachments/:id/download', requireAuth, (req, res) => {
     res.end(plain);
 });
 
+/** Group appearance (owner only): PATCH color and/or icon */
+router.patch('/dm/conversations/:id/appearance', requireAuth, multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } }).single('icon'), (req, res) => {
+    const convId = +req.params.id;
+    const { conv, error } = ensureActiveGroup(convId);
+    if (error) return res.status(error === 'not_group' ? 400 : (error === 'deleted' ? 410 : 404)).json({ error });
+    if (!isMember(convId, req.userId)) return res.status(403).json({ error: 'forbidden' });
+
+    const color = typeof req.body?.color === 'string' ? req.body.color.trim() : null;
+    const useDefault = String(req.body?.use_default_icon || '') === '1';
+    const file = req.file || null;
+
+    // validate simple hex color (#rgb/#rrggbb) — or allow empty/null to clear
+    const okColor = !color || /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color);
+
+    if (!okColor) return res.status(400).json({ error: 'bad_color' });
+
+    try {
+        if (color) setGroupColor(convId, color);
+
+        if (useDefault) {
+            deleteGroupIcon(convId);
+        } else if (file && file.buffer && file.size > 0) {
+            const type = (file.mimetype || 'image/png').toLowerCase();
+            if (!/^image\//.test(type)) return res.status(400).json({ error: 'bad_icon_type' });
+            upsertGroupIcon(convId, type, file.buffer);
+        }
+
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
+    }
+});
+
+/** Serve group icon (decrypted). Falls back to 404 so client can use default. */
+router.get('/dm/conversations/:id/icon', requireAuth, (req, res) => {
+    const convId = +req.params.id;
+    if (!isMember(convId, req.userId)) return res.status(403).end();
+    const row = getGroupIcon(convId);
+    if (!row) return res.status(404).end();
+
+    const key = getOrCreateConvKey(convId);
+    if (!key) return res.status(500).json({ error: 'key_missing' });
+
+    try {
+        const plain = aeadDecrypt(key, row.blob_cipher, row.blob_nonce);
+        res.setHeader('Content-Type', row.mime_type || 'image/png');
+        res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+        res.end(plain);
+    } catch (e) {
+        res.status(500).json({ error: 'decrypt_failed' });
+    }
+});
+
 /* ====== friend-unfriend hook ======
    Call this from your friends route when A unfriends B.
    It removes B from all A-owned groups and posts a system message in each. */
@@ -626,7 +754,7 @@ function removeUserFromOwnerGroups(ownerId, removedUserId) {
             const convId = g.id;
             if (!isMember(convId, removedUserId)) continue;
             db.prepare(`DELETE FROM dm_members WHERE conversation_id=? AND user_id=?`).run(convId, removedUserId);
-            // NOTE: We do NOT enforce min_size for this automatic removal (per product spec).
+            // no min-size enforcement for this automatic removal
             addSystemMessage(convId, ownerId, `${ownerName} unfriended ${removedName}. They've been removed from the group.`);
         }
     });

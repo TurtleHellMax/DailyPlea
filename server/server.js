@@ -1,4 +1,5 @@
-﻿require('dotenv').config();
+﻿// server.js
+require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -60,7 +61,7 @@ app.use(cors({
 }));
 
 /* ---------------- dev routes (optional) ---------------- */
-app.use('/api/dev', require('./routes-dev').router);
+try { app.use('/api/dev', require('./routes-dev').router); } catch { }
 
 /* ---------------- base info ---------------- */
 app.get('/api', (req, res) => {
@@ -115,7 +116,6 @@ const authLimiter = rateLimit({
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
-    // Use the library default IPv6-safe key generator
     skipFailedRequests: true,
 });
 app.use('/api/auth', authLimiter);
@@ -165,7 +165,8 @@ app.get('/user/:slug', (req, res, next) => {
 });
 
 /* ---------------- helper to create or reuse a 1:1 DM ----------------
-   This proxies to POST /api/dm/conversations so keys get created the same way. */
+   This proxies to POST /api/dm/conversations so keys get created the same way.
+   NOTE: routes-dm already exposes POST /api/dm/with/:slug; this remains for compatibility. */
 app.post('/api/dm/with/:slug', requireAuth, (req, res, next) => {
     const slug = String(req.params.slug || '');
     const other = db.prepare(

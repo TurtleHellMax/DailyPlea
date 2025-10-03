@@ -231,7 +231,7 @@
         box-shadow: 0 8px 18px rgba(0,0,0,.35);
         padding: 6px;
         display: none;
-        min-width: 200px;
+        min-width: 220px;
         z-index: 20;
     }
 
@@ -375,10 +375,9 @@
         z-index: 5;
     }
 
-    .jump.show {
-        opacity: 1;
-        pointer-events: auto;
-    }
+        .jump.show {
+            pointer-events: auto;
+        }
 
     @media (max-width:520px) {
         .msg {
@@ -481,29 +480,34 @@
         cursor: pointer;
     }
 
-    .checkbox:hover:not(:checked) {
-        opacity: .5;
-    }
-    /* 50% opacity on hover when not selected */
-    .checkbox:checked {
-        background: #fff;
-    }
-    /* filled white square when checked */
-    .checkbox:disabled {
-        opacity: .3;
-        cursor: not-allowed;
-    }
+        .checkbox:hover:not(:checked) {
+            opacity: .5;
+        }
+        /* 50% opacity on hover when not selected */
+        .checkbox:checked {
+            background: #fff;
+        }
+        /* filled white square when checked */
+        .checkbox:disabled {
+            opacity: .3;
+            cursor: not-allowed;
+        }
 
-    .checkbox:focus-visible {
-        outline: 2px solid #fff;
-        outline-offset: 2px;
-    }
+        .checkbox:focus-visible {
+            outline: 2px solid #fff;
+            outline-offset: 2px;
+        }
 
     .avatar, .pfp, .chat-pfp {
         border-radius: 999px !important;
         aspect-ratio: 1 / 1;
         object-fit: cover;
     }
+
+        /* Default group icon tint helper */
+        .chat-pfp.tinted-default {
+            box-shadow: 0 0 0 2px var(--gc, #fff) inset;
+        }
 
     /* chips row in picker footer */
     #selected-chips {
@@ -513,6 +517,93 @@
         flex-wrap: wrap;
         gap: 8px;
     }
+
+    /* === Restyle Group editor (scoped) === */
+    #restyle-overlay .editor {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    #restyle-overlay .stage {
+        background: #0d1520;
+        border: 1px dashed #2a3646;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        padding: 10px;
+        position: relative;
+    }
+
+        #restyle-overlay .stage canvas {
+            width: 100%;
+            max-width: 480px;
+            background: transparent;
+        }
+
+    #restyle-overlay .controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+
+        #restyle-overlay .controls .ctl {
+            background: #0d1520;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+        #restyle-overlay .controls input[type="range"] {
+            width: 100%;
+        }
+
+    #restyle-overlay .file-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    #restyle-overlay label.pill {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #0d1520;
+        border: 1px solid var(--border);
+        cursor: pointer;
+    }
+
+    #restyle-overlay .pf-preview {
+        display: grid;
+        grid-template-columns: 88px auto;
+        gap: 12px;
+        align-items: center;
+        background: #0d1520;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+
+        #restyle-overlay .pf-preview .thumb {
+            width: 88px;
+            height: 88px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: #0e1622;
+            border: var(--bw) solid #fff; /* thicker white ring like profile */
+            display: grid;
+            place-items: center;
+        }
+
+        #restyle-overlay .pf-preview img {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+        }
 </style>
 
 <div class="wrap">
@@ -531,16 +622,13 @@
             <img id="chat-pfp" class="chat-pfp" src="/web/default-avatar.png" alt="">
             <div class="chat-title" id="chat-title">Pick a conversation</div>
             <div class="spacer"></div>
-            <button id="chat-menu-btn" class="iconbtn" title="Group options">⋮</button>
+            <button id="chat-menu-btn" class="iconbtn" title="Options">⋮</button>
             <div id="chat-menu" class="menu"></div>
         </div>
 
         <div class="msgs" id="msgs">
             <div id="pad-top"></div>
-
-            <!-- ⬇️ MOVE the jump button INTO .msgs, above pad-bottom -->
             <button id="jump" class="jump btn" style="display:none">Jump to present ↓</button>
-
             <div id="pad-bottom"></div>
         </div>
 
@@ -560,7 +648,7 @@
     </main>
 </div>
 
-<!-- Overlay -->
+<!-- People picker overlay (DM / group create / edit / view) -->
 <div id="overlay" class="overlay" role="dialog" aria-modal="true">
     <div class="sheet" id="sheet">
         <h3 id="sheet-title">Start a conversation</h3>
@@ -594,28 +682,59 @@
             recording: { active: false, chunks: [], size: 0, rec: null, warnShown: false },
 
             // convo + meta
-            convMeta: new Map(),         // convId -> { name:'@og'|group title, photo:url }
+            convMeta: new Map(),         // convId -> { name, photo, is_group, color }
             convRowEls: new Map(),       // convId -> DOM div.conv
-            convUserOg: new Map(),       // convId -> og username (1:1)
+            convUserOg: new Map(),       // convId -> other @username (1:1)
             userCache: new Map(),        // og -> { username, photo, display_name, raw }
-            convItems: new Map(),        // convId -> raw item (for debugging)
+            convItems: new Map(),        // convId -> raw item
 
             // group/menu
             convDetailById: new Map(),
             currentConvDetail: null,     // {id,is_group,title,owner_id,is_owner,members:[]}
             pickerMode: 'dm',            // 'dm' | 'group-create' | 'group-edit' | 'view-members'
             selectedIds: new Set(),      // picked user_ids (others)
-            initialSelectedIds: new Set(), // for edit-change detection
-            friendsCache: [],            // list from fetchFriends()
-            idToFriend: new Map(),       // id -> friend object for quick lookup
+            initialSelectedIds: new Set(),
+            friendsCache: [],
+            idToFriend: new Map(),
 
             renderedMsgIds: new Set(),
             fetchingAfter: false,
             meSlug: '',
         };
+
         const LASTDM_KEY = 'dp:lastdm';
         const META_CACHE_KEY = 'dp:metaCache';
         let _metaSaveTimer = null;
+
+        /* ---------------- defaults & helpers ---------------- */
+        const DEFAULT_PFP_DM = '/web/default-avatar.png';
+        const DEFAULT_PFP_GROUP = '/web/default-groupavatar.png';
+
+        const GROUP_COLORS = [
+            { key: 'blue', val: '#3b82f6' },
+            { key: 'green', val: '#22c55e' },
+            { key: 'purple', val: '#a855f7' },
+            { key: 'orange', val: '#f97316' },
+            { key: 'pink', val: '#ec4899' },
+            { key: 'teal', val: '#14b8a6' },
+            { key: 'yellow', val: '#eab308' },
+            { key: 'red', val: '#ef4444' },
+        ];
+        function randomGroupColor() { return GROUP_COLORS[(Math.random() * GROUP_COLORS.length) | 0]; }
+
+        const afterPaint = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        function esc(s) { return String(s || '').replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])) }
+        function fmt(t) { try { return new Date(t).toLocaleString() } catch { return '' } }
+        function saveLastDM() { try { localStorage.setItem(LASTDM_KEY, JSON.stringify({ meId: state.meId | 0, convId: state.convId | 0, at: Date.now() })) } catch { } }
+        function loadLastDM() { try { return JSON.parse(localStorage.getItem(LASTDM_KEY) || 'null') } catch { return null } }
+        function nearBottom(px = 60) { const el = $('msgs'); return (el.scrollHeight - el.scrollTop - el.clientHeight) < px }
+        function scrollToBottom() { const el = $('msgs'); el.scrollTop = el.scrollHeight + 9999 }
+
+        const pickDisplay = o => o?.display_name || o?.name || null;
+        const pickUsername = o => o?.first_username || o?.username || o?.handle || null;
+        const pickPhoto = o => o?.profile_photo || o?.profile_photo_url || o?.photo || o?.photo_url || o?.avatar || o?.avatar_url || o?.picture || o?.image || o?.image_url || null;
+        const pickName = o => o?.display_name || o?.name || o?.username || o?.first_username || o?.handle || o?.title || null;
+
         function saveMetaCache() {
             const out = {
                 convUserOg: Array.from(state.convUserOg.entries()),
@@ -638,59 +757,16 @@
             } catch { }
         }
 
-        /* ---------------- utils ---------------- */
-        const afterPaint = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        function esc(s) { return String(s || '').replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])) }
-        function fmt(t) { try { return new Date(t).toLocaleString() } catch { return '' } }
-        function saveLastDM() { try { localStorage.setItem(LASTDM_KEY, JSON.stringify({ meId: state.meId | 0, convId: state.convId | 0, at: Date.now() })) } catch { } }
-        function loadLastDM() { try { return JSON.parse(localStorage.getItem(LASTDM_KEY) || 'null') } catch { return null } }
-        function nearBottom(px = 60) { const el = $('msgs'); return (el.scrollHeight - el.scrollTop - el.clientHeight) < px }
-        function scrollToBottom() { const el = $('msgs'); el.scrollTop = el.scrollHeight + 9999 }
-
-        const pickDisplay = o => o?.display_name || o?.name || null;
-        const pickUsername = o => o?.first_username || o?.username || o?.handle || null;
-        const DEFAULT_PFP = '/web/default-avatar.png';
-        const pickPhoto = o => o?.profile_photo || o?.profile_photo_url || o?.photo || o?.photo_url || o?.avatar || o?.avatar_url || o?.picture || o?.image || o?.image_url || null;
-        const pickName = o => o?.display_name || o?.name || o?.username || o?.first_username || o?.handle || o?.title || null;
-
-        const isPlaceholder = (m) => !m || m.name === 'Direct Message' || !m.photo || m.photo === DEFAULT_PFP;
-        const scoreMeta = (m) => !m ? 0 : ((m.name && m.name !== 'Direct Message') ? 1 : 0) + ((m.photo && m.photo !== DEFAULT_PFP) ? 1 : 0);
-
-        function mergeMeta(prev, next) {
-            const out = { ...(prev || {}), ...(next || {}) };
-            if (prev) {
-                if (!next?.name || next.name === 'Direct Message') out.name = prev.name;
-                if (!next?.photo || next.photo === DEFAULT_PFP) out.photo = prev.photo;
-            }
-            return out;
-        }
-
-        function joinNames(list) {
-            const arr = (list || []).filter(Boolean);
-            if (arr.length === 0) return '';
-            if (arr.length === 1) return arr[0];
-            if (arr.length === 2) return `${arr[0]} and ${arr[1]}`;
-            return `${arr.slice(0, -1).join(', ')}, and ${arr[arr.length - 1]}`;
-        }
-
-        function friendDisplay(u) {
-            // Prefer nice name; fall back to username-ish, capitalize first letter
-            const raw = u.display_name || u.name || u.first_username || u.username || 'User';
-            return String(raw);
-        }
-
         /* ---------------- API core ---------------- */
         async function api(path, opts = {}) {
             const headers = Object.assign({ 'Accept': 'application/json' }, opts.headers || {});
             const isJSON = opts.body && !(opts.body instanceof FormData);
             if (isJSON && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
             const url = API + path;
-            try {
-                const r = await fetch(url, { credentials: 'include', method: opts.method || 'GET', headers, body: isJSON ? JSON.stringify(opts.body) : opts.body });
-                const t = await r.text(); let d; try { d = t ? JSON.parse(t) : {} } catch { d = { raw: t } }
-                if (!r.ok) { const e = new Error(d?.error || r.statusText); e.status = r.status; e.detail = d?.detail || t; throw e; }
-                return d;
-            } catch (e) { throw e; }
+            const r = await fetch(url, { credentials: 'include', method: opts.method || 'GET', headers, body: isJSON ? JSON.stringify(opts.body) : opts.body });
+            const t = await r.text(); let d; try { d = t ? JSON.parse(t) : {} } catch { d = { raw: t } }
+            if (!r.ok) { const e = new Error(d?.error || r.statusText); e.status = r.status; e.detail = d?.detail || t; throw e; }
+            return d;
         }
         async function getMe() {
             const j = await api('/auth/me');
@@ -706,17 +782,18 @@
                 const j = await api(`/dm/conversations/${id}`);
 
                 // Build meta for the left list/top bar
-                let meta = { name: 'Direct Message', photo: DEFAULT_PFP };
+                let meta = { name: 'Direct Message', photo: DEFAULT_PFP_DM, is_group: !!j.is_group, color: (j.color || null) };
                 if (j.is_group) {
                     if ((j.title || '').trim()) meta.name = j.title.trim();
-                    meta.photo = j.photo || j.avatar || meta.photo;
+                    meta.photo = j.photo || j.avatar || DEFAULT_PFP_GROUP;
+                    meta.color = j.color || meta.color || '#ffffff';
                 } else {
                     const other = j.other || (Array.isArray(j.members) ? j.members.find(u => (u.id | 0) !== (state.meId | 0)) : null);
                     meta.name = pickName(other) || meta.name;
-                    meta.photo = pickPhoto(other) || meta.photo;
+                    meta.photo = pickPhoto(other) || DEFAULT_PFP_DM;
                 }
 
-                // Build a stable “detail” object
+                // Stable detail object
                 const detail = {
                     id: j.id,
                     is_group: !!j.is_group,
@@ -726,48 +803,55 @@
                     members: j.members || []
                 };
 
-                // Cache detail by id
                 state.convDetailById.set(id, detail);
-
-                // Only update the "current" detail if this is the currently open conversation
-                if ((state.convId | 0) === (id | 0)) {
-                    state.currentConvDetail = detail;
-                }
+                if ((state.convId | 0) === (id | 0)) state.currentConvDetail = detail;
 
                 // Merge/display meta
-                const best = mergeMeta(prev, meta);
+                const best = { ...(prev || {}), ...meta };
                 state.convMeta.set(id, best);
-
-                // Only touch the UI of the current chat
                 if ((state.convId | 0) === (id | 0)) updateEverywhere(id);
-
                 return best;
             } catch (e) {
                 if (prev) return prev;
-                const fallback = { name: 'Direct Message', photo: DEFAULT_PFP };
+                const fallback = { name: 'Direct Message', photo: DEFAULT_PFP_DM, is_group: false };
                 state.convMeta.set(id, fallback);
                 return fallback;
             }
         }
 
-        function setConvMeta(id, meta, source = 'unknown') {
-            const prev = state.convMeta.get(id);
-            const ps = scoreMeta(prev), ns = scoreMeta(meta);
-            if (ns > ps) { state.convMeta.set(id, meta); updateEverywhere(id); scheduleSaveMeta(); }
+        function setConvMeta(id, meta) {
+            const prev = state.convMeta.get(id) || {};
+            const next = { ...prev, ...meta };
+            state.convMeta.set(id, next);
+            updateEverywhere(id);
+            scheduleSaveMeta();
         }
 
-        function setImgSafe(img, src) {
-            const want = src || DEFAULT_PFP;
+        function setImgSafe(img, src, fallback = DEFAULT_PFP_DM) {
             if (!img) return;
+            const want = src || fallback;
             if (img.dataset.srcApplied === want) return;
-            img.onerror = () => { img.src = DEFAULT_PFP; img.dataset.srcApplied = DEFAULT_PFP; };
+            img.onerror = () => { img.src = fallback; img.dataset.srcApplied = fallback; };
             img.src = want; img.dataset.srcApplied = want;
         }
 
         function updateTopBar(meta) {
             if (!meta) return;
             $('chat-title').textContent = meta.name || 'Direct Message';
-            setImgSafe($('chat-pfp'), meta.photo);
+            const pfp = $('chat-pfp');
+            setImgSafe(pfp, meta.photo, meta?.is_group ? DEFAULT_PFP_GROUP : DEFAULT_PFP_DM);
+            if (meta.is_group) {
+                const gc = meta.color || '#ffffff';
+                pfp.style.borderColor = gc;
+                pfp.style.setProperty('--gc', gc);
+                const isDefaultGroup = (meta.photo === DEFAULT_PFP_GROUP);
+                pfp.classList.toggle('tinted-default', isDefaultGroup);
+                pfp.style.background = isDefaultGroup ? gc : '#000';
+            } else {
+                pfp.style.borderColor = 'var(--border)';
+                pfp.classList.remove('tinted-default');
+                pfp.style.background = '#000';
+            }
             renderChatMenu();
         }
 
@@ -776,16 +860,14 @@
             if (!meta) return;
             const row = state.convRowEls.get(id);
             if (row) setConvRowContent(row, meta, row.querySelector('.preview')?.textContent || '');
-            if (state.convId === id) {
-                const current = { name: $('chat-title').textContent, photo: $('chat-pfp').getAttribute('src') };
-                const better = scoreMeta(meta) >= scoreMeta(current);
-                if (better) updateTopBar(meta);
-            }
+            if (state.convId === id) updateTopBar(meta);
         }
 
         function setConvRowContent(row, meta, preview) {
+            const photo = meta?.photo || (meta?.is_group ? DEFAULT_PFP_GROUP : DEFAULT_PFP_DM);
+            const border = meta?.is_group ? (meta?.color || '#fff') : '#fff';
             row.innerHTML = `
-            <img class="avatar" src="${meta?.photo || DEFAULT_PFP}" alt="">
+            <img class="avatar ${photo === DEFAULT_PFP_GROUP ? 'tinted-default' : ''}" src="${photo}" alt="" style="border-color:${border}; background:${photo === DEFAULT_PFP_GROUP ? border : '#000'}">
             <div>
                 <div class="name">${esc(meta?.name || 'Direct Message')}</div>
                 <div class="preview">${esc(preview || '…')}</div>
@@ -841,8 +923,8 @@
         }
         function metaFromUser(u) {
             const nm = '@' + (u?.username || 'user');
-            const ph = u?.photo || DEFAULT_PFP;
-            return { name: nm, photo: ph };
+            const ph = u?.photo || DEFAULT_PFP_DM;
+            return { name: nm, photo: ph, is_group: false };
         }
 
         /* ---------------- conversations list ---------------- */
@@ -851,15 +933,20 @@
             state.convRowEls.clear();
             list.forEach(it => {
                 const row = document.createElement('div'); row.className = 'conv'; row.dataset.id = it.id;
-                const meta = state.convMeta.get(it.id) || { name: it.title || 'Direct Message', photo: DEFAULT_PFP };
-                row.onclick = () => openConversation(it.id, meta?.name || it.title || 'Direct Message');
+                const defaultMeta = {
+                    name: (it.is_group ? (it.title || 'Group') : (it.title || 'Direct Message')),
+                    photo: it.is_group ? DEFAULT_PFP_GROUP : DEFAULT_PFP_DM,
+                    is_group: !!it.is_group,
+                    color: it.color || null
+                };
+                const meta = state.convMeta.get(it.id) || defaultMeta;
+                row.onclick = () => openConversation(it.id, meta?.name || defaultMeta.name);
                 setConvRowContent(row, meta, it.preview);
                 state.convRowEls.set(it.id, row);
                 wrap.append(row);
-                // Safety only (should already be hydrated when blockingMeta=true on first load):
-                if (!state.convMeta.has(it.id) || isPlaceholder(state.convMeta.get(it.id))) {
-                        fetchConvMeta(it.id).catch(() => { });
-                }
+                if (!state.convMeta.has(it.id)) state.convMeta.set(it.id, defaultMeta);
+                // Background hydrate
+                if (!state.convMeta.has(it.id)) fetchConvMeta(it.id).catch(() => { });
             });
             applySelectedHighlight();
         }
@@ -877,14 +964,17 @@
             state.allConvs = j.items || [];
             state.allConvs.forEach(it => state.convItems.set(it.id, it));
 
-            // ⬇️ NEW: pre-seed row names/photos synchronously
+            // Pre-seed meta
             for (const it of state.allConvs) {
                 if (!state.convMeta.has(it.id)) {
-                    let meta = { name: it.title || 'Direct Message', photo: DEFAULT_PFP };
+                    let meta = {
+                        name: it.is_group ? (it.title || 'Group') : 'Direct Message',
+                        photo: it.is_group ? DEFAULT_PFP_GROUP : DEFAULT_PFP_DM,
+                        is_group: !!it.is_group,
+                        color: it.color || null
+                    };
 
                     if (!it.is_group) {
-                        // Try to infer @username directly from list item (if it exposes it),
-                        // otherwise use any cached mapping from prior sessions.
                         let og = state.convUserOg.get(it.id) || extractOgFromConvDetail(it);
                         if (og) {
                             state.convUserOg.set(it.id, og);
@@ -894,26 +984,20 @@
                             scheduleSaveMeta();
                         }
                     }
-
                     state.convMeta.set(it.id, meta);
                 }
             }
             scheduleSaveMeta();
 
             if (blockingMeta) {
-            // Fetch real meta for each conversation exactly like chat-open does
                 await Promise.allSettled(
                     state.allConvs.map(it => fetchConvMeta(it.id))
                 );
             } else {
-            // Non-blocking path (used after new messages arrive)
                 state.allConvs.forEach(it => {
-                    if (!state.convMeta.has(it.id) || isPlaceholder(state.convMeta.get(it.id))) {
-                        fetchConvMeta(it.id).catch(() => { });
-                        }
+                    if (!state.convMeta.has(it.id)) fetchConvMeta(it.id).catch(() => { });
                 });
             }
-
             renderConvs(state.allConvs);
         }
         $('conv-q').addEventListener('input', applyConvFilter);
@@ -949,7 +1033,7 @@
             items = (items || []).filter(m => !state.renderedMsgIds.has(m.id));
             const anchor = $('pad-bottom');
             items.forEach(m => {
-                state.renderedMsgIds.add(m.id);                     // <-- mark seen
+                state.renderedMsgIds.add(m.id);
                 const el = renderMessage(m);
                 anchor.before(el);
                 state.oldestMsgId = state.oldestMsgId === null ? m.id : Math.min(state.oldestMsgId, m.id);
@@ -964,7 +1048,7 @@
             const prevTop = box.scrollTop, prevH = box.scrollHeight;
             const frag = document.createDocumentFragment();
             items.forEach(m => {
-                state.renderedMsgIds.add(m.id);                     // <-- mark seen
+                state.renderedMsgIds.add(m.id);
                 frag.append(renderMessage(m));
                 state.oldestMsgId = state.oldestMsgId === null ? m.id : Math.min(state.oldestMsgId, m.id);
                 state.lastMsgId = Math.max(state.lastMsgId, m.id);
@@ -1011,20 +1095,19 @@
 
             state.convId = id; saveLastDM();
             state.currentConvDetail = state.convDetailById.get(id) || null;
-            renderChatMenu(); // show something immediately; fetch will firm it up
             applySelectedHighlight();
 
             if (!state.convMeta.has(id)) {
                 const seedItem = state.convItems.get(id) || {};
-                state.convMeta.set(id, { name: seedItem.title || 'Direct Message', photo: DEFAULT_PFP });
+                state.convMeta.set(id, { name: seedItem.title || 'Direct Message', photo: DEFAULT_PFP_DM, is_group: !!seedItem.is_group, color: seedItem.color || null });
             }
-            updateEverywhere(id);
+            updateEverywhere(id); // force header to current chat
 
             // hydrate meta & detail
             fetchConvMeta(id).catch(() => { });
 
             $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
-            state.renderedMsgIds.clear();          // <-- add this
+            state.renderedMsgIds.clear();
             setBottomPad(0); removedBottom = []; state.lastMsgId = 0; state.oldestMsgId = null; state.nextBefore = null;
 
             const j = await api(`/dm/conversations/${id}/messages?limit=30`);
@@ -1056,7 +1139,7 @@
         }
         function startCatchup() { state.poll = setInterval(() => { fetchAfter(state.lastMsgId).catch(() => { }); }, 30000); }
         async function fetchAfter(lastId) {
-            if (state.fetchingAfter) return;          // <-- lock
+            if (state.fetchingAfter) return;
             state.fetchingAfter = true;
             try {
                 const j = await api(`/dm/conversations/${state.convId}/messages?after=${lastId}&limit=100`);
@@ -1125,29 +1208,23 @@
             }
         }
 
-        /* ---------------- overlay (friends / group create/edit / view members) ---------------- */
+        /* ---------------- overlay (friends / group create/edit/view) ---------------- */
         const overlay = $('overlay'), userList = $('user-list');
-        const pageSlug = (location.pathname.match(/\/user\/([^\/]+)\/messages/i) || [])[1]
-            ? decodeURIComponent((location.pathname.match(/\/user\/([^\/]+)\/messages/i) || [])[1]) : '';
 
         async function fetchFriends() {
-            // Try /users/me/friends first (most correct), then fall back to slugged endpoint
             let arr = [];
             try {
                 const j1 = await api(`/users/me/friends`);
                 arr = j1.items || j1.friends || [];
             } catch { }
-
             if ((!arr || !arr.length) && state.meSlug) {
                 try {
                     const j2 = await api(`/users/${encodeURIComponent(state.meSlug)}/friends?offset=0&limit=500`);
                     arr = j2.items || j2.friends || [];
                 } catch { }
             }
-
-            // Normalize fields (id/username may be at top level or nested)
             const norm = (arr || []).map(u => {
-                const nu = u.user || u; // some APIs nest under { user: { ... } }
+                const nu = u.user || u;
                 const id = nu.id ?? nu.user_id ?? nu.friend_id ?? null;
                 const username = nu.username ?? nu.first_username ?? null;
                 const first_username = nu.first_username ?? nu.username ?? null;
@@ -1155,8 +1232,12 @@
                 const bio = nu.bio ?? nu.bio_html ?? '';
                 return { id, username, first_username, profile_photo, bio };
             }).filter(x => x.id);
-
             return norm;
+        }
+
+        function friendDisplay(u) {
+            const raw = u.display_name || u.name || u.first_username || u.username || 'User';
+            return String(raw);
         }
 
         function refreshSelectedChips() {
@@ -1178,10 +1259,9 @@
             const mode = state.pickerMode;
             if (mode === 'group-create') {
                 btn.textContent = 'Create Group';
-                btn.disabled = (state.selectedIds.size < 2); // need >1 other (3 total incl me)
+                btn.disabled = (state.selectedIds.size < 2);
             } else if (mode === 'group-edit') {
                 btn.textContent = 'Save Changes';
-                // total members after save = 1 (owner/me) + selectedIds.size (others incl current may overlap)
                 const total = 1 + state.selectedIds.size;
                 const changed = !eqSets(state.selectedIds, state.initialSelectedIds);
                 btn.disabled = !(changed && total >= 3);
@@ -1201,7 +1281,6 @@
 
             userList.innerHTML = '';
             const q = $('user-q').value.trim().toLowerCase();
-
             let items = list.filter(u => {
                 if (!q) return true;
                 return (u.username || '').toLowerCase().includes(q) ||
@@ -1210,31 +1289,24 @@
             });
 
             const mode = state.pickerMode;
-
             items.forEach(u => {
                 const row = document.createElement('div'); row.className = 'person';
-
                 const label = '@' + (u.username || u.first_username || 'user');
                 const checked = state.selectedIds.has(u.id);
-                const isEdit = (mode === 'group-edit');
-                const isOwner = state.currentConvDetail?.is_owner;
-                const isMe = (u.id | 0) === (state.meId | 0); // should not be in friends list anyway
-                const disableCheck = false; // only friends list (not members) so no self here
 
                 let right = '';
-
                 if (mode === 'dm') {
                     right = `<div class="act"><button class="btn person-message">Message</button></div>`;
                 } else if (mode === 'group-create' || mode === 'group-edit') {
                     right = `<div class="act">
-                    <input type="checkbox" class="checkbox person-check" ${checked ? 'checked' : ''} ${disableCheck ? 'disabled' : ''} />
+                    <input type="checkbox" class="checkbox person-check" ${checked ? 'checked' : ''}/>
                 </div>`;
-                } else if (mode === 'view-members') {
+                } else {
                     right = `<div class="act"></div>`;
                 }
 
                 row.innerHTML = `
-                <img class="pfp" src="${u.profile_photo || DEFAULT_PFP}" alt="">
+                <img class="pfp" src="${u.profile_photo || DEFAULT_PFP_DM}" alt="">
                 <div>
                     <div class="name">${esc(label)}</div>
                     <div class="bio">${esc(u.bio || '')}</div>
@@ -1290,10 +1362,9 @@
         $('btn-newgroup').onclick = () => openPicker('group-create');
 
         overlay.addEventListener('click', e => { if (e.target === overlay) closePicker(); });
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePicker(); hideChatMenu(); } });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePicker(); hideChatMenu(); hideRestyle(); } });
 
         $('user-q').addEventListener('input', async () => renderFriends(state.friendsCache));
-
         $('btn-cancel').onclick = () => closePicker();
 
         $('btn-group-submit').onclick = async () => {
@@ -1303,7 +1374,8 @@
                 const names = ids.map(id => friendDisplay(state.idToFriend.get(id)));
                 const title = joinNames(names);
                 try {
-                    const res = await api('/dm/conversations', { method: 'POST', body: { user_ids: ids, title } });
+                    const rc = randomGroupColor();
+                    const res = await api('/dm/conversations', { method: 'POST', body: { user_ids: ids, title, color: rc.val } });
                     closePicker();
                     await loadConversations({ blockingMeta: true });
                     if (res?.id) await openConversation(res.id);
@@ -1335,9 +1407,9 @@
                 closePicker(); await loadConversations({ blockingMeta: true });
                 const cid = res?.conversation_id || res?.id;
                 if (cid) {
-                    const meta = { name: '@' + og, photo: u.profile_photo || DEFAULT_PFP };
-                    setConvMeta(cid, meta, 'startDmWith');
-                    state.userCache.set(og, { username: og, photo: u.profile_photo || DEFAULT_PFP, display_name: null, raw: u });
+                    const meta = { name: '@' + og, photo: u.profile_photo || DEFAULT_PFP_DM, is_group: false };
+                    setConvMeta(cid, meta);
+                    state.userCache.set(og, { username: og, photo: u.profile_photo || DEFAULT_PFP_DM, display_name: null, raw: u });
                     scheduleSaveMeta();
                     openConversation(cid);
                 } else if (state.allConvs[0]) {
@@ -1362,26 +1434,27 @@
 
         function renderChatMenu() {
             const det = state.currentConvDetail || state.convDetailById.get(state.convId) || {};
-            const isGroup = det.is_group;
+            const isGroup = !!det.is_group;
             const isOwner = !!det.is_owner;
 
-            // Only hide the button if we *know* this is a DM. If we don't know yet, keep it visible.
-            if (isGroup === false) {
-                chatMenu.innerHTML = '';
-                chatMenu.style.display = 'none';
-                chatMenuBtn.style.display = 'none';
-                return;
-            }
+            // Always show menu; content varies
             chatMenuBtn.style.display = '';
 
             const items = [];
-            if (isOwner) {
-                items.push({ id: 'rename', label: 'Rename group' });
-                items.push({ id: 'edit-members', label: 'Add or remove people' });
+            if (isGroup) {
+                if (isOwner) {
+                    items.push({ id: 'rename', label: 'Rename group' });
+                    items.push({ id: 'manage', label: 'Manage members' }); // owner: remove + make owner
+                } else {
+                    items.push({ id: 'view-members', label: 'View members' });
+                }
+                items.push({ id: 'restyle', label: 'Restyle Group' }); // color + icon
+                items.push({ id: 'leave', label: 'Leave group' });
+                items.push({ id: 'block-group', label: 'Block this group' });
+            } else {
+                items.push({ id: 'delete-dm', label: 'Delete chat (for me)' });
+                items.push({ id: 'block-user', label: 'Block user' });
             }
-            items.push({ id: 'view-members', label: 'View members' });
-            if (!isOwner) items.push({ id: 'leave', label: 'Leave group' });
-            if (isOwner) items.push({ id: 'disband', label: 'Disband group' });
 
             chatMenu.innerHTML = items.map(i => `<div class="item" data-id="${i.id}">${esc(i.label)}</div>`).join('');
 
@@ -1399,49 +1472,427 @@
                             await fetchConvMeta(state.convId);
                             await fetchAfter(state.lastMsgId);
                             await loadConversations({ blockingMeta: true });
-                            await afterPaint();          // <-- add
-                            renderChatMenu();            // <-- add (ensures menu rebinds cleanly)
+                            await afterPaint();
+                            renderChatMenu();
                         } catch (e) { alert(e.detail || e.message || e); }
-                    } else if (id === 'edit-members') {
-                        // preselect all current others (everyone except owner/me)
-                        const members = (state.currentConvDetail?.members || []).filter(u => (u.id | 0) !== (state.currentConvDetail.owner_id | 0));
-                        const pre = members.map(u => u.id);
-                        await openPicker('group-edit', { preselectIds: pre });
+                    } else if (id === 'manage') {
+                        await openManageMembers();
                     } else if (id === 'view-members') {
-                        // List current members (no checkboxes)
                         state.pickerMode = 'view-members';
                         $('sheet-title').textContent = 'Group Members';
                         $('group-cta').style.display = 'none';
                         $('overlay').style.display = 'flex';
                         $('user-q').value = '';
-                        // synthesize a list from current members (may include non-friends)
                         const members = (state.currentConvDetail?.members || []).map(u => ({
                             id: u.id, username: u.username, first_username: u.first_username, profile_photo: u.profile_photo, bio: ''
                         }));
                         renderFriends(members);
+                    } else if (id === 'restyle') {
+                        openRestyleOverlay();
                     } else if (id === 'leave') {
                         if (!confirm('Leave this group?')) return;
                         try {
                             await api(`/dm/conversations/${state.convId}/leave`, { method: 'POST' });
                             state.convId = null; state.currentConvDetail = null;
                             $('chat-title').textContent = 'Pick a conversation';
-                            $('chat-pfp').src = DEFAULT_PFP;
+                            $('chat-pfp').src = DEFAULT_PFP_DM;
                             $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
                             await loadConversations({ blockingMeta: true });
                         } catch (e) { alert(e.detail || e.message || e); }
-                    } else if (id === 'disband') {
-                        if (!confirm('Disband this group for everyone? This cannot be undone.')) return;
+                    } else if (id === 'block-group') {
+                        if (!confirm('Block this group? You will also leave it and won’t be added again.')) return;
                         try {
-                            await api(`/dm/conversations/${state.convId}/disband`, { method: 'POST' });
+                            await api(`/dm/conversations/${state.convId}/block`, { method: 'POST' });
+                            await api(`/dm/conversations/${state.convId}/leave`, { method: 'POST' });
                             state.convId = null; state.currentConvDetail = null;
                             $('chat-title').textContent = 'Pick a conversation';
-                            $('chat-pfp').src = DEFAULT_PFP;
+                            $('chat-pfp').src = DEFAULT_PFP_DM;
                             $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
                             await loadConversations({ blockingMeta: true });
+                        } catch (e) { alert(e.detail || e.message || e); }
+                    } else if (id === 'delete-dm') {
+                        if (!confirm('Delete this chat for you? The other person will still see it.')) return;
+                        try {
+                            const my = state.meSlug || 'Someone';
+                            await api(`/dm/conversations/${state.convId}/messages`, { method: 'POST', body: { text: `${my} deleted this chat.`, kind: 'system' } });
+                            await api(`/dm/conversations/${state.convId}/delete_for_me`, { method: 'POST' });
+                            state.convId = null; state.currentConvDetail = null;
+                            $('chat-title').textContent = 'Pick a conversation';
+                            $('chat-pfp').src = DEFAULT_PFP_DM;
+                            $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
+                            await loadConversations({ blockingMeta: true });
+                        } catch (e) { alert(e.detail || e.message || e); }
+                    } else if (id === 'block-user') {
+                        try {
+                            const other = (state.currentConvDetail?.members || []).find(u => (u.id | 0) !== (state.meId | 0));
+                            if (!other) { alert('Could not find user to block.'); return; }
+                            await api(`/blocks/users`, { method: 'POST', body: { user_id: other.id } });
+                            alert('User blocked.');
                         } catch (e) { alert(e.detail || e.message || e); }
                     }
                 };
             });
+        }
+
+        /* ---------------- Manage members (owner only) ---------------- */
+        async function openManageMembers() {
+            const det = state.currentConvDetail || state.convDetailById.get(state.convId) || {};
+            if (!det?.is_group || !det?.members?.length) return;
+            state.pickerMode = 'view-members';
+            $('sheet-title').textContent = 'Manage Group';
+            $('group-cta').style.display = 'none';
+            $('overlay').style.display = 'flex';
+            $('user-q').value = '';
+            const members = (det.members || []).map(u => ({
+                id: u.id, username: u.username, first_username: u.first_username, profile_photo: u.profile_photo, bio: ''
+            }));
+            renderFriends(members);
+            // Add action buttons to each member row
+            Array.from(document.querySelectorAll('#user-list .person')).forEach((row, idx) => {
+                const m = members[idx];
+                const act = document.createElement('div');
+                act.className = 'act';
+                act.style.display = 'flex';
+                act.style.gap = '8px';
+                const makeOwner = document.createElement('button');
+                makeOwner.className = 'btn';
+                makeOwner.textContent = 'Make owner';
+                makeOwner.onclick = async (e) => {
+                    e.stopPropagation();
+                    try {
+                        await api(`/dm/conversations/${state.convId}/owner`, { method: 'PATCH', body: { owner_id: m.id } });
+                        await fetchConvMeta(state.convId);
+                        await loadConversations({ blockingMeta: true });
+                        alert('Owner updated.');
+                    } catch (e) { alert(e.detail || e.message || e); }
+                };
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'btn';
+                removeBtn.textContent = 'Remove';
+                removeBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    if (!confirm('Remove this person from the group?')) return;
+                    try {
+                        await api(`/dm/conversations/${state.convId}/members`, { method: 'PATCH', body: { add_user_ids: [], remove_user_ids: [m.id] } });
+                        await fetchConvMeta(state.convId);
+                        await loadConversations({ blockingMeta: true });
+                        row.remove();
+                    } catch (e) { alert(e.detail || e.message || e); }
+                };
+                act.append(makeOwner, removeBtn);
+                row.append(act);
+            });
+        }
+
+        /* ---------------- Restyle Group (color + icon) ---------------- */
+        /* ---------------- Restyle Group (color + icon) ---------------- */
+        let restyleEl = null;
+
+        function ensureRestyle() {
+            if (restyleEl) return restyleEl;
+            restyleEl = document.createElement('div');
+            restyleEl.id = 'restyle-overlay';
+            restyleEl.className = 'overlay';
+            restyleEl.innerHTML = `
+    <div class="sheet" style="width:min(720px,94vw)">
+      <h3>Restyle Group</h3>
+
+      <div class="pf-preview">
+        <div class="thumb"><img id="restyle-preview" alt="preview"></div>
+        <div class="muted">PNG will be generated at up to <b>512px</b> (longest side). Final file must be ≤ <b>1&nbsp;MB</b>.</div>
+      </div>
+
+      <div class="file-row">
+        <label class="pill">
+          <span>Choose image</span>
+          <input id="restyle-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style="display:none">
+        </label>
+        <span class="muted">or drag & drop onto the canvas</span>
+        <div id="restyle-filename" class="muted" style="font-size:13px"></div>
+        <button class="btn" id="restyle-clear" type="button">Use default</button>
+      </div>
+
+      <div class="editor" style="margin-top:10px">
+        <div class="stage" id="restyle-drop">
+          <canvas id="restyle-canvas" width="320" height="320"></canvas>
+        </div>
+
+        <div class="controls">
+          <div class="ctl">
+            <div class="muted" style="margin-bottom:6px">Zoom</div>
+            <input id="restyle-zoom" type="range" min="0" max="1" step="0.01" value="0.5">
+          </div>
+          <div class="ctl">
+            <div class="muted" style="margin-bottom:6px">Rotate</div>
+            <input id="restyle-rot" type="range" min="-180" max="180" step="1" value="0">
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn secondary" id="restyle-cancel" type="button">Cancel</button>
+          <button class="btn" id="restyle-save" disabled>Save changes</button>
+        </div>
+        <div class="note">Tips: drag the image to reposition. Use zoom/rotate. Output is PNG with transparency preserved.</div>
+      </div>
+    </div>
+  `;
+            document.body.append(restyleEl);
+            restyleEl.addEventListener('click', (e) => { if (e.target === restyleEl) hideRestyle(); });
+            return restyleEl;
+        }
+
+        function hideRestyle() { if (restyleEl) restyleEl.style.display = 'none'; }
+
+        function openRestyleOverlay() {
+            const meta = state.convMeta.get(state.convId) || {};
+            const det = state.currentConvDetail || state.convDetailById.get(state.convId) || {};
+            if (!det.is_group) return;
+
+            const el = ensureRestyle();
+            el.style.display = 'flex';
+
+            const preview = el.querySelector('#restyle-preview');
+            const fileIn = el.querySelector('#restyle-file');
+            const fileName = el.querySelector('#restyle-filename');
+            const clearBtn = el.querySelector('#restyle-clear');
+            const saveBtn = el.querySelector('#restyle-save');
+            const cancelBtn = el.querySelector('#restyle-cancel');
+
+            const colorBox = document.createElement('div');
+            colorBox.style.display = 'flex';
+            colorBox.style.gap = '8px';
+            colorBox.style.flexWrap = 'wrap';
+            colorBox.style.alignItems = 'center';
+            colorBox.style.margin = '12px 0 0';
+            colorBox.innerHTML = `<div style="font-weight:700">Color</div>`;
+            // insert before editor
+            el.querySelector('.editor').insertAdjacentElement('beforebegin', colorBox);
+
+            const canvas = el.querySelector('#restyle-canvas');
+            const ctx = canvas.getContext('2d');
+            const drop = el.querySelector('#restyle-drop');
+            const zoomEl = el.querySelector('#restyle-zoom');
+            const rotEl = el.querySelector('#restyle-rot');
+
+            // --- state ---
+            let selectedColor = meta.color || '#ffffff';
+            let selectedColorKey = (GROUP_COLORS.find(c => c.val === selectedColor)?.key) || null;
+
+            let imgBitmap = null;
+            let imgW = 0, imgH = 0;
+            let pos = { x: 0, y: 0 };
+            let dragging = false, last = { x: 0, y: 0 };
+            let zoom = parseFloat(zoomEl.value);
+            let rot = parseFloat(rotEl.value) * Math.PI / 180;
+            let usingDefault = (meta.photo === DEFAULT_PFP_GROUP);
+            let dirty = false;
+
+            // --- color chips (exact look via existing .btn polish) ---
+            GROUP_COLORS.forEach(c => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'btn';
+                b.style.cssText = `border-color:${c.val};background:${c.val};color:#000`;
+                b.textContent = c.key;
+                b.onclick = () => {
+                    selectedColor = c.val;
+                    selectedColorKey = c.key;
+                    paintPreview(); markDirty();
+                };
+                colorBox.append(b);
+            });
+
+            function setImgSafe(img, src, fallback) {
+                img.onerror = () => { img.src = fallback; };
+                img.src = src || fallback;
+            }
+            function paintPreview() {
+                const isDefault = usingDefault && !imgBitmap;
+                const fallback = DEFAULT_PFP_GROUP;
+                const active = isDefault ? fallback : (meta.photo || fallback);
+                setImgSafe(preview, active, fallback);
+                preview.style.borderColor = selectedColor;
+                preview.style.background = isDefault ? selectedColor : '#000';
+            }
+            function markDirty() { dirty = true; saveBtn.disabled = false; }
+            paintPreview(); saveBtn.disabled = true;
+
+            // --- draw current transform to editor canvas ---
+            function scaleForZoom() { return 0.5 + zoom * 2.5; } // 0.5x..3x
+            function redraw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (!imgBitmap) return;
+                ctx.save();
+                ctx.translate(canvas.width / 2 + pos.x, canvas.height / 2 + pos.y);
+                ctx.rotate(rot);
+                const s = scaleForZoom();
+                const dw = imgW * s, dh = imgH * s;
+                ctx.drawImage(imgBitmap, -dw / 2, -dh / 2, dw, dh);
+                ctx.restore();
+            }
+
+            // --- file -> bitmap ---
+            function loadBitmapFromFile(file) {
+                return new Promise((resolve, reject) => {
+                    const r = new FileReader();
+                    r.onload = async () => {
+                        try {
+                            const bmp = await createImageBitmap(new Blob([r.result]));
+                            resolve(bmp);
+                        } catch (e) { reject(e); }
+                    };
+                    r.onerror = () => reject(r.error);
+                    r.readAsArrayBuffer(file);
+                });
+            }
+
+            async function setImageFile(file) {
+                if (!file) return;
+                try {
+                    imgBitmap = await loadBitmapFromFile(file);
+                    imgW = imgBitmap.width; imgH = imgBitmap.height;
+                    pos = { x: 0, y: 0 };
+                    zoom = 0.5; zoomEl.value = '0.5';
+                    rot = 0; rotEl.value = '0';
+                    fileName.textContent = file.name;
+                    usingDefault = false;
+                    redraw();
+                    const url = URL.createObjectURL(file);
+                    preview.src = url; preview.style.background = '#000';
+                    markDirty();
+                } catch (e) { alert('Could not read image: ' + (e.message || e)); }
+            }
+
+            // drag & drop
+            drop.addEventListener('dragover', e => { e.preventDefault(); });
+            drop.addEventListener('drop', e => {
+                e.preventDefault();
+                const f = e.dataTransfer?.files?.[0];
+                if (f) setImageFile(f);
+            });
+
+            // choose
+            fileIn.onchange = () => {
+                const f = fileIn.files?.[0];
+                if (f) setImageFile(f);
+            };
+
+            // clear to default
+            clearBtn.onclick = () => {
+                imgBitmap = null; imgW = imgH = 0;
+                pos = { x: 0, y: 0 };
+                zoom = 0.5; zoomEl.value = '0.5';
+                rot = 0; rotEl.value = '0';
+                fileIn.value = ''; fileName.textContent = '';
+                usingDefault = true;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                paintPreview(); markDirty();
+            };
+
+            // pan
+            canvas.addEventListener('pointerdown', e => {
+                dragging = true; last = { x: e.clientX, y: e.clientY };
+                canvas.setPointerCapture(e.pointerId);
+            });
+            canvas.addEventListener('pointermove', e => {
+                if (!dragging) return;
+                const dx = e.clientX - last.x, dy = e.clientY - last.y;
+                last = { x: e.clientX, y: e.clientY };
+                pos.x += dx; pos.y += dy;
+                redraw(); markDirty();
+            });
+            const endDrag = e => { dragging = false; try { canvas.releasePointerCapture(e.pointerId); } catch { } };
+            canvas.addEventListener('pointerup', endDrag);
+            canvas.addEventListener('pointercancel', endDrag);
+            canvas.addEventListener('pointerleave', endDrag);
+
+            // sliders
+            zoomEl.oninput = () => { zoom = parseFloat(zoomEl.value); redraw(); markDirty(); };
+            rotEl.oninput = () => { rot = parseFloat(rotEl.value) * Math.PI / 180; redraw(); markDirty(); };
+
+            cancelBtn.onclick = () => hideRestyle();
+
+            // export ≤512px and ≤1MB (PNG)
+            async function exportPNGMax512() {
+                const BYTES_MAX = 1024 * 1024;
+                let size = 512;
+
+                async function renderTo(px) {
+                    const out = ('OffscreenCanvas' in window) ? new OffscreenCanvas(px, px)
+                        : Object.assign(document.createElement('canvas'), { width: px, height: px });
+                    const octx = out.getContext('2d');
+                    octx.clearRect(0, 0, px, px);
+
+                    if (imgBitmap) {
+                        const s = scaleForZoom();
+                        octx.save();
+                        // map editor offsets into output
+                        octx.translate(px / 2 + (pos.x * (px / canvas.width)), px / 2 + (pos.y * (px / canvas.height)));
+                        octx.rotate(rot);
+                        const dw = imgW * s * (px / canvas.width);
+                        const dh = imgH * s * (px / canvas.height);
+                        octx.drawImage(imgBitmap, -dw / 2, -dh / 2, dw, dh);
+                        octx.restore();
+                    }
+
+                    let blob;
+                    if (out.convertToBlob) blob = await out.convertToBlob({ type: 'image/png' });
+                    else blob = await new Promise(res => out.toBlob(res, 'image/png'));
+                    const arr = new Uint8Array(await blob.arrayBuffer());
+                    return arr;
+                }
+
+                let png = imgBitmap ? await renderTo(size) : null;
+                while (png && png.length > BYTES_MAX && size > 192) {
+                    size = Math.floor(size * 0.85);
+                    png = await renderTo(size);
+                }
+                if (png && png.length > BYTES_MAX) throw new Error('Icon too large even after resizing');
+                return { png, size };
+            }
+
+            // save
+            saveBtn.onclick = async () => {
+                try {
+                    const fd = new FormData();
+                    const beforeColor = meta.color || '#ffffff';
+                    if (selectedColor && selectedColor !== beforeColor) fd.append('color', selectedColor);
+
+                    if (usingDefault && !imgBitmap) {
+                        fd.append('use_default_icon', '1');
+                    } else if (imgBitmap) {
+                        const { png } = await exportPNGMax512();
+                        if (!png) fd.append('use_default_icon', '1');
+                        else fd.append('icon', new Blob([png], { type: 'image/png' }), 'group-icon.png');
+                    }
+
+                    await fetch(`${API}/dm/conversations/${state.convId}/appearance`, { method: 'PATCH', credentials: 'include', body: fd });
+
+                    // mirror profile's system messages
+                    const my = state.meSlug || 'Someone';
+                    if (selectedColor && selectedColor !== beforeColor) {
+                        await api(`/dm/conversations/${state.convId}/messages`, {
+                            method: 'POST',
+                            body: { text: `${my} changed group color to ${selectedColorKey || selectedColor}.`, kind: 'system' }
+                        });
+                    }
+                    if (imgBitmap) {
+                        await api(`/dm/conversations/${state.convId}/messages`, { method: 'POST', body: { text: `${my} changed the group icon.`, kind: 'system' } });
+                    } else if (usingDefault) {
+                        await api(`/dm/conversations/${state.convId}/messages`, { method: 'POST', body: { text: `${my} changed the group icon to default.`, kind: 'system' } });
+                    }
+
+                    await fetchConvMeta(state.convId);
+                    await loadConversations({ blockingMeta: true });
+                    hideRestyle();
+                } catch (e) {
+                    alert(e.detail || e.message || e);
+                }
+            };
+
+            // initial paint
+            paintPreview();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
 
         /* ---------------- wire UI ---------------- */
@@ -1493,7 +1944,7 @@
             await getMe();
             loadMetaCache();
 
-            // If the URL contains someone else’s slug, rewrite it to mine.
+            // normalize URL user slug
             const urlMatch = location.pathname.match(/\/user\/([^\/]+)\/messages/i);
             const urlSlug = urlMatch ? decodeURIComponent(urlMatch[1]) : '';
             if (state.meSlug && urlSlug && urlSlug.toLowerCase() !== state.meSlug.toLowerCase()) {

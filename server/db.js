@@ -483,19 +483,17 @@ function ensureDMTables() {
     db.exec(`
     PRAGMA foreign_keys=ON;
 
-    -- Conversations (1:1 or group)
-    -- owner_id is NULL for 1:1; set for groups
     CREATE TABLE IF NOT EXISTS dm_conversations (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       is_group     INTEGER NOT NULL DEFAULT 0,
       title        TEXT,
       owner_id     INTEGER,
-      deleted_at   TEXT,                           -- <— NEW soft-delete column
+      color        TEXT,                         -- NEW
+      deleted_at   TEXT,
       created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE SET NULL
     );
 
-    -- Members
     CREATE TABLE IF NOT EXISTS dm_members (
       conversation_id INTEGER NOT NULL,
       user_id         INTEGER NOT NULL,
@@ -506,7 +504,6 @@ function ensureDMTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_dm_members_user ON dm_members(user_id);
 
-    -- Per-conversation key (encrypted using server master key)
     CREATE TABLE IF NOT EXISTS dm_conversation_keys (
       conversation_id INTEGER PRIMARY KEY,
       key_cipher      BLOB NOT NULL,
@@ -515,12 +512,11 @@ function ensureDMTables() {
       FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE
     );
 
-    -- Messages
     CREATE TABLE IF NOT EXISTS dm_messages (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       conversation_id INTEGER NOT NULL,
       sender_id       INTEGER NOT NULL,
-      kind            TEXT NOT NULL DEFAULT 'text', -- 'text' | 'mix' | 'file' | 'system'
+      kind            TEXT NOT NULL DEFAULT 'text',
       body_cipher     BLOB,
       body_nonce      BLOB,
       created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -529,13 +525,12 @@ function ensureDMTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_dm_messages_conv_id ON dm_messages(conversation_id, id DESC);
 
-    -- Attachments
     CREATE TABLE IF NOT EXISTS dm_attachments (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       message_id      INTEGER NOT NULL,
       filename        TEXT NOT NULL,
       mime_type       TEXT NOT NULL,
-      encoding        TEXT,            -- null or 'gzip'
+      encoding        TEXT,
       size_bytes      INTEGER NOT NULL,
       blob_cipher     BLOB NOT NULL,
       blob_nonce      BLOB NOT NULL,
@@ -544,7 +539,17 @@ function ensureDMTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_dm_attachments_msg_id ON dm_attachments(message_id);
 
-    -- Deleted groups tombstone list (purged after 30 days)
+    -- NEW: encrypted per-group icon
+    CREATE TABLE IF NOT EXISTS dm_group_icons (
+      conversation_id INTEGER PRIMARY KEY,
+      mime_type       TEXT NOT NULL,
+      blob_cipher     BLOB NOT NULL,
+      blob_nonce      BLOB NOT NULL,
+      updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_group_icons_updated ON dm_group_icons(updated_at DESC);
+
     CREATE TABLE IF NOT EXISTS dm_deleted_groups (
       conversation_id INTEGER PRIMARY KEY,
       owner_id        INTEGER,
@@ -554,31 +559,24 @@ function ensureDMTables() {
     );
   `);
 
-    // Safety adds for older DBs
+    // safety columns
     addColumnIfMissing('dm_conversations', `owner_id INTEGER`);
     addColumnIfMissing('dm_conversations', `deleted_at TEXT`);
+    addColumnIfMissing('dm_conversations', `color TEXT`);
 
-    // Backfill owner_id for existing groups (pick earliest joiner)
+    // backfill owner for old groups
     try {
         db.exec(`
       UPDATE dm_conversations
       SET owner_id = (
-        SELECT user_id
-        FROM dm_members
+        SELECT user_id FROM dm_members
         WHERE conversation_id = dm_conversations.id
         ORDER BY datetime(joined_at) ASC, user_id ASC
         LIMIT 1
       )
       WHERE is_group = 1 AND (owner_id IS NULL OR owner_id = 0);
     `);
-    } catch { /* ignore */ }
-
-    // Helpful indexes
-    db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_dm_conversations_owner  ON dm_conversations(owner_id);
-    CREATE INDEX IF NOT EXISTS idx_dm_conversations_deleted ON dm_conversations(deleted_at);
-    CREATE INDEX IF NOT EXISTS idx_dm_deleted_groups_when   ON dm_deleted_groups(deleted_at);
-  `);
+    } catch { }
 }
 
 /* ---------- master migration ---------- */
