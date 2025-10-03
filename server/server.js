@@ -115,7 +115,7 @@ const authLimiter = rateLimit({
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => req.ip,
+    // Use the library default IPv6-safe key generator
     skipFailedRequests: true,
 });
 app.use('/api/auth', authLimiter);
@@ -166,7 +166,7 @@ app.get('/user/:slug', (req, res, next) => {
 
 /* ---------------- helper to create or reuse a 1:1 DM ----------------
    This proxies to POST /api/dm/conversations so keys get created the same way. */
-app.post('/api/dm/with/:slug', requireAuth, (req, res, next) => { 
+app.post('/api/dm/with/:slug', requireAuth, (req, res, next) => {
     const slug = String(req.params.slug || '');
     const other = db.prepare(
         `SELECT id FROM users WHERE lower(username)=lower(?) OR lower(first_username)=lower(?) LIMIT 1`
@@ -178,8 +178,24 @@ app.post('/api/dm/with/:slug', requireAuth, (req, res, next) => {
     req.body = { user_ids: [req.userId, other.id] };
     req.url = '/dm/conversations';
     req.method = 'POST';
-    return dm.router.handle(req, res, next); 
+    return dm.router.handle(req, res, next);
 });
+
+/* ---------------- background maintenance ---------------- */
+/** Purge disbanded groups after 30 days. Safe to run frequently. */
+function sweepDeletedGroups() {
+    try {
+        const r = db.prepare(
+            `DELETE FROM dm_deleted_groups WHERE datetime(deleted_at) < datetime('now', '-30 days')`
+        ).run();
+        if (r.changes) console.log(`[dm] Purged ${r.changes} expired deleted groups`);
+    } catch (e) {
+        console.warn('[dm] sweepDeletedGroups error:', e?.message || e);
+    }
+}
+// Run once on boot and then every 6 hours
+sweepDeletedGroups();
+setInterval(sweepDeletedGroups, 6 * 60 * 60 * 1000);
 
 /* ---------------- error handler ---------------- */
 app.use((err, req, res, next) => {

@@ -26,7 +26,6 @@
         font-display: swap;
     }
 
-    /* Global font + square borders everywhere */
     html, body {
         font-family: 'Voice1','Montserrat',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important;
     }
@@ -117,6 +116,11 @@
         white-space: nowrap;
     }
 
+        .btn[disabled] {
+            opacity: .5;
+            cursor: not-allowed;
+        }
+
         .btn:hover {
             background: #fff !important;
             color: #000;
@@ -198,7 +202,12 @@
         display: flex;
         align-items: center;
         gap: 10px;
+        position: relative;
     }
+
+        .chat-head .spacer {
+            flex: 1;
+        }
 
     .chat-pfp {
         width: 28px;
@@ -212,6 +221,33 @@
         font-weight: 700;
     }
 
+    /* 3-dots menu */
+    .menu {
+        position: absolute;
+        right: 10px;
+        top: 48px;
+        background: var(--panel);
+        border: var(--bw) solid var(--border);
+        box-shadow: 0 8px 18px rgba(0,0,0,.35);
+        padding: 6px;
+        display: none;
+        min-width: 200px;
+        z-index: 20;
+    }
+
+        .menu .item {
+            padding: 8px 10px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+            .menu .item:hover {
+                background: rgba(255,255,255,.06);
+            }
+
     .msgs {
         background: #000;
         padding: 12px 14px;
@@ -220,13 +256,13 @@
         flex-direction: column;
         gap: 6px;
         min-height: 0;
+        position: relative; /* ⬅️ add */
     }
 
     #pad-top, #pad-bottom {
         height: 0;
     }
 
-    /* Messages wrap */
     .msg {
         max-width: 70%;
         padding: 10px 12px;
@@ -247,6 +283,19 @@
         background: #0f1216;
     }
 
+    /* system/command message */
+    .sysmsg {
+        align-self: center;
+        max-width: 84%;
+        border: none;
+        background: transparent;
+        box-shadow: none;
+        color: var(--muted);
+        font-style: italic;
+        text-align: center;
+        padding: 6px 8px;
+    }
+
     .meta {
         color: var(--muted);
         font-size: 12px;
@@ -257,7 +306,6 @@
         margin-top: 6px;
     }
 
-    /* Composer (stacked) */
     .composer {
         border-top: var(--bw) solid var(--border);
         background: #0b0e12;
@@ -317,21 +365,20 @@
         font-size: 12px;
     }
 
-    /* Jump */
     .jump {
-        position: absolute;
-        right: 14px;
-        bottom: calc(90px + env(safe-area-inset-bottom));
+        position: sticky; /* ⬅️ sits within the scroller */
+        bottom: 12px; /* ⬅️ floats just above the bottom edge */
+        align-self: center; /* ⬅️ centers horizontally in the flex column */
         opacity: 0;
         pointer-events: none;
         transition: opacity .18s ease;
         z-index: 5;
     }
 
-        .jump.show {
-            opacity: 1;
-            pointer-events: auto;
-        }
+    .jump.show {
+        opacity: 1;
+        pointer-events: auto;
+    }
 
     @media (max-width:520px) {
         .msg {
@@ -386,6 +433,7 @@
         border: var(--bw) solid var(--border);
         background: #0c0f13;
         box-shadow: 0 1px 0 var(--soft) inset;
+        cursor: pointer;
     }
 
     .pfp {
@@ -412,22 +460,58 @@
         position: sticky;
         bottom: 0;
         display: flex;
-        justify-content: center;
+        align-items: center;
+        gap: 10px;
         padding-top: 10px;
         margin-top: 10px;
         background: linear-gradient(180deg,transparent,rgba(0,0,0,.35));
     }
 
+    /* Checkbox — white hollow square when off; filled white when on */
     .checkbox {
-        transform: scale(1.2);
+        appearance: none;
+        -webkit-appearance: none;
+        width: 18px;
+        height: 18px;
+        border: 2px solid #fff;
+        background: transparent;
+        display: inline-block;
+        vertical-align: middle;
+        margin: 0;
+        cursor: pointer;
     }
 
-    .avatar,
-    .pfp,
-    .chat-pfp {
-        border-radius: 999px !important; /* beats the global 0-radius */
+    .checkbox:hover:not(:checked) {
+        opacity: .5;
+    }
+    /* 50% opacity on hover when not selected */
+    .checkbox:checked {
+        background: #fff;
+    }
+    /* filled white square when checked */
+    .checkbox:disabled {
+        opacity: .3;
+        cursor: not-allowed;
+    }
+
+    .checkbox:focus-visible {
+        outline: 2px solid #fff;
+        outline-offset: 2px;
+    }
+
+    .avatar, .pfp, .chat-pfp {
+        border-radius: 999px !important;
         aspect-ratio: 1 / 1;
         object-fit: cover;
+    }
+
+    /* chips row in picker footer */
+    #selected-chips {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
     }
 </style>
 
@@ -446,15 +530,19 @@
         <div class="chat-head">
             <img id="chat-pfp" class="chat-pfp" src="/web/default-avatar.png" alt="">
             <div class="chat-title" id="chat-title">Pick a conversation</div>
+            <div class="spacer"></div>
+            <button id="chat-menu-btn" class="iconbtn" title="Group options">⋮</button>
+            <div id="chat-menu" class="menu"></div>
         </div>
 
         <div class="msgs" id="msgs">
             <div id="pad-top"></div>
-            <!-- messages render here -->
+
+            <!-- ⬇️ MOVE the jump button INTO .msgs, above pad-bottom -->
+            <button id="jump" class="jump btn" style="display:none">Jump to present ↓</button>
+
             <div id="pad-bottom"></div>
         </div>
-
-        <button id="jump" class="jump btn" style="display:none">Jump to present ↓</button>
 
         <div class="composer">
             <div>
@@ -481,7 +569,11 @@
         </div>
         <div id="user-list" class="list"></div>
         <div class="bottom-center" id="group-cta" style="display:none">
-            <button class="btn" id="btn-create-group">Create Group</button>
+            <div id="selected-chips"></div>
+            <div style="display:flex; gap:8px;">
+                <button class="btn" id="btn-cancel">Cancel</button>
+                <button class="btn" id="btn-group-submit" disabled>Create Group</button>
+            </div>
         </div>
     </div>
 </div>
@@ -502,14 +594,49 @@
             recording: { active: false, chunks: [], size: 0, rec: null, warnShown: false },
 
             // convo + meta
-            convMeta: new Map(),         // convId -> { name:'@og', photo:url }
+            convMeta: new Map(),         // convId -> { name:'@og'|group title, photo:url }
             convRowEls: new Map(),       // convId -> DOM div.conv
-            convUserOg: new Map(),       // convId -> og username
+            convUserOg: new Map(),       // convId -> og username (1:1)
             userCache: new Map(),        // og -> { username, photo, display_name, raw }
-
             convItems: new Map(),        // convId -> raw item (for debugging)
+
+            // group/menu
+            convDetailById: new Map(),
+            currentConvDetail: null,     // {id,is_group,title,owner_id,is_owner,members:[]}
+            pickerMode: 'dm',            // 'dm' | 'group-create' | 'group-edit' | 'view-members'
+            selectedIds: new Set(),      // picked user_ids (others)
+            initialSelectedIds: new Set(), // for edit-change detection
+            friendsCache: [],            // list from fetchFriends()
+            idToFriend: new Map(),       // id -> friend object for quick lookup
+
+            renderedMsgIds: new Set(),
+            fetchingAfter: false,
+            meSlug: '',
         };
         const LASTDM_KEY = 'dp:lastdm';
+        const META_CACHE_KEY = 'dp:metaCache';
+        let _metaSaveTimer = null;
+        function saveMetaCache() {
+            const out = {
+                convUserOg: Array.from(state.convUserOg.entries()),
+                userCache: Array.from(state.userCache.entries()),
+                convMeta: Array.from(state.convMeta.entries()),
+            };
+            try { localStorage.setItem(META_CACHE_KEY, JSON.stringify(out)); } catch { }
+        }
+        function scheduleSaveMeta() {
+            clearTimeout(_metaSaveTimer);
+            _metaSaveTimer = setTimeout(saveMetaCache, 120);
+        }
+        function loadMetaCache() {
+            try {
+                const j = JSON.parse(localStorage.getItem(META_CACHE_KEY) || 'null');
+                if (!j) return;
+                (j.convUserOg || []).forEach(([k, v]) => state.convUserOg.set(+k || k, v));
+                (j.userCache || []).forEach(([k, v]) => state.userCache.set(k, v));
+                (j.convMeta || []).forEach(([k, v]) => state.convMeta.set(+k || k, v));
+            } catch { }
+        }
 
         /* ---------------- utils ---------------- */
         const afterPaint = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -522,17 +649,14 @@
 
         const pickDisplay = o => o?.display_name || o?.name || null;
         const pickUsername = o => o?.first_username || o?.username || o?.handle || null;
-
-        const isPlaceholder = (m) => !m || m.name === 'Direct Message' || !m.photo || m.photo === DEFAULT_PFP;
-        const scoreMeta = (m) => !m ? 0 : ((m.name && m.name !== 'Direct Message') ? 1 : 0) + ((m.photo && m.photo !== DEFAULT_PFP) ? 1 : 0);
-
-        // helpers already in your file:
         const DEFAULT_PFP = '/web/default-avatar.png';
         const pickPhoto = o => o?.profile_photo || o?.profile_photo_url || o?.photo || o?.photo_url || o?.avatar || o?.avatar_url || o?.picture || o?.image || o?.image_url || null;
         const pickName = o => o?.display_name || o?.name || o?.username || o?.first_username || o?.handle || o?.title || null;
 
+        const isPlaceholder = (m) => !m || m.name === 'Direct Message' || !m.photo || m.photo === DEFAULT_PFP;
+        const scoreMeta = (m) => !m ? 0 : ((m.name && m.name !== 'Direct Message') ? 1 : 0) + ((m.photo && m.photo !== DEFAULT_PFP) ? 1 : 0);
+
         function mergeMeta(prev, next) {
-            // don't let placeholder stomp a good value
             const out = { ...(prev || {}), ...(next || {}) };
             if (prev) {
                 if (!next?.name || next.name === 'Direct Message') out.name = prev.name;
@@ -541,19 +665,50 @@
             return out;
         }
 
+        function joinNames(list) {
+            const arr = (list || []).filter(Boolean);
+            if (arr.length === 0) return '';
+            if (arr.length === 1) return arr[0];
+            if (arr.length === 2) return `${arr[0]} and ${arr[1]}`;
+            return `${arr.slice(0, -1).join(', ')}, and ${arr[arr.length - 1]}`;
+        }
+
+        function friendDisplay(u) {
+            // Prefer nice name; fall back to username-ish, capitalize first letter
+            const raw = u.display_name || u.name || u.first_username || u.username || 'User';
+            return String(raw);
+        }
+
+        /* ---------------- API core ---------------- */
+        async function api(path, opts = {}) {
+            const headers = Object.assign({ 'Accept': 'application/json' }, opts.headers || {});
+            const isJSON = opts.body && !(opts.body instanceof FormData);
+            if (isJSON && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+            const url = API + path;
+            try {
+                const r = await fetch(url, { credentials: 'include', method: opts.method || 'GET', headers, body: isJSON ? JSON.stringify(opts.body) : opts.body });
+                const t = await r.text(); let d; try { d = t ? JSON.parse(t) : {} } catch { d = { raw: t } }
+                if (!r.ok) { const e = new Error(d?.error || r.statusText); e.status = r.status; e.detail = d?.detail || t; throw e; }
+                return d;
+            } catch (e) { throw e; }
+        }
+        async function getMe() {
+            const j = await api('/auth/me');
+            state.meId = j?.user?.id || 0;
+            state.meSlug = j?.user?.first_username || j?.user?.username || '';
+            return state.meId;
+        }
+
+        /* ---------------- meta resolution ---------------- */
         async function fetchConvMeta(id) {
             const prev = state.convMeta.get(id);
-            console.log('[DM] conv-detail:fetch', id, { prev });
-
             try {
                 const j = await api(`/dm/conversations/${id}`);
-                console.log('[DM] conv-detail:ok', id, j);
 
+                // Build meta for the left list/top bar
                 let meta = { name: 'Direct Message', photo: DEFAULT_PFP };
-
                 if (j.is_group) {
                     if ((j.title || '').trim()) meta.name = j.title.trim();
-                    // (if you ever store group photos: j.photo/avatar support)
                     meta.photo = j.photo || j.avatar || meta.photo;
                 } else {
                     const other = j.other || (Array.isArray(j.members) ? j.members.find(u => (u.id | 0) !== (state.meId | 0)) : null);
@@ -561,15 +716,33 @@
                     meta.photo = pickPhoto(other) || meta.photo;
                 }
 
+                // Build a stable “detail” object
+                const detail = {
+                    id: j.id,
+                    is_group: !!j.is_group,
+                    title: j.title || null,
+                    owner_id: j.owner_id || null,
+                    is_owner: !!j.is_owner,
+                    members: j.members || []
+                };
+
+                // Cache detail by id
+                state.convDetailById.set(id, detail);
+
+                // Only update the "current" detail if this is the currently open conversation
+                if ((state.convId | 0) === (id | 0)) {
+                    state.currentConvDetail = detail;
+                }
+
+                // Merge/display meta
                 const best = mergeMeta(prev, meta);
                 state.convMeta.set(id, best);
-                updateEverywhere(id);
-                console.log('[DM] meta:update', { id, source: 'conv-detail', prev, next: best });
-                return best;
 
+                // Only touch the UI of the current chat
+                if ((state.convId | 0) === (id | 0)) updateEverywhere(id);
+
+                return best;
             } catch (e) {
-                console.warn('[DM] conv-detail fail', id, e?.status || '', e?.message || e);
-                // keep whatever good data we had
                 if (prev) return prev;
                 const fallback = { name: 'Direct Message', photo: DEFAULT_PFP };
                 state.convMeta.set(id, fallback);
@@ -580,37 +753,43 @@
         function setConvMeta(id, meta, source = 'unknown') {
             const prev = state.convMeta.get(id);
             const ps = scoreMeta(prev), ns = scoreMeta(meta);
-            if (ns > ps) {
-                state.convMeta.set(id, meta);
-                console.debug('[DM] meta:update', { id, source, prev, next: meta, ps, ns });
-                updateEverywhere(id);
-            } else {
-                console.debug('[DM] meta:skip(downgrade)', { id, source, prev, next: meta, ps, ns });
-            }
+            if (ns > ps) { state.convMeta.set(id, meta); updateEverywhere(id); scheduleSaveMeta(); }
         }
 
-        // put near your other helpers
         function setImgSafe(img, src) {
             const want = src || DEFAULT_PFP;
             if (!img) return;
-            if (img.dataset.srcApplied === want) return;      // don't re-apply same src
-
-            img.onload = () => console.debug('[DM] chat-pfp loaded');
-            img.onerror = () => {
-                console.debug('[DM] chat-pfp error, falling back to default');
-                img.src = DEFAULT_PFP;
-                img.dataset.srcApplied = DEFAULT_PFP;
-            };
-
-            img.src = want;
-            img.dataset.srcApplied = want;
+            if (img.dataset.srcApplied === want) return;
+            img.onerror = () => { img.src = DEFAULT_PFP; img.dataset.srcApplied = DEFAULT_PFP; };
+            img.src = want; img.dataset.srcApplied = want;
         }
 
         function updateTopBar(meta) {
             if (!meta) return;
-            console.debug('[DM] updateTopBar', meta);
             $('chat-title').textContent = meta.name || 'Direct Message';
             setImgSafe($('chat-pfp'), meta.photo);
+            renderChatMenu();
+        }
+
+        function updateEverywhere(id) {
+            const meta = state.convMeta.get(id);
+            if (!meta) return;
+            const row = state.convRowEls.get(id);
+            if (row) setConvRowContent(row, meta, row.querySelector('.preview')?.textContent || '');
+            if (state.convId === id) {
+                const current = { name: $('chat-title').textContent, photo: $('chat-pfp').getAttribute('src') };
+                const better = scoreMeta(meta) >= scoreMeta(current);
+                if (better) updateTopBar(meta);
+            }
+        }
+
+        function setConvRowContent(row, meta, preview) {
+            row.innerHTML = `
+            <img class="avatar" src="${meta?.photo || DEFAULT_PFP}" alt="">
+            <div>
+                <div class="name">${esc(meta?.name || 'Direct Message')}</div>
+                <div class="preview">${esc(preview || '…')}</div>
+            </div>`;
         }
 
         function applySelectedHighlight() {
@@ -619,32 +798,11 @@
             if (el) el.classList.add('active');
         }
 
-        /* ---------------- OG username extraction ---------------- */
-        function extractOgFromConvItem(it) {
-            // try explicit fields first
-            const direct = it?.other_username || it?.other?.first_username || it?.other?.username ||
-                it?.with?.first_username || it?.with?.username || null;
-            if (direct) return direct;
-
-            // array participants
-            const arr = it?.participants || it?.members || it?.users || it?.people || it?.user_list || [];
-            if (Array.isArray(arr) && arr.length) {
-                const other = arr.find(p => {
-                    const pid = (p?.id ?? p?.user?.id);
-                    return pid == null || (pid | 0) !== (state.meId | 0);
-                }) || arr[0];
-                const u = other?.user || other || {};
-                const og = pickUsername(u);
-                if (og) return og;
-            }
-            return null;
-        }
-
+        /* OG extraction for 1:1 fallback */
         function extractOgFromConvDetail(j) {
             const direct = j?.other_username || j?.other?.first_username || j?.other?.username ||
                 j?.with?.first_username || j?.with?.username || null;
             if (direct) return direct;
-
             const arr = j?.members || j?.participants || j?.users || j?.people || [];
             if (Array.isArray(arr) && arr.length) {
                 const other = arr.find(p => {
@@ -657,14 +815,9 @@
             return null;
         }
 
-        /* ---------------- Fetch user (by OG username) ---------------- */
         async function fetchUserByOg(og) {
             if (!og) throw new Error('no-og');
-            if (state.userCache.has(og)) {
-                console.debug('[DM] userCache hit', og, state.userCache.get(og));
-                return state.userCache.get(og);
-            }
-
+            if (state.userCache.has(og)) return state.userCache.get(og);
             const tries = [
                 `/users/${encodeURIComponent(og)}`,
                 `/users/${encodeURIComponent(og)}?view=basic`,
@@ -672,26 +825,20 @@
                 `/users/by_username/${encodeURIComponent(og)}`,
                 `/user/${encodeURIComponent(og)}`
             ];
-
             for (const path of tries) {
                 try {
-                    console.debug('[DM] fetchUserByOg try', og, API + path);
                     const j = await api(path);
-                    // normalize
                     const username = pickUsername(j) || og;
                     const photo = pickPhoto(j);
                     const display = pickDisplay(j);
                     const result = { username, photo, display_name: display, raw: j };
                     state.userCache.set(og, result);
-                    console.debug('[DM] fetchUserByOg ok', og, result);
+                    scheduleSaveMeta();
                     return result;
-                } catch (e) {
-                    console.debug('[DM] fetchUserByOg fail', og, API + path, e?.message || e);
-                }
+                } catch { }
             }
             throw new Error('user-not-found:' + og);
         }
-
         function metaFromUser(u) {
             const nm = '@' + (u?.username || 'user');
             const ph = u?.photo || DEFAULT_PFP;
@@ -699,54 +846,23 @@
         }
 
         /* ---------------- conversations list ---------------- */
-        function setConvRowContent(row, meta, preview) {
-            row.innerHTML = `
-      <img class="avatar" src="${meta?.photo || DEFAULT_PFP}" alt="">
-      <div>
-        <div class="name">${esc(meta?.name || 'Direct Message')}</div>
-        <div class="preview">${esc(preview || '…')}</div>
-      </div>`;
-        }
-
-        function updateEverywhere(id) {
-            const meta = state.convMeta.get(id);
-            if (!meta) return;
-
-            const row = state.convRowEls.get(id);
-            if (row) setConvRowContent(row, meta, row.querySelector('.preview')?.textContent || '');
-
-            if (state.convId === id) {
-                // only update the top bar if it's an upgrade or equal, never a downgrade
-                const current = { name: $('chat-title').textContent, photo: $('chat-pfp').getAttribute('src') };
-                const better = scoreMeta(meta) >= scoreMeta(current);
-                if (better) updateTopBar(meta);
-            }
-        }
-
         function renderConvs(list) {
             const wrap = $('convs'); wrap.innerHTML = '';
             state.convRowEls.clear();
-
             list.forEach(it => {
                 const row = document.createElement('div'); row.className = 'conv'; row.dataset.id = it.id;
-
-                // if startDmWith seeded correct meta, keep it; else start with a safe placeholder
-                   if (!state.convMeta.has(it.id)) {
-                         state.convMeta.set(it.id, { name: it.title || 'Direct Message', photo: DEFAULT_PFP });
-                   }
-                const meta = state.convMeta.get(it.id);
+                const meta = state.convMeta.get(it.id) || { name: it.title || 'Direct Message', photo: DEFAULT_PFP };
                 row.onclick = () => openConversation(it.id, meta?.name || it.title || 'Direct Message');
                 setConvRowContent(row, meta, it.preview);
                 state.convRowEls.set(it.id, row);
                 wrap.append(row);
-
-                // hydrate from server details and merge
-                fetchConvMeta(it.id).catch(() => { });
+                // Safety only (should already be hydrated when blockingMeta=true on first load):
+                if (!state.convMeta.has(it.id) || isPlaceholder(state.convMeta.get(it.id))) {
+                        fetchConvMeta(it.id).catch(() => { });
+                }
             });
-
             applySelectedHighlight();
         }
-
         function applyConvFilter() {
             const q = $('conv-q').value.trim().toLowerCase();
             state.filteredConvs = !q ? [...state.allConvs]
@@ -756,88 +872,84 @@
                 });
             renderConvs(state.filteredConvs);
         }
-
-        async function loadConversations() {
-            console.debug('[DM] loadConversations:start');
+        async function loadConversations({ blockingMeta = false } = {}) {
             const j = await api('/dm/conversations');
             state.allConvs = j.items || [];
-
-            // keep originals to reference for previews/etc.
             state.allConvs.forEach(it => state.convItems.set(it.id, it));
 
-            // render immediately with best OG guess + async user fetches
-            renderConvs(state.allConvs);
-
-            // also try to resolve any missing OG via conversation detail (once)
+            // ⬇️ NEW: pre-seed row names/photos synchronously
             for (const it of state.allConvs) {
-                if (state.convUserOg.has(it.id)) continue;
-                try {
-                    const det = await api(`/dm/conversations/${it.id}?include=members,participants,other`);
-                    const og = extractOgFromConvDetail(det);
-                    console.debug('[DM] detail->og', it.id, og, det);
-                    if (og) {
-                        state.convUserOg.set(it.id, og);
-                        setConvMeta(it.id, { name: '@' + og, photo: DEFAULT_PFP }, 'detail-og');
-                        fetchUserByOg(og).then(u => {
-                            setConvMeta(it.id, metaFromUser(u), 'user-fetch-detail');
-                        }).catch(e => console.debug('[DM] user-fetch fail (detail)', it.id, og, e?.message || e));
+                if (!state.convMeta.has(it.id)) {
+                    let meta = { name: it.title || 'Direct Message', photo: DEFAULT_PFP };
+
+                    if (!it.is_group) {
+                        // Try to infer @username directly from list item (if it exposes it),
+                        // otherwise use any cached mapping from prior sessions.
+                        let og = state.convUserOg.get(it.id) || extractOgFromConvDetail(it);
+                        if (og) {
+                            state.convUserOg.set(it.id, og);
+                            meta.name = '@' + og;
+                            const cached = state.userCache.get(og);
+                            if (cached?.photo) meta.photo = cached.photo;
+                            scheduleSaveMeta();
+                        }
                     }
-                } catch (e) {
-                    console.debug('[DM] conv-detail fail', it.id, e?.message || e);
+
+                    state.convMeta.set(it.id, meta);
                 }
             }
+            scheduleSaveMeta();
 
-            console.debug('[DM] loadConversations:done', state.allConvs.length);
+            if (blockingMeta) {
+            // Fetch real meta for each conversation exactly like chat-open does
+                await Promise.allSettled(
+                    state.allConvs.map(it => fetchConvMeta(it.id))
+                );
+            } else {
+            // Non-blocking path (used after new messages arrive)
+                state.allConvs.forEach(it => {
+                    if (!state.convMeta.has(it.id) || isPlaceholder(state.convMeta.get(it.id))) {
+                        fetchConvMeta(it.id).catch(() => { });
+                        }
+                });
+            }
+
+            renderConvs(state.allConvs);
         }
         $('conv-q').addEventListener('input', applyConvFilter);
 
-        /* ---------------- API core ---------------- */
-        async function api(path, opts = {}) {
-            const headers = Object.assign({ 'Accept': 'application/json' }, opts.headers || {});
-            const isJSON = opts.body && !(opts.body instanceof FormData);
-            if (isJSON && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-            const url = API + path;
-            try {
-                const r = await fetch(url, { credentials: 'include', method: opts.method || 'GET', headers, body: isJSON ? JSON.stringify(opts.body) : opts.body });
-                const t = await r.text(); let d; try { d = t ? JSON.parse(t) : {} } catch { d = { raw: t } }
-                if (!r.ok) { console.debug('[DM] API ERR', url, r.status, d); const e = new Error(d?.error || r.statusText); e.detail = d?.detail || t; throw e; }
-                console.debug('[DM] API OK', url, d);
-                return d;
-            } catch (e) {
-                console.debug('[DM] API FAIL', url, e?.message || e);
-                throw e;
-            }
-        }
-        async function getMe() { const j = await api('/auth/me'); state.meId = j?.user?.id || 0; return state.meId; }
-
-        /* ---------------- virtualization (unchanged) ---------------- */
+        /* ---------------- virtualization ---------------- */
         const MAX_DOM = 140, GAP = 6;
         let bottomPadPx = 0, removedBottom = [];
-
         function setBottomPad(px) { bottomPadPx = Math.max(0, px | 0); $('pad-bottom').style.height = bottomPadPx + 'px'; }
 
         function renderMessage(m) {
+            const isSystem = (m.kind === 'system');
             const wrap = document.createElement('div');
-            wrap.className = 'msg' + (m.sender_id === state.meId ? ' me' : '');
+            wrap.className = (isSystem ? 'msg sysmsg' : ('msg' + (m.sender_id === state.meId ? ' me' : '')));
             if (m.text) wrap.insertAdjacentHTML('beforeend', '<div>' + esc(m.text) + '</div>');
-            (m.attachments || []).forEach(a => {
-                const url = `${API}/dm/attachments/${a.id}/download?inline=1`;
-                let v = '';
-                if ((a.mime_type || '').startsWith('image/')) v = `<img class="att" src="${url}" style="max-width:420px;display:block">`;
-                else if ((a.mime_type || '').startsWith('video/')) v = `<video class="att" src="${url}" controls style="max-width:420px;display:block"></video>`;
-                else if ((a.mime_type || '').startsWith('audio/')) v = `<audio class="att" src="${url}" controls></audio>`;
-                else v = `<a class="att" href="${url}">📎 ${esc(a.filename)}</a>`;
-                wrap.insertAdjacentHTML('beforeend', v);
-            });
-            wrap.insertAdjacentHTML('beforeend', `<div class="meta">${m.created_at ? fmt(m.created_at) : ''}</div>`);
+            if (!isSystem) {
+                (m.attachments || []).forEach(a => {
+                    const url = `${API}/dm/attachments/${a.id}/download?inline=1`;
+                    let v = '';
+                    if ((a.mime_type || '').startsWith('image/')) v = `<img class="att" src="${url}" style="max-width:420px;display:block">`;
+                    else if ((a.mime_type || '').startsWith('video/')) v = `<video class="att" src="${url}" controls style="max-width:420px;display:block"></video>`;
+                    else if ((a.mime_type || '').startsWith('audio/')) v = `<audio class="att" src="${url}" controls></audio>`;
+                    else v = `<a class="att" href="${url}">📎 ${esc(a.filename)}</a>`;
+                    wrap.insertAdjacentHTML('beforeend', v);
+                });
+                wrap.insertAdjacentHTML('beforeend', `<div class="meta">${m.created_at ? fmt(m.created_at) : ''}</div>`);
+            }
             wrap.querySelectorAll('img').forEach(img => img.addEventListener('load', () => { if (nearBottom(200)) scrollToBottom(); }, { once: true }));
             wrap.querySelectorAll('video').forEach(v => v.addEventListener('loadedmetadata', () => { if (nearBottom(200)) scrollToBottom(); }, { once: true }));
             return wrap;
         }
 
         function appendMessagesAscending(items) {
+            items = (items || []).filter(m => !state.renderedMsgIds.has(m.id));
             const anchor = $('pad-bottom');
             items.forEach(m => {
+                state.renderedMsgIds.add(m.id);                     // <-- mark seen
                 const el = renderMessage(m);
                 anchor.before(el);
                 state.oldestMsgId = state.oldestMsgId === null ? m.id : Math.min(state.oldestMsgId, m.id);
@@ -846,11 +958,13 @@
             maybeTrimBottom();
         }
         function prependOlderAscending(items) {
+            items = (items || []).filter(m => !state.renderedMsgIds.has(m.id));
             if (!items.length) return;
             const box = $('msgs');
             const prevTop = box.scrollTop, prevH = box.scrollHeight;
             const frag = document.createDocumentFragment();
             items.forEach(m => {
+                state.renderedMsgIds.add(m.id);                     // <-- mark seen
                 frag.append(renderMessage(m));
                 state.oldestMsgId = state.oldestMsgId === null ? m.id : Math.min(state.oldestMsgId, m.id);
                 state.lastMsgId = Math.max(state.lastMsgId, m.id);
@@ -892,52 +1006,25 @@
 
         /* ---------------- open/paging/realtime ---------------- */
         async function openConversation(id) {
-            console.debug('[DM] openConversation:start', { id });
-
             if (state.es) { try { state.es.close(); } catch { } state.es = null; }
             if (state.poll) { clearInterval(state.poll); state.poll = null; }
 
             state.convId = id; saveLastDM();
+            state.currentConvDetail = state.convDetailById.get(id) || null;
+            renderChatMenu(); // show something immediately; fetch will firm it up
             applySelectedHighlight();
 
-            // ✅ Seed header the SAME way the sidebar seeds rows: via convMeta, then let updateEverywhere drive the DOM.
             if (!state.convMeta.has(id)) {
                 const seedItem = state.convItems.get(id) || {};
                 state.convMeta.set(id, { name: seedItem.title || 'Direct Message', photo: DEFAULT_PFP });
             }
             updateEverywhere(id);
 
-            // ✅ Kick off the SAME meta hydration hooks the sidebar uses.
-            // 1) Basic conversation detail → merge into convMeta
+            // hydrate meta & detail
             fetchConvMeta(id).catch(() => { });
 
-            // 2) Try to resolve OG then hydrate user → setConvMeta (same hooks the list uses)
-            const haveOg = state.convUserOg.has(id);
-            if (!haveOg) {
-                try {
-                    const det = await api(`/dm/conversations/${id}?include=members,participants,other`);
-                    const og = extractOgFromConvDetail(det);
-                    if (og) {
-                        state.convUserOg.set(id, og);
-                        setConvMeta(id, { name: '@' + og, photo: DEFAULT_PFP }, 'open->detail-og');
-                        fetchUserByOg(og)
-                            .then(u => setConvMeta(id, metaFromUser(u), 'open->detail-user'))
-                            .catch(e => console.debug('[DM] open detail user fail', id, og, e?.message || e));
-                    }
-                } catch (e) {
-                    console.debug('[DM] open detail fail', id, e?.message || e);
-                }
-            } else {
-                const og = state.convUserOg.get(id);
-                setConvMeta(id, { name: '@' + og, photo: DEFAULT_PFP }, 'open->og-seed');
-                fetchUserByOg(og)
-                    .then(u => setConvMeta(id, metaFromUser(u), 'open->user'))
-                    .catch(e => console.debug('[DM] open user fetch fail', id, og, e?.message || e));
-            }
-
-            // messages bootstrap (unchanged)
-            const box = $('msgs');
-            box.innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
+            $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
+            state.renderedMsgIds.clear();          // <-- add this
             setBottomPad(0); removedBottom = []; state.lastMsgId = 0; state.oldestMsgId = null; state.nextBefore = null;
 
             const j = await api(`/dm/conversations/${id}/messages?limit=30`);
@@ -951,20 +1038,6 @@
             jumpBtn.sync();
             openStream(id);
             startCatchup();
-
-            // As an extra sanity: if OG still unknown, peek a sender and hydrate via the SAME hook
-            if (!state.convUserOg.get(id)) {
-                const otherMsg = (j.items || []).find(x => (x.sender_id | 0) !== (state.meId | 0));
-                const u = otherMsg?.sender;
-                const maybeOg = pickUsername(u);
-                if (maybeOg) {
-                    state.convUserOg.set(id, maybeOg);
-                    setConvMeta(id, { name: '@' + maybeOg, photo: DEFAULT_PFP }, 'open->peek-og');
-                    fetchUserByOg(maybeOg)
-                        .then(us => setConvMeta(id, metaFromUser(us), 'open->peek-user'))
-                        .catch(e => console.debug('[DM] open peek user fail', id, maybeOg, e?.message || e));
-                }
-            }
         }
 
         $('msgs').addEventListener('scroll', async () => {
@@ -979,25 +1052,27 @@
         function openStream(id) {
             const es = new EventSource(`${API}/dm/conversations/${id}/stream`, { withCredentials: true });
             state.es = es;
-            es.addEventListener('new', async () => {
-                const j = await api(`/dm/conversations/${state.convId}/messages?after=${state.lastMsgId}&limit=100`);
-                if (!j.items || !j.items.length) return;
-                const stick = nearBottom(80);
-                appendMessagesAscending(j.items);
-                if (stick) { await afterPaint(); scrollToBottom(); }
-                loadConversations().catch(() => { });
-                jumpBtn.sync();
-            });
+            es.addEventListener('new', async () => { await fetchAfter(state.lastMsgId); });
         }
         function startCatchup() { state.poll = setInterval(() => { fetchAfter(state.lastMsgId).catch(() => { }); }, 30000); }
         async function fetchAfter(lastId) {
-            const j = await api(`/dm/conversations/${state.convId}/messages?after=${lastId}&limit=100`);
-            if (!j.items || !j.items.length) return;
-            const stick = nearBottom(80);
-            appendMessagesAscending(j.items);
-            if (stick) { await afterPaint(); scrollToBottom(); }
-            loadConversations().catch(() => { });
-            jumpBtn.sync();
+            if (state.fetchingAfter) return;          // <-- lock
+            state.fetchingAfter = true;
+            try {
+                const j = await api(`/dm/conversations/${state.convId}/messages?after=${lastId}&limit=100`);
+                if (!j.items || !j.items.length) return;
+
+                const newOnes = j.items.filter(m => !state.renderedMsgIds.has(m.id));
+                if (!newOnes.length) return;
+
+                const stick = nearBottom(80);
+                appendMessagesAscending(newOnes);
+                if (stick) { await afterPaint(); scrollToBottom(); }
+                loadConversations().catch(() => { });
+                jumpBtn.sync();
+            } finally {
+                state.fetchingAfter = false;
+            }
         }
 
         /* ---------------- attachments + voice ---------------- */
@@ -1050,6 +1125,390 @@
             }
         }
 
+        /* ---------------- overlay (friends / group create/edit / view members) ---------------- */
+        const overlay = $('overlay'), userList = $('user-list');
+        const pageSlug = (location.pathname.match(/\/user\/([^\/]+)\/messages/i) || [])[1]
+            ? decodeURIComponent((location.pathname.match(/\/user\/([^\/]+)\/messages/i) || [])[1]) : '';
+
+        async function fetchFriends() {
+            // Try /users/me/friends first (most correct), then fall back to slugged endpoint
+            let arr = [];
+            try {
+                const j1 = await api(`/users/me/friends`);
+                arr = j1.items || j1.friends || [];
+            } catch { }
+
+            if ((!arr || !arr.length) && state.meSlug) {
+                try {
+                    const j2 = await api(`/users/${encodeURIComponent(state.meSlug)}/friends?offset=0&limit=500`);
+                    arr = j2.items || j2.friends || [];
+                } catch { }
+            }
+
+            // Normalize fields (id/username may be at top level or nested)
+            const norm = (arr || []).map(u => {
+                const nu = u.user || u; // some APIs nest under { user: { ... } }
+                const id = nu.id ?? nu.user_id ?? nu.friend_id ?? null;
+                const username = nu.username ?? nu.first_username ?? null;
+                const first_username = nu.first_username ?? nu.username ?? null;
+                const profile_photo = nu.profile_photo ?? null;
+                const bio = nu.bio ?? nu.bio_html ?? '';
+                return { id, username, first_username, profile_photo, bio };
+            }).filter(x => x.id);
+
+            return norm;
+        }
+
+        function refreshSelectedChips() {
+            const chipBox = $('selected-chips'); chipBox.innerHTML = '';
+            const ids = [...state.selectedIds];
+            ids.forEach(uid => {
+                const u = state.idToFriend.get(uid) || {};
+                const label = friendDisplay(u);
+                const el = document.createElement('div');
+                el.className = 'chip';
+                el.innerHTML = `<span>${esc(label)}</span><span class="x" title="Remove">✕</span>`;
+                el.querySelector('.x').onclick = (e) => { e.stopPropagation(); state.selectedIds.delete(uid); renderFriends(state.friendsCache); refreshSelectedChips(); refreshGroupSubmitState(); };
+                chipBox.append(el);
+            });
+        }
+
+        function refreshGroupSubmitState() {
+            const btn = $('btn-group-submit');
+            const mode = state.pickerMode;
+            if (mode === 'group-create') {
+                btn.textContent = 'Create Group';
+                btn.disabled = (state.selectedIds.size < 2); // need >1 other (3 total incl me)
+            } else if (mode === 'group-edit') {
+                btn.textContent = 'Save Changes';
+                // total members after save = 1 (owner/me) + selectedIds.size (others incl current may overlap)
+                const total = 1 + state.selectedIds.size;
+                const changed = !eqSets(state.selectedIds, state.initialSelectedIds);
+                btn.disabled = !(changed && total >= 3);
+            } else {
+                btn.textContent = 'Close';
+                btn.disabled = false;
+            }
+            $('group-cta').style.display = (mode === 'group-create' || mode === 'group-edit') ? '' : 'none';
+        }
+
+        function eqSets(a, b) { if (a.size !== b.size) return false; for (const v of a) if (!b.has(v)) return false; return true; }
+
+        function renderFriends(list) {
+            state.friendsCache = list || [];
+            state.idToFriend.clear();
+            list.forEach(u => state.idToFriend.set(u.id, u));
+
+            userList.innerHTML = '';
+            const q = $('user-q').value.trim().toLowerCase();
+
+            let items = list.filter(u => {
+                if (!q) return true;
+                return (u.username || '').toLowerCase().includes(q) ||
+                    (u.first_username || '').toLowerCase().includes(q) ||
+                    (u.bio || '').toLowerCase().includes(q);
+            });
+
+            const mode = state.pickerMode;
+
+            items.forEach(u => {
+                const row = document.createElement('div'); row.className = 'person';
+
+                const label = '@' + (u.username || u.first_username || 'user');
+                const checked = state.selectedIds.has(u.id);
+                const isEdit = (mode === 'group-edit');
+                const isOwner = state.currentConvDetail?.is_owner;
+                const isMe = (u.id | 0) === (state.meId | 0); // should not be in friends list anyway
+                const disableCheck = false; // only friends list (not members) so no self here
+
+                let right = '';
+
+                if (mode === 'dm') {
+                    right = `<div class="act"><button class="btn person-message">Message</button></div>`;
+                } else if (mode === 'group-create' || mode === 'group-edit') {
+                    right = `<div class="act">
+                    <input type="checkbox" class="checkbox person-check" ${checked ? 'checked' : ''} ${disableCheck ? 'disabled' : ''} />
+                </div>`;
+                } else if (mode === 'view-members') {
+                    right = `<div class="act"></div>`;
+                }
+
+                row.innerHTML = `
+                <img class="pfp" src="${u.profile_photo || DEFAULT_PFP}" alt="">
+                <div>
+                    <div class="name">${esc(label)}</div>
+                    <div class="bio">${esc(u.bio || '')}</div>
+                </div>
+                ${right}
+            `;
+
+                if (mode === 'dm') {
+                    row.onclick = (e) => { if (e.target.closest('.person-message')) return; startDmWith(u); };
+                    row.querySelector('.person-message').onclick = async (e) => { e.stopPropagation(); await startDmWith(u); };
+                } else if (mode === 'group-create' || mode === 'group-edit') {
+                    const toggle = () => {
+                        if (state.selectedIds.has(u.id)) state.selectedIds.delete(u.id);
+                        else state.selectedIds.add(u.id);
+                        renderFriends(state.friendsCache);
+                        refreshSelectedChips();
+                        refreshGroupSubmitState();
+                    };
+                    row.onclick = toggle;
+                    const cb = row.querySelector('.person-check');
+                    if (cb) cb.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+                } else {
+                    row.onclick = () => { };
+                }
+
+                userList.append(row);
+            });
+
+            refreshSelectedChips();
+        }
+
+        async function openPicker(mode = 'dm', opts = {}) {
+            state.pickerMode = mode;
+            state.selectedIds = new Set(opts.preselectIds || []);
+            state.initialSelectedIds = new Set(opts.preselectIds || []);
+            $('overlay').style.display = 'flex';
+            $('user-q').value = '';
+            $('sheet-title').textContent =
+                mode === 'dm' ? 'Start a conversation'
+                    : mode === 'group-create' ? 'Create a Group'
+                        : mode === 'group-edit' ? 'Edit Group Members'
+                            : 'Group Members';
+
+            $('group-cta').style.display = (mode === 'group-create' || mode === 'group-edit') ? '' : 'none';
+            refreshGroupSubmitState();
+
+            const friends = await fetchFriends();
+            renderFriends(friends);
+        }
+        function closePicker() { $('overlay').style.display = 'none'; }
+
+        $('btn-newdm').onclick = () => openPicker('dm');
+        $('btn-newgroup').onclick = () => openPicker('group-create');
+
+        overlay.addEventListener('click', e => { if (e.target === overlay) closePicker(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePicker(); hideChatMenu(); } });
+
+        $('user-q').addEventListener('input', async () => renderFriends(state.friendsCache));
+
+        $('btn-cancel').onclick = () => closePicker();
+
+        $('btn-group-submit').onclick = async () => {
+            if (state.pickerMode === 'group-create') {
+                if (state.selectedIds.size < 2) return;
+                const ids = [...state.selectedIds];
+                const names = ids.map(id => friendDisplay(state.idToFriend.get(id)));
+                const title = joinNames(names);
+                try {
+                    const res = await api('/dm/conversations', { method: 'POST', body: { user_ids: ids, title } });
+                    closePicker();
+                    await loadConversations({ blockingMeta: true });
+                    if (res?.id) await openConversation(res.id);
+                } catch (e) { alert(e.detail || e.message || e); }
+            } else if (state.pickerMode === 'group-edit') {
+                const detail = state.currentConvDetail || {};
+                const before = new Set(state.initialSelectedIds);
+                const after = new Set(state.selectedIds);
+                const add = [...after].filter(x => !before.has(x));
+                const remove = [...before].filter(x => !after.has(x));
+                const total = 1 + after.size;
+                if (total < 3 || (add.length === 0 && remove.length === 0)) return;
+                try {
+                    await api(`/dm/conversations/${state.convId}/members`, { method: 'PATCH', body: { add_user_ids: add, remove_user_ids: remove } });
+                    closePicker();
+                    await fetchConvMeta(state.convId);
+                    await fetchAfter(state.lastMsgId);
+                    await loadConversations({ blockingMeta: true });
+                } catch (e) { alert(e.detail || e.message || e); }
+            } else {
+                closePicker();
+            }
+        };
+
+        async function startDmWith(u) {
+            try {
+                const og = u.first_username || u.username;
+                const res = await api(`/dm/with/${encodeURIComponent(og)}`, { method: 'POST' });
+                closePicker(); await loadConversations({ blockingMeta: true });
+                const cid = res?.conversation_id || res?.id;
+                if (cid) {
+                    const meta = { name: '@' + og, photo: u.profile_photo || DEFAULT_PFP };
+                    setConvMeta(cid, meta, 'startDmWith');
+                    state.userCache.set(og, { username: og, photo: u.profile_photo || DEFAULT_PFP, display_name: null, raw: u });
+                    scheduleSaveMeta();
+                    openConversation(cid);
+                } else if (state.allConvs[0]) {
+                    openConversation(state.allConvs[0].id);
+                }
+            } catch (e) { alert(e.message || e); }
+        }
+
+        /* ---------------- 3-dots chat menu ---------------- */
+        const chatMenu = $('chat-menu');
+        const chatMenuBtn = $('chat-menu-btn');
+
+        function hideChatMenu() { chatMenu.style.display = 'none'; }
+        function toggleChatMenu() {
+            if (chatMenu.style.display === 'none' || !chatMenu.style.display) { renderChatMenu(); chatMenu.style.display = 'block'; }
+            else chatMenu.style.display = 'none';
+        }
+        chatMenuBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleChatMenu(); });
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.menu') && e.target !== chatMenuBtn) hideChatMenu();
+        });
+
+        function renderChatMenu() {
+            const det = state.currentConvDetail || state.convDetailById.get(state.convId) || {};
+            const isGroup = det.is_group;
+            const isOwner = !!det.is_owner;
+
+            // Only hide the button if we *know* this is a DM. If we don't know yet, keep it visible.
+            if (isGroup === false) {
+                chatMenu.innerHTML = '';
+                chatMenu.style.display = 'none';
+                chatMenuBtn.style.display = 'none';
+                return;
+            }
+            chatMenuBtn.style.display = '';
+
+            const items = [];
+            if (isOwner) {
+                items.push({ id: 'rename', label: 'Rename group' });
+                items.push({ id: 'edit-members', label: 'Add or remove people' });
+            }
+            items.push({ id: 'view-members', label: 'View members' });
+            if (!isOwner) items.push({ id: 'leave', label: 'Leave group' });
+            if (isOwner) items.push({ id: 'disband', label: 'Disband group' });
+
+            chatMenu.innerHTML = items.map(i => `<div class="item" data-id="${i.id}">${esc(i.label)}</div>`).join('');
+
+            chatMenu.querySelectorAll('.item').forEach(el => {
+                el.onclick = async () => {
+                    const id = el.dataset.id;
+                    hideChatMenu();
+                    if (id === 'rename') {
+                        const current = state.currentConvDetail?.title || state.convMeta.get(state.convId)?.name || '';
+                        const name = prompt('New group name:', current) || '';
+                        const trimmed = name.trim();
+                        if (!trimmed) return;
+                        try {
+                            await api(`/dm/conversations/${state.convId}/title`, { method: 'PATCH', body: { title: trimmed } });
+                            await fetchConvMeta(state.convId);
+                            await fetchAfter(state.lastMsgId);
+                            await loadConversations({ blockingMeta: true });
+                            await afterPaint();          // <-- add
+                            renderChatMenu();            // <-- add (ensures menu rebinds cleanly)
+                        } catch (e) { alert(e.detail || e.message || e); }
+                    } else if (id === 'edit-members') {
+                        // preselect all current others (everyone except owner/me)
+                        const members = (state.currentConvDetail?.members || []).filter(u => (u.id | 0) !== (state.currentConvDetail.owner_id | 0));
+                        const pre = members.map(u => u.id);
+                        await openPicker('group-edit', { preselectIds: pre });
+                    } else if (id === 'view-members') {
+                        // List current members (no checkboxes)
+                        state.pickerMode = 'view-members';
+                        $('sheet-title').textContent = 'Group Members';
+                        $('group-cta').style.display = 'none';
+                        $('overlay').style.display = 'flex';
+                        $('user-q').value = '';
+                        // synthesize a list from current members (may include non-friends)
+                        const members = (state.currentConvDetail?.members || []).map(u => ({
+                            id: u.id, username: u.username, first_username: u.first_username, profile_photo: u.profile_photo, bio: ''
+                        }));
+                        renderFriends(members);
+                    } else if (id === 'leave') {
+                        if (!confirm('Leave this group?')) return;
+                        try {
+                            await api(`/dm/conversations/${state.convId}/leave`, { method: 'POST' });
+                            state.convId = null; state.currentConvDetail = null;
+                            $('chat-title').textContent = 'Pick a conversation';
+                            $('chat-pfp').src = DEFAULT_PFP;
+                            $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
+                            await loadConversations({ blockingMeta: true });
+                        } catch (e) { alert(e.detail || e.message || e); }
+                    } else if (id === 'disband') {
+                        if (!confirm('Disband this group for everyone? This cannot be undone.')) return;
+                        try {
+                            await api(`/dm/conversations/${state.convId}/disband`, { method: 'POST' });
+                            state.convId = null; state.currentConvDetail = null;
+                            $('chat-title').textContent = 'Pick a conversation';
+                            $('chat-pfp').src = DEFAULT_PFP;
+                            $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
+                            await loadConversations({ blockingMeta: true });
+                        } catch (e) { alert(e.detail || e.message || e); }
+                    }
+                };
+            });
+        }
+
+        /* ---------------- wire UI ---------------- */
+        $('btn-attach').onclick = () => $('file').click();
+        $('file').onchange = async e => { await handleFileInput(e.target.files); e.target.value = ''; };
+        $('btn-send').onclick = sendMessage;
+        $('text').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+
+        const voice = $('btn-voice');
+        const startRec = e => { e.preventDefault(); voice.textContent = 'Recording… release to stop'; startRecording(); };
+        const stopRec = e => { e.preventDefault(); voice.textContent = 'Hold to record'; stopRecording(false); };
+        voice.addEventListener('pointerdown', startRec);
+        voice.addEventListener('pointerup', stopRec);
+        voice.addEventListener('pointercancel', stopRec);
+        voice.addEventListener('mouseleave', () => { if (state.recording.active) stopRec(new Event('pointerup')); });
+
+        async function sendMessage() {
+            if (!state.convId || state.uploading) return;
+            let text = $('text').value;
+            if (!text && state.pendingFiles.length === 0) return;
+            if (text.length > 10000) { alert('Message is over 10,000 characters. Please shorten it.'); return; }
+            text = text.trim();
+
+            const fd = new FormData();
+            fd.append('text', text);
+            state.pendingFiles.forEach((f, i) => {
+                const blob = new Blob([f.buf], { type: f.type || 'application/octet-stream' });
+                const name = f.name || `file-${i}`;
+                fd.append('files', blob, name);
+                if (f.encoding) fd.append(`encoding_${name}`, f.encoding);
+            });
+
+            state.uploading = true;
+            try {
+                const r = await fetch(`${API}/dm/conversations/${state.convId}/messages`, { method: 'POST', credentials: 'include', body: fd });
+                const t = await r.text(); if (!r.ok) throw new Error(t || r.statusText);
+                const j = JSON.parse(t);
+                if (j && j.id) state.lastMsgId = Math.max(state.lastMsgId, j.id | 0);
+                $('text').value = ''; state.pendingFiles = []; refreshChips();
+                await fetchAfter(state.lastMsgId);
+                loadConversations().catch(() => { });
+                if (nearBottom()) { await afterPaint(); scrollToBottom(); }
+            } catch (e) { alert(e.message || e); }
+            finally { state.uploading = false; }
+        }
+
+        /* ---------------- boot ---------------- */
+        (async () => {
+            await getMe();
+            loadMetaCache();
+
+            // If the URL contains someone else’s slug, rewrite it to mine.
+            const urlMatch = location.pathname.match(/\/user\/([^\/]+)\/messages/i);
+            const urlSlug = urlMatch ? decodeURIComponent(urlMatch[1]) : '';
+            if (state.meSlug && urlSlug && urlSlug.toLowerCase() !== state.meSlug.toLowerCase()) {
+                history.replaceState(null, '', `/user/${encodeURIComponent(state.meSlug)}/messages`);
+            }
+
+            await loadConversations({ blockingMeta: true });
+            const last = loadLastDM();
+            if (last && (last.meId | 0) === (state.meId | 0)) {
+                const exists = state.allConvs.find(c => (c.id | 0) === (last.convId | 0));
+                if (exists) { await openConversation(exists.id); return; }
+            }
+        })();
+
+        /* ---------------- recording impl ---------------- */
         async function startRecording() {
             if (state.recording.active) return;
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1083,137 +1542,5 @@
             state.recording.active = false;
             if (force) recWarn.textContent = 'Stopped to keep under 1MB.';
         }
-
-        /* ---------------- send ---------------- */
-        async function sendMessage() {
-            if (!state.convId || state.uploading) return;
-            let text = $('text').value;
-            if (!text && state.pendingFiles.length === 0) return;
-            if (text.length > 10000) { alert('Message is over 10,000 characters. Please shorten it.'); return; }
-            text = text.trim();
-
-            const fd = new FormData();
-            fd.append('text', text);
-            state.pendingFiles.forEach((f, i) => {
-                const blob = new Blob([f.buf], { type: f.type || 'application/octet-stream' });
-                const name = f.name || `file-${i}`;
-                fd.append('files', blob, name);
-                if (f.encoding) fd.append(`encoding_${name}`, f.encoding);
-            });
-
-            state.uploading = true;
-            try {
-                const r = await fetch(`${API}/dm/conversations/${state.convId}/messages`, { method: 'POST', credentials: 'include', body: fd });
-                const t = await r.text(); if (!r.ok) throw new Error(t || r.statusText);
-                const j = JSON.parse(t);
-                if (j && j.id) state.lastMsgId = Math.max(state.lastMsgId, j.id | 0);
-                $('text').value = ''; state.pendingFiles = []; refreshChips();
-                await fetchAfter(state.lastMsgId);
-                loadConversations().catch(() => { });
-                if (nearBottom()) { await afterPaint(); scrollToBottom(); }
-            } catch (e) { alert(e.message || e); }
-            finally { state.uploading = false; }
-        }
-
-        /* ---------------- overlay (friends / start DM) ---------------- */
-        const overlay = $('overlay'), userList = $('user-list');
-        const pageSlug = (location.pathname.match(/\/user\/([^\/]+)\/messages/i) || [])[1]
-            ? decodeURIComponent((location.pathname.match(/\/user\/([^\/]+)\/messages/i) || [])[1]) : '';
-
-        async function fetchFriends() {
-            try {
-                const j = await api(`/users/${encodeURIComponent(pageSlug || 'me')}/friends?offset=0&limit=500`);
-                return (j.items || []).map(u => ({ id: u.id, username: u.username || null, first_username: u.first_username || null, profile_photo: u.profile_photo || null, bio: u.bio || u.bio_html || '' }));
-            } catch {
-                const j = await api('/users/me/friends');
-                return (j.friends || []).map(u => ({
-                    id: null,
-                    username: u.username || null,
-                    first_username: u.first_username || null,
-                    profile_photo: null,
-                    bio: ''
-                }));
-            }
-        }
-        function renderFriends(list) {
-            userList.innerHTML = '';
-            const q = $('user-q').value.trim().toLowerCase();
-            list.filter(u => {
-                if (!q) return true;
-                return (u.username || '').toLowerCase().includes(q) || (u.first_username || '').toLowerCase().includes(q) || (u.bio || '').toLowerCase().includes(q);
-            }).forEach(u => {
-                const row = document.createElement('div'); row.className = 'person';
-                row.innerHTML = `
-        <img class="pfp" src="${u.profile_photo || DEFAULT_PFP}" alt="">
-        <div>
-          <div class="name">@${u.username || u.first_username || 'user'}</div>
-          <div class="bio">${esc(u.bio || '')}</div>
-        </div>
-        <div class="act"></div>`;
-                const go = document.createElement('button'); go.className = 'btn'; go.textContent = 'Message';
-                go.onclick = async (e) => { e.stopPropagation(); await startDmWith(u); };
-                row.querySelector('.act').append(go);
-                row.onclick = () => go.click();
-                userList.append(row);
-            });
-        }
-        async function openPicker() { overlay.style.display = 'flex'; $('user-q').value = ''; renderFriends(await fetchFriends()); }
-        function closePicker() { overlay.style.display = 'none'; }
-        $('btn-newdm').onclick = () => openPicker();
-        $('btn-newgroup').onclick = () => openPicker();
-        overlay.addEventListener('click', e => { if (e.target === overlay) closePicker(); });
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') closePicker(); });
-        $('user-q').addEventListener('input', async () => renderFriends(await fetchFriends()));
-
-        async function startDmWith(u) {
-            try {
-                const og = u.first_username || u.username;
-                const res = await api(`/dm/with/${encodeURIComponent(og)}`, { method: 'POST' });
-                closePicker(); await loadConversations();
-                const cid = res?.conversation_id || res?.id;
-
-                if (cid) {
-                    // pin OG and meta based on the same source as the picker
-                    state.convUserOg.set(cid, og);
-                    const meta = { name: '@' + og, photo: u.profile_photo || DEFAULT_PFP };
-                    setConvMeta(cid, meta, 'startDmWith');
-                    // also prime cache so header snaps instantly
-                    state.userCache.set(og, { username: og, photo: u.profile_photo || DEFAULT_PFP, display_name: null, raw: u });
-
-                    openConversation(cid);
-                } else if (state.allConvs[0]) {
-                    openConversation(state.allConvs[0].id);
-                }
-            } catch (e) { alert(e.message || e); }
-        }
-
-        /* ---------------- wire UI ---------------- */
-        $('btn-attach').onclick = () => $('file').click();
-        $('file').onchange = async e => { await handleFileInput(e.target.files); e.target.value = ''; };
-        $('btn-send').onclick = sendMessage;
-        $('text').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
-
-        const voice = $('btn-voice');
-        const start = e => { e.preventDefault(); voice.textContent = 'Recording… release to stop'; startRecording(); };
-        const stop = e => { e.preventDefault(); voice.textContent = 'Hold to record'; stopRecording(false); };
-        voice.addEventListener('pointerdown', start);
-        voice.addEventListener('pointerup', stop);
-        voice.addEventListener('pointercancel', stop);
-        voice.addEventListener('mouseleave', () => { if (state.recording.active) stop(new Event('pointerup')); });
-
-        /* ---------------- boot ---------------- */
-        (async () => {
-            await getMe();
-            await loadConversations();
-
-            const last = loadLastDM();
-            if (last && (last.meId | 0) === (state.meId | 0)) {
-                const exists = state.allConvs.find(c => (c.id | 0) === (last.convId | 0));
-                if (exists) {
-                    await openConversation(exists.id);
-                    return;
-                }
-            }
-        })();
     })();
 </script>

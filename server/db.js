@@ -13,9 +13,7 @@ db.pragma('foreign_keys = ON');
 function tableInfo(name) {
     try { return db.prepare(`PRAGMA table_info(${name})`).all(); } catch { return []; }
 }
-function colNames(name) {
-    return tableInfo(name).map(c => c.name);
-}
+function colNames(name) { return tableInfo(name).map(c => c.name); }
 function tableExists(name) {
     const row = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(name);
     return !!row;
@@ -30,21 +28,20 @@ function addColumnIfMissing(table, defSql) {
 function ensureUsersTable() {
     db.exec(`
     CREATE TABLE IF NOT EXISTS users (
-        id                INTEGER PRIMARY KEY AUTOINCREMENT,
-        email             TEXT,
-        phone             TEXT,
-        username          TEXT,
-        first_username    TEXT,
-        profile_photo     TEXT,
-        /* NEW: bios */
-        bio_html          TEXT,        -- sanitized rich text (preferred)
-        bio               TEXT,        -- legacy/plain fallback
-        role              TEXT NOT NULL DEFAULT 'user',
-        is_admin          INTEGER NOT NULL DEFAULT 0,
-        received_likes    INTEGER NOT NULL DEFAULT 0,
-        received_dislikes INTEGER NOT NULL DEFAULT 0,
-        created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      email             TEXT,
+      phone             TEXT,
+      username          TEXT,
+      first_username    TEXT,
+      profile_photo     TEXT,
+      bio_html          TEXT,
+      bio               TEXT,
+      role              TEXT NOT NULL DEFAULT 'user',
+      is_admin          INTEGER NOT NULL DEFAULT 0,
+      received_likes    INTEGER NOT NULL DEFAULT 0,
+      received_dislikes INTEGER NOT NULL DEFAULT 0,
+      created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email   ON users(email)           WHERE email           IS NOT NULL;
@@ -56,16 +53,15 @@ function ensureUsersTable() {
     CREATE TRIGGER trg_users_updated_at
     AFTER UPDATE ON users
     FOR EACH ROW BEGIN
-        UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+      UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
     END;
   `);
 
-    // Safety adds on old DBs
     const want = [
         `email TEXT`, `phone TEXT`, `username TEXT`, `first_username TEXT`,
         `profile_photo TEXT`,
-        `bio_html TEXT`,                    // <-- add
-        `bio TEXT`,                         // <-- add
+        `bio_html TEXT`,
+        `bio TEXT`,
         `role TEXT NOT NULL DEFAULT 'user'`,
         `is_admin INTEGER NOT NULL DEFAULT 0`,
         `received_likes INTEGER NOT NULL DEFAULT 0`,
@@ -78,21 +74,19 @@ function ensureUsersTable() {
 
 /* ---------- FRIENDS & REQUESTS ---------- */
 function ensureFriendsTables() {
-    // Friend requests: pending → accepted/ignored. Keep one row per from→to.
     db.exec(`
     CREATE TABLE IF NOT EXISTS friend_requests (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      from_user_id INTEGER NOT NULL,
-      to_user_id   INTEGER NOT NULL,
-      status       TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'accepted' | 'ignored'
-      created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_user_id  INTEGER NOT NULL,
+      to_user_id    INTEGER NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(from_user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY(to_user_id)   REFERENCES users(id) ON DELETE CASCADE,
       CHECK (status IN ('pending','accepted','ignored'))
     );
 
-    -- Avoid duplicate open requests from A→B
     CREATE UNIQUE INDEX IF NOT EXISTS uq_friend_requests_open
       ON friend_requests(from_user_id, to_user_id)
       WHERE status = 'pending';
@@ -109,7 +103,6 @@ function ensureFriendsTables() {
     END;
   `);
 
-    // Friendships: undirected (store once as (a<b)).
     db.exec(`
     CREATE TABLE IF NOT EXISTS friendships (
       user_id_a  INTEGER NOT NULL,
@@ -124,7 +117,6 @@ function ensureFriendsTables() {
     CREATE INDEX IF NOT EXISTS idx_friendships_b ON friendships(user_id_b);
   `);
 
-    // Convenience view: edges in both directions (one row per user → friend)
     try {
         db.exec(`
       CREATE VIEW IF NOT EXISTS user_friend_edges AS
@@ -134,9 +126,8 @@ function ensureFriendsTables() {
       SELECT user_id_b AS user_id, user_id_a AS friend_id, rowid AS created_at
       FROM friendships;
     `);
-    } catch { /* view exists or SQLite without CREATE VIEW IF NOT EXISTS */ }
+    } catch { }
 }
-
 
 /* ---------- CREDENTIALS (password storage) ---------- */
 function ensureCredentialsTable() {
@@ -145,10 +136,10 @@ function ensureCredentialsTable() {
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id       INTEGER NOT NULL,
       provider      TEXT NOT NULL DEFAULT 'local',
-      email         TEXT,             -- nullable
+      email         TEXT,
       password_hash TEXT,
-      password      TEXT,             -- legacy/plain compat (nullable)
-      algo          TEXT,             -- e.g., 'argon2id'
+      password      TEXT,
+      algo          TEXT,
       created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -165,12 +156,10 @@ function ensureCredentialsTable() {
     END;
   `);
 
-    // Add missing columns (and ensure email is nullable)
     addColumnIfMissing('credentials', `password_hash TEXT`);
     addColumnIfMissing('credentials', `password TEXT`);
     addColumnIfMissing('credentials', `algo TEXT`);
 
-    // If some legacy schema forced NOT NULL on email, rebuild without it
     try {
         const emailCol = tableInfo('credentials').find(c => c.name === 'email');
         if (emailCol && emailCol.notnull) {
@@ -206,14 +195,13 @@ function ensureCredentialsTable() {
     } catch { }
 }
 
-// Replace your ensureSessionsTable() with this
+/* ---------- Sessions ---------- */
 function ensureSessionsTable() {
-    // 1) Fresh create if missing
     if (!tableExists('sessions')) {
         db.exec(`
       CREATE TABLE sessions (
-        id           TEXT PRIMARY KEY,           -- cookie value
-        sid          TEXT UNIQUE,                -- legacy/compat
+        id           TEXT PRIMARY KEY,
+        sid          TEXT UNIQUE,
         user_id      INTEGER NOT NULL,
         created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -241,11 +229,9 @@ function ensureSessionsTable() {
         return;
     }
 
-    // 2) If table exists, see if it needs a rebuild (missing id/last_seen_at)
     const cols = colNames('sessions');
     const needRebuild = !cols.includes('id') || !cols.includes('last_seen_at');
 
-    // Helper to create the canonical table & triggers/indexes
     const createCanonical = () => {
         db.exec(`
       CREATE TABLE sessions_new (
@@ -281,35 +267,30 @@ function ensureSessionsTable() {
     };
 
     if (needRebuild) {
-        // Build a copy plan based on what columns actually exist
+        const colsNow = colNames('sessions');
         const idSrc =
-            cols.includes('id') ? 'id' :
-                cols.includes('sid') ? 'sid' :
-                    cols.includes('session_id') ? 'session_id' :
-                        cols.includes('token') ? 'token' : null;
+            colsNow.includes('id') ? 'id' :
+                colsNow.includes('sid') ? 'sid' :
+                    colsNow.includes('session_id') ? 'session_id' :
+                        colsNow.includes('token') ? 'token' : null;
 
         const sidSrc =
-            cols.includes('sid') ? 'sid' :
-                idSrc ? idSrc : null;
+            colsNow.includes('sid') ? 'sid' : (idSrc ? idSrc : null);
 
         const userSrc =
-            cols.includes('user_id') ? 'user_id' :
-                cols.includes('uid') ? 'uid' :
-                    cols.includes('userId') ? 'userId' : null;
+            colsNow.includes('user_id') ? 'user_id' :
+                colsNow.includes('uid') ? 'uid' :
+                    colsNow.includes('userId') ? 'userId' : null;
 
-        const createdSrc =
-            cols.includes('created_at') ? 'created_at' : null;
-
+        const createdSrc = colsNow.includes('created_at') ? 'created_at' : null;
         const lastSeenSrc =
-            cols.includes('last_seen_at') ? 'last_seen_at' :
-                cols.includes('seen_at') ? 'seen_at' : null;
-
+            colsNow.includes('last_seen_at') ? 'last_seen_at' :
+                colsNow.includes('seen_at') ? 'seen_at' : null;
         const expiresSrc =
-            cols.includes('expires_at') ? 'expires_at' :
-                cols.includes('expiry') ? 'expiry' :
-                    cols.includes('expires') ? 'expires' : null;
+            colsNow.includes('expires_at') ? 'expires_at' :
+                colsNow.includes('expiry') ? 'expiry' :
+                    colsNow.includes('expires') ? 'expires' : null;
 
-        // If we can’t find a user column, it’s safer to recreate empty
         const canCopy = !!userSrc;
 
         const tx = db.transaction(() => {
@@ -317,7 +298,6 @@ function ensureSessionsTable() {
             createCanonical();
 
             if (canCopy) {
-                // COPY ONLY FROM COLUMNS THAT EXIST — no referencing missing columns
                 const selectSQL = `
           INSERT INTO sessions_new (id, sid, user_id, created_at, last_seen_at, expires_at)
           SELECT
@@ -332,19 +312,12 @@ function ensureSessionsTable() {
                 db.exec(selectSQL);
             }
 
-            db.exec(`
-        DROP TABLE sessions;
-        ALTER TABLE sessions_new RENAME TO sessions;
-      `);
-
+            db.exec(`DROP TABLE sessions; ALTER TABLE sessions_new RENAME TO sessions;`);
             installTriggersAndIndexes();
             db.exec(`PRAGMA foreign_keys=ON;`);
         });
 
-        try {
-            tx();
-        } catch (e) {
-            // If anything went wrong, fall back to a clean recreate
+        try { tx(); } catch (e) {
             const rescue = db.transaction(() => {
                 db.exec(`PRAGMA foreign_keys=OFF;`);
                 db.exec(`DROP TABLE IF EXISTS sessions;`);
@@ -367,7 +340,6 @@ function ensureSessionsTable() {
         return;
     }
 
-    // 3) If no rebuild needed, ensure convenience columns & indexes exist
     addColumnIfMissing('sessions', `sid TEXT UNIQUE`);
     addColumnIfMissing('sessions', `expires_at TEXT`);
     addColumnIfMissing('sessions', `created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP`);
@@ -391,7 +363,6 @@ function ensureTotpTable() {
     );
   `);
 }
-
 function ensureEmailOtpTable() {
     db.exec(`
     CREATE TABLE IF NOT EXISTS email_otp (
@@ -406,7 +377,6 @@ function ensureEmailOtpTable() {
     CREATE INDEX IF NOT EXISTS idx_email_otp_user ON email_otp(user_id);
   `);
 }
-
 function ensurePasswordResetsTable() {
     db.exec(`
     CREATE TABLE IF NOT EXISTS password_resets (
@@ -441,7 +411,7 @@ function ensureCommentsAndVotes() {
     CREATE TABLE IF NOT EXISTS comment_votes (
       comment_id   INTEGER NOT NULL,
       user_id      INTEGER NOT NULL,
-      value        INTEGER NOT NULL DEFAULT 0, -- -1,0,1
+      value        INTEGER NOT NULL DEFAULT 0,
       updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY(comment_id, user_id),
       FOREIGN KEY(comment_id) REFERENCES comments(id) ON DELETE CASCADE,
@@ -468,7 +438,6 @@ function ensureCommentsAndVotes() {
     END;
   `);
 
-    // Legacy normalization: comment_votes.vote -> value
     try {
         const names = colNames('comment_votes');
         const hasValue = names.includes('value');
@@ -509,72 +478,111 @@ function ensureCommentsAndVotes() {
 }
 
 /* ---------- DMs ---------- */
+/* ---------- DMs ---------- */
 function ensureDMTables() {
     db.exec(`
-  PRAGMA foreign_keys=ON;
+    PRAGMA foreign_keys=ON;
 
-  -- Conversations (1:1 or group). Title optional (non-null for groups)
-  CREATE TABLE IF NOT EXISTS dm_conversations (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    is_group     INTEGER NOT NULL DEFAULT 0,
-    title        TEXT,
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  );
+    -- Conversations (1:1 or group)
+    -- owner_id is NULL for 1:1; set for groups
+    CREATE TABLE IF NOT EXISTS dm_conversations (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      is_group     INTEGER NOT NULL DEFAULT 0,
+      title        TEXT,
+      owner_id     INTEGER,
+      deleted_at   TEXT,                           -- <— NEW soft-delete column
+      created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE SET NULL
+    );
 
-  -- Members
-  CREATE TABLE IF NOT EXISTS dm_members (
-    conversation_id INTEGER NOT NULL,
-    user_id         INTEGER NOT NULL,
-    joined_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (conversation_id, user_id),
-    FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
-    FOREIGN KEY(user_id)         REFERENCES users(id)             ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_dm_members_user ON dm_members(user_id);
+    -- Members
+    CREATE TABLE IF NOT EXISTS dm_members (
+      conversation_id INTEGER NOT NULL,
+      user_id         INTEGER NOT NULL,
+      joined_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (conversation_id, user_id),
+      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
+      FOREIGN KEY(user_id)         REFERENCES users(id)             ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_members_user ON dm_members(user_id);
 
-  -- Per-conversation key (encrypted using server master key)
-  CREATE TABLE IF NOT EXISTS dm_conversation_keys (
-    conversation_id INTEGER PRIMARY KEY,
-    key_cipher      BLOB NOT NULL,
-    key_nonce       BLOB NOT NULL,
-    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE
-  );
+    -- Per-conversation key (encrypted using server master key)
+    CREATE TABLE IF NOT EXISTS dm_conversation_keys (
+      conversation_id INTEGER PRIMARY KEY,
+      key_cipher      BLOB NOT NULL,
+      key_nonce       BLOB NOT NULL,
+      created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE
+    );
 
-  -- Messages
-  CREATE TABLE IF NOT EXISTS dm_messages (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id INTEGER NOT NULL,
-    sender_id       INTEGER NOT NULL,
-    kind            TEXT NOT NULL DEFAULT 'text', -- 'text' | 'mix' | 'file'
-    body_cipher     BLOB,                         -- AES-GCM ciphertext of JSON { text }
-    body_nonce      BLOB,                         -- 12B nonce for body
-    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
-    FOREIGN KEY(sender_id)       REFERENCES users(id)            ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_dm_messages_conv_id ON dm_messages(conversation_id, id DESC);
+    -- Messages
+    CREATE TABLE IF NOT EXISTS dm_messages (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id INTEGER NOT NULL,
+      sender_id       INTEGER NOT NULL,
+      kind            TEXT NOT NULL DEFAULT 'text', -- 'text' | 'mix' | 'file' | 'system'
+      body_cipher     BLOB,
+      body_nonce      BLOB,
+      created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
+      FOREIGN KEY(sender_id)       REFERENCES users(id)            ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_messages_conv_id ON dm_messages(conversation_id, id DESC);
 
-  -- Attachments (encrypted bytes)
-  CREATE TABLE IF NOT EXISTS dm_attachments (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    message_id      INTEGER NOT NULL,
-    filename        TEXT NOT NULL,
-    mime_type       TEXT NOT NULL,
-    encoding        TEXT,            -- null or 'gzip'
-    size_bytes      INTEGER NOT NULL,
-    blob_cipher     BLOB NOT NULL,
-    blob_nonce      BLOB NOT NULL,
-    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(message_id) REFERENCES dm_messages(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_dm_attachments_msg_id ON dm_attachments(message_id);
+    -- Attachments
+    CREATE TABLE IF NOT EXISTS dm_attachments (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id      INTEGER NOT NULL,
+      filename        TEXT NOT NULL,
+      mime_type       TEXT NOT NULL,
+      encoding        TEXT,            -- null or 'gzip'
+      size_bytes      INTEGER NOT NULL,
+      blob_cipher     BLOB NOT NULL,
+      blob_nonce      BLOB NOT NULL,
+      created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(message_id) REFERENCES dm_messages(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_attachments_msg_id ON dm_attachments(message_id);
+
+    -- Deleted groups tombstone list (purged after 30 days)
+    CREATE TABLE IF NOT EXISTS dm_deleted_groups (
+      conversation_id INTEGER PRIMARY KEY,
+      owner_id        INTEGER,
+      deleted_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
+      FOREIGN KEY(owner_id)        REFERENCES users(id) ON DELETE SET NULL
+    );
+  `);
+
+    // Safety adds for older DBs
+    addColumnIfMissing('dm_conversations', `owner_id INTEGER`);
+    addColumnIfMissing('dm_conversations', `deleted_at TEXT`);
+
+    // Backfill owner_id for existing groups (pick earliest joiner)
+    try {
+        db.exec(`
+      UPDATE dm_conversations
+      SET owner_id = (
+        SELECT user_id
+        FROM dm_members
+        WHERE conversation_id = dm_conversations.id
+        ORDER BY datetime(joined_at) ASC, user_id ASC
+        LIMIT 1
+      )
+      WHERE is_group = 1 AND (owner_id IS NULL OR owner_id = 0);
+    `);
+    } catch { /* ignore */ }
+
+    // Helpful indexes
+    db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_dm_conversations_owner  ON dm_conversations(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_dm_conversations_deleted ON dm_conversations(deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_dm_deleted_groups_when   ON dm_deleted_groups(deleted_at);
   `);
 }
 
 /* ---------- master migration ---------- */
 function migrate() {
-    // Order matters: users → credentials/sessions/2FA → resets → comments
     ensureUsersTable();
     ensureFriendsTables();
     ensureCredentialsTable();
