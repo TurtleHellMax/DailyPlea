@@ -59,8 +59,8 @@ app.use(cors({
     origin: ['http://localhost:5500', 'http://127.0.0.1:5500'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-User-Id'],
-    exposedHeaders: ['X-Audio-Duration-Ms']
+    allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-User-Id', 'Range'],
+    exposedHeaders: ['X-Audio-Duration-Ms', 'Accept-Ranges', 'Content-Range']
 }));
 
 /* ---------------- dev routes (optional) ---------------- */
@@ -166,6 +166,39 @@ app.get('/user/:slug', (req, res, next) => {
     const f = path.join(WEB_ROOT, 'web', 'user-view.html');
     res.sendFile(f, err => err ? next() : undefined);
 });
+
+app.get('/api/dm/attachments/:id/download', (req, res) => {
+    const row = db.prepare(
+        'SELECT filepath AS path, filename, mime_type FROM attachments WHERE id=? LIMIT 1'
+    ).get(req.params.id);
+    if (!row) return res.sendStatus(404);
+
+    const filePath = path.resolve(row.path);
+    const stat = fs.statSync(filePath);
+    const range = req.headers.range;
+    const mime = row.mime_type || mimeTypes.lookup(row.filename) || 'application/octet-stream';
+
+    if (range) {
+        const [s, e] = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(s, 10);
+        const end = e ? parseInt(e, 10) : stat.size - 1;
+        res.status(206).set({
+            'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': (end - start + 1),
+            'Content-Type': mime
+        });
+        fs.createReadStream(filePath, { start, end }).pipe(res);
+    } else {
+        res.set({
+            'Accept-Ranges': 'bytes',
+            'Content-Length': stat.size,
+            'Content-Type': mime
+        });
+        fs.createReadStream(filePath).pipe(res);
+    }
+});
+
 
 /* ---------------- helper to create or reuse a 1:1 DM ----------------
    This proxies to POST /api/dm/conversations so keys get created the same way.

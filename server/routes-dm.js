@@ -411,6 +411,11 @@ function purgeDeletedGroups() {
 setInterval(purgeDeletedGroups, 12 * 60 * 60 * 1000); // twice a day
 purgeDeletedGroups();
 
+// Treat audio/video as streamable media that must NOT be served with Content-Encoding:gzip
+function isStreamableMedia(mime) {
+    return /^audio\/|^video\//i.test(String(mime || ''));
+}
+
 /* ====== routes ====== */
 
 /** Ensure or reuse a 1:1 convo by slug; return its id */
@@ -896,21 +901,84 @@ router.post('/dm/conversations/:id/block', requireAuth, (req, res) => {
     res.json({ ok: true });
 });
 
-/** Download attachment (supports ranges, sets Content-Encoding if gzip) */
-router.get('/dm/attachments/:id/download', requireAuth, (req, res) => {
+/** Download attachment (seekable for audio/video; supports ranges).
+ *  Media is always served UNCOMPRESSED (even if stored gzipped) so the browser can time-seek.
+ *  Non-media keeps existing gzip behavior.
+ */
+/** Download attachment (seekable for audio/video; supports ranges).
+ *  Media is always served UNCOMPRESSED (even if stored gzipped) so the browser can time-seek.
+ *  Non-media keeps existing gzip behavior.
+ */
+router.get('/dm/attachments/:id/download', requireAuth, async (req, res) => {
     const row = db.prepare(`SELECT a.*, m.conversation_id
                           FROM dm_attachments a JOIN dm_messages m ON m.id=a.message_id
                           WHERE a.id=?`).get(+req.params.id);
     if (!row) return res.status(404).end();
     if (!isMember(row.conversation_id, req.userId)) return res.status(403).end();
 
-    // decrypt -> stream as you already do…
-    // res.contentType(row.mime_type) etc.
+    const key = getOrCreateConvKey(row.conversation_id);
+    if (!key) return res.status(500).json({ error: 'key_missing' });
+
+    let buf;
+    try {
+        buf = aeadDecrypt(key, row.blob_cipher, row.blob_nonce);
+    } catch {
+        return res.status(500).json({ error: 'decrypt_failed' });
+    }
+
+    const mime = row.mime_type || 'application/octet-stream';
+    const media = isStreamableMedia(mime);
+
+    // If it's media and stored gzipped, decompress BEFORE serving so the browser can time-seek
+    if (media && String(row.encoding || '').toLowerCase() === 'gzip') {
+        try { buf = await gunzip(buf); }
+        catch { return res.status(415).json({ error: 'bad_media_compression' }); }
+    }
+
+    // Headers
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Accept-Ranges', 'bytes');
 
     if (Number.isFinite(row.duration_ms) && row.duration_ms > 0) {
         res.setHeader('X-Audio-Duration-Ms', String(row.duration_ms));
     }
-    // … then end/pipe body
+
+    // Only advertise gzip for NON-media; browsers can’t time-seek gzip-encoded media
+    const isGz = String(row.encoding || '').toLowerCase() === 'gzip';
+    if (!media && isGz) {
+        res.setHeader('Content-Encoding', 'gzip');
+    }
+
+    const outBuf = (!media && isGz) ? buf /* compressed bytes */ : buf /* uncompressed bytes */;
+
+    const size = outBuf.length;
+    const range = req.headers.range;
+
+    if (!range) {
+        res.setHeader('Content-Length', size);
+        return res.end(outBuf);
+    }
+
+    // Parse Range: bytes=start-end
+    const m = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (!m) {
+        res.setHeader('Content-Range', `bytes */${size}`);
+        return res.status(416).end();
+    }
+
+    let start = m[1] === '' ? 0 : parseInt(m[1], 10);
+    let end = m[2] === '' ? size - 1 : parseInt(m[2], 10);
+    if (Number.isNaN(start)) start = 0;
+    if (Number.isNaN(end)) end = size - 1;
+    start = Math.max(0, Math.min(start, size - 1));
+    end = Math.max(start, Math.min(end, size - 1));
+
+    const chunk = outBuf.slice(start, end + 1);
+
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
+    res.setHeader('Content-Length', chunk.length);
+    return res.end(chunk);
 });
 
 /** Attachment meta – returns (and backfills) duration_ms. Kept for older rows. */

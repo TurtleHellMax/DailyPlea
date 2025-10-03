@@ -729,6 +729,7 @@
         }
 
     .audp-track {
+        touch-action: none;
         position: relative;
         height: 6px;
         border: 1px solid var(--border);
@@ -1320,7 +1321,7 @@
                         <button class="audp-btn" type="button" aria-label="Play">▶</button>
                         <div class="audp-track"><div class="audp-fill"></div></div>
                         <div class="audp-time"><span class="cur">0:00</span> / <span class="tot">0:00</span></div>
-                        <audio class="aud-src" preload="metadata" data-src="${url}"></audio>
+                        <audio class="aud-src" preload="metadata" src="${url}"></audio>
                     </div>
                 `);
                         const playerRoot = wrap.lastElementChild;
@@ -1356,20 +1357,28 @@
         }
 
         function ensureFiniteDuration(audio) {
-            // If we already injected a server duration, skip any hacks.
             if (audio?.dataset?.serverMs) return;
-
             if (Number.isFinite(audio.duration) && audio.duration > 0) return;
 
-            const onTU = () => {
+            const onReady = () => {
                 if (Number.isFinite(audio.duration) && audio.duration > 0) {
-                    audio.removeEventListener('timeupdate', onTU);
-                    if (audio.paused) audio.currentTime = 0;
+                    audio.removeEventListener('durationchange', onReady);
+                    audio.removeEventListener('loadedmetadata', onReady);
+                    audio.removeEventListener('timeupdate', onReady);
+                    if (audio.dataset.nudgedForDuration === '1') {
+                        if (!audio.dataset.pendingSeek) {
+                            const d = audio.duration || 0;
+                            if (d && audio.currentTime >= d - 0.001) { try { audio.currentTime = 0; } catch { } }
+                        }
+                        delete audio.dataset.nudgedForDuration;
+                    }
                 }
             };
+            audio.addEventListener('durationchange', onReady);
+            audio.addEventListener('loadedmetadata', onReady);
+            audio.addEventListener('timeupdate', onReady);
 
-            audio.addEventListener('timeupdate', onTU);
-            try { audio.currentTime = 1e101; } catch { }
+            audio.dataset.nudgedForDuration = '1';
         }
 
         function revokeAudioURLsIn(root) {
@@ -1388,49 +1397,46 @@
                 const original = audio.dataset.src || audio.src || '';
                 if (!original) return;
 
-                console.debug('[aud][dl] fetching audio for header probe:', { url: original });
                 const res = await fetch(original, { credentials: 'include' });
                 if (!res.ok) throw new Error(`bad status ${res.status}`);
 
+                // 1) Optional header fast path (if your server ever adds it later)
                 const hdr = res.headers.get('X-Audio-Duration-Ms') || res.headers.get('x-audio-duration-ms');
-                console.debug('[aud][dl] response header X-Audio-Duration-Ms:', hdr);
                 const ms = hdr != null ? parseInt(hdr, 10) : NaN;
                 if (Number.isFinite(ms) && ms > 0) {
                     audio.dataset.serverMs = String(ms);
                     if (attId) setPlayerTotal(attId, ms);
-                } else {
-                    console.debug('[aud][dl] header missing or not a number.');
                 }
 
-                // Get the bytes once, use for both objectURL and WebAudio decode
+                // 2) Make it playable via object URL
                 const blob = await res.blob();
-
-                // Set playable src
                 const u = URL.createObjectURL(blob);
                 audio.src = u;
+                audio.preload = 'metadata';
+                audio.crossOrigin = 'use-credentials';
+                audio.load();
                 audio.dataset.objurl = u;
-                console.debug('[aud][dl] objectURL set for audio element');
 
-                // Ensure browsers with weird duration behavior settle to a finite value
+                // 3) Ensure duration becomes finite on browsers that need a nudge
                 audio.addEventListener('loadedmetadata', () => ensureFiniteDuration(audio), { once: true });
                 audio.addEventListener('play', () => ensureFiniteDuration(audio), { once: true });
 
-                // If server/header didn’t provide duration, decode to get it up-front
+                // 4) If no header duration, decode once to compute duration precisely
                 if (attId && (!audio.dataset.serverMs || audio.dataset.serverMs === '0')) {
                     try {
-                        const ac = new (window.AudioContext || window.webkitAudioContext)();
+                        const AC = window.AudioContext || window.webkitAudioContext;
+                        const ac = new AC();
                         const ab = await blob.arrayBuffer();
-                        // Safari sometimes needs a copy; ab.slice(0) keeps it safe across engines
                         const buf = await ac.decodeAudioData(ab.slice(0));
                         const ms2 = Math.round(buf.duration * 1000);
                         if (Number.isFinite(ms2) && ms2 > 0) setPlayerTotal(attId, ms2);
                         try { ac.close(); } catch { }
-                    } catch (e) {
-                        console.debug('[aud][dl] decodeAudioData failed:', e);
+                    } catch {
+                        // ignore; playback still works; UI will fill duration after metadata
                     }
                 }
-            } catch (err) {
-                console.debug('[aud][dl] fallback path due to error:', err);
+            } catch {
+                // Fallback to original src if our fetch path failed
                 if (!audio.src && audio.dataset.src) audio.src = audio.dataset.src;
                 audio.addEventListener('loadedmetadata', () => ensureFiniteDuration(audio), { once: true });
                 audio.addEventListener('play', () => ensureFiniteDuration(audio), { once: true });
@@ -1616,19 +1622,6 @@
             const es = new EventSource(`${API}/dm/conversations/${id}/stream`, { withCredentials: true });
             state.es = es;
             es.addEventListener('new', async () => { await fetchAfter(state.lastMsgId); });
-            es.addEventListener('audio_meta', (e) => {
-                try {
-                    const d = JSON.parse(e.data || '{}');
-                    console.debug('[aud][sse] audio_meta received:', d);
-                    if (d?.attachment_id && Number.isFinite(d.duration_ms)) {
-                        setPlayerTotal(d.attachment_id, d.duration_ms | 0);
-                    } else {
-                        console.debug('[aud][sse] audio_meta ignored (missing fields).');
-                    }
-                } catch (err) {
-                    console.debug('[aud][sse] audio_meta parse error:', err);
-                }
-            });
         }
         function openGlobalStream() {
             if (state.esGlobal) { try { state.esGlobal.close(); } catch { } }
@@ -2763,12 +2756,111 @@
         })();
 
         /* ---------------- recording impl ---------------- */
-        function formatMs(ms) {
-            if (!Number.isFinite(ms) || ms <= 0) return '0:00';
-            const s = Math.round(ms / 1000);
-            const m = Math.floor(s / 60);
-            const ss = String(s % 60).padStart(2, '0');
-            return `${m}:${ss}`;
+        // One shared AudioContext (saves battery; avoids "Too many contexts")
+        const AC = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AC();
+
+        // Simple buffer-backed player: always seekable
+        class BufferPlayer {
+            constructor(url, { onTick, onReady, onEnded } = {}) {
+                this.url = url;
+                this.onTick = onTick || (() => { });
+                this.onReady = onReady || (() => { });
+                this.onEnded = onEnded || (() => { });
+
+                this.buffer = null;      // AudioBuffer
+                this.src = null;         // AudioBufferSourceNode (one-shot)
+                this.gain = audioCtx.createGain();
+                this.gain.connect(audioCtx.destination);
+
+                this.offset = 0;         // seconds (where paused)
+                this.startedAt = 0;      // audioCtx.currentTime when play() called
+                this._raf = null;
+                this._playing = false;
+            }
+
+            get duration() { return this.buffer ? this.buffer.duration : 0; }
+            get currentTime() {
+                return this._playing
+                    ? this.offset + (audioCtx.currentTime - this.startedAt)
+                    : this.offset;
+            }
+
+            async load() {
+                const res = await fetch(this.url, { credentials: 'include' });
+                const ab = await res.arrayBuffer();
+                // decodeAudioData throws on unsupported codecs/containers
+                this.buffer = await audioCtx.decodeAudioData(ab.slice(0));
+                this.onReady(this.duration);
+            }
+
+            _tick = () => {
+                this.onTick(this.currentTime, this.duration);
+                if (this._playing) this._raf = requestAnimationFrame(this._tick);
+            };
+
+            _stopSource() {
+                if (this.src) {
+                    try { this.src.onended = null; this.src.stop(); } catch { }
+                    this.src.disconnect();
+                    this.src = null;
+                }
+                if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; }
+                this._playing = false;
+            }
+
+            _spawn(startAtSec) {
+                const node = audioCtx.createBufferSource();
+                node.buffer = this.buffer;
+                node.connect(this.gain);
+                node.onended = () => {
+                    // treat natural end as pause at end, not reset to 0
+                    this._stopSource();
+                    this.offset = Math.min(this.duration, startAtSec + (audioCtx.currentTime - this.startedAt));
+                    if (this.offset >= this.duration - 1e-3) this.onEnded();
+                };
+                return node;
+            }
+
+            play() {
+                if (!this.buffer) return;
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+
+                // If already playing, ignore
+                if (this._playing) return;
+
+                // Guard: clamp offset
+                this.offset = Math.max(0, Math.min(this.offset, Math.max(0, this.duration - 1e-6)));
+
+                this.src = this._spawn(this.offset);
+                this.startedAt = audioCtx.currentTime;
+                this.src.start(0, this.offset);
+                this._playing = true;
+                this._tick();
+            }
+
+            pause() {
+                if (!this._playing) return;
+                // capture where we are, then stop node
+                this.offset = this.currentTime;
+                this._stopSource();
+            }
+
+            // Seek to absolute seconds
+            seekTo(sec) {
+                if (!this.buffer) return;
+                const clamped = Math.max(0, Math.min(sec, this.duration || 0));
+                const wasPlaying = this._playing;
+                this.pause();
+                this.offset = clamped;
+                if (wasPlaying) this.play();
+                else this.onTick(this.currentTime, this.duration);
+            }
+
+            // Seek by ratio 0..1 (handy for your scrub bar)
+            seekRatio(r) { this.seekTo((this.duration || 0) * Math.min(1, Math.max(0, r))); }
+
+            setVolume(v01) { this.gain.gain.value = Math.min(1, Math.max(0, v01)); }
         }
 
         function setPlayerTotal(attId, ms) {
@@ -2778,17 +2870,18 @@
             if (p.totEl) p.totEl.textContent = msToClock(p.totalMs);
             const chip = state.audioDurEls.get(attId)?.chip;
             if (chip) chip.textContent = msToClock(p.totalMs);
-        }
 
-        async function fetchAudioMeta(attId) {
-            try {
-                console.debug('[aud][meta] GET /dm/attachments/%s/meta …', attId);
-                const j = await api(`/dm/attachments/${attId}/meta`);
-                const ms = j?.duration_ms;
-                console.debug('[aud][meta] result:', { attId, ms });
-                if (Number.isFinite(ms) && ms > 0) setPlayerTotal(attId, ms);
-            } catch (err) {
-                console.debug('[aud][meta] failed:', err);
+            // If user scrubbed before duration was known, finalize it now.
+            if (p.pendingSeekRatio != null && Number.isFinite(ms) && ms > 0 && p.audio) {
+                const sec = p.pendingSeekRatio * (ms / 1000);
+                try {
+                    if (typeof p.audio.fastSeek === 'function') p.audio.fastSeek(sec);
+                    else p.audio.currentTime = sec;
+                } catch {
+                    p.audio.currentTime = sec;
+                }
+                p.pendingSeekRatio = null;
+                delete p.audio.dataset.pendingSeek;
             }
         }
 
@@ -2811,111 +2904,57 @@
         }
 
         async function initAudioPlayer(attId, url, root) {
-            console.debug('[aud][ui] initAudioPlayer:', { attId, url });
-            const audio = root.querySelector('.aud-src');
             const btn = root.querySelector('.audp-btn');
             const track = root.querySelector('.audp-track');
             const fill = root.querySelector('.audp-fill');
             const curEl = root.querySelector('.cur');
             const totEl = root.querySelector('.tot');
 
-            state.audioPlayers.set(attId, { root, audio, btn, track, fill, curEl, totEl, totalMs: 0, dragging: false });
+            const player = new BufferPlayer(url, {
+                onTick: (t, d) => {
+                    if (d > 0) fill.style.width = `${(t / d) * 100}%`;
+                    if (curEl) curEl.textContent = msToClock(t * 1000);
+                },
+                onReady: (d) => { if (totEl) totEl.textContent = msToClock(d * 1000); },
+                onEnded: () => { btn.textContent = '▶'; fill.style.width = '0%'; }
+            });
 
-            // Duration header + blob URL
-            prepareFiniteAudio(attId, audio).catch(err => console.debug('[aud][ui] prepareFiniteAudio error:', err));
+            // load + show total duration
+            try { await player.load(); } catch (e) {
+                // Fallback: if decode fails (e.g., unsupported codec), leave your old <audio> path.
+                console.warn('Buffer decode failed, falling back to <audio> for', url, e);
+                // (Optionally call your old prepareFiniteAudio() and wire the tag)
+                return;
+            }
 
-            // Backfill via /meta
-            (async () => {
-                try {
-                    console.debug('[aud][ui] asking server for meta', { attId });
-                    const j = await api(`/dm/attachments/${attId}/meta`);
-                    const ms = j?.duration_ms;
-                    console.debug('[aud][ui] server meta response:', { attId, ms });
-                    if (Number.isFinite(ms) && ms > 0) setPlayerTotal(attId, ms | 0);
-                } catch (err) {
-                    console.debug('[aud][ui] meta fetch failed:', err);
-                }
-            })();
-
-            // UI wiring
+            // Button
             btn.addEventListener('click', () => {
-                if (audio.paused) { audio.play().then(() => { }).catch(e => console.debug('[aud][ui] play error:', e)); btn.textContent = '⏸'; }
-                else { audio.pause(); btn.textContent = '▶'; }
+                if (btn.textContent === '▶') { player.play(); btn.textContent = '⏸'; }
+                else { player.pause(); btn.textContent = '▶'; }
             });
 
-            audio.addEventListener('timeupdate', () => {
-                const p = state.audioPlayers.get(attId);
-                if (!p) return;
-                const dur = p.totalMs ? p.totalMs / 1000 : (Number.isFinite(audio.duration) ? audio.duration : 0);
-                const t = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
-                if (!p.dragging && dur > 0) fill.style.width = `${Math.min(100, (t / dur) * 100)}%`;
-                if (curEl) curEl.textContent = msToClock(t * 1000);
-                if (!p.totalMs && Number.isFinite(dur) && dur > 0) setPlayerTotal(attId, Math.round(dur * 1000));
-            });
-
-            const seek = (px) => {
-                const rect = track.getBoundingClientRect();
-                const ratio = Math.min(1, Math.max(0, (px - rect.left) / rect.width));
-                const dur = state.audioPlayers.get(attId)?.totalMs || (Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : 0);
-                if (dur > 0) {
-                    audio.currentTime = (ratio * dur) / 1000;
-                    fill.style.width = `${ratio * 100}%`;
-                }
+            // Scrubbing (pointer)
+            const clamp01 = x => Math.min(1, Math.max(0, x));
+            const ratioFromX = (x) => {
+                const r = track.getBoundingClientRect();
+                return clamp01((x - r.left) / r.width);
             };
-            track.addEventListener('mousedown', (e) => { const p = state.audioPlayers.get(attId); if (p) p.dragging = true; seek(e.clientX); });
-            window.addEventListener('mousemove', (e) => { const p = state.audioPlayers.get(attId); if (p?.dragging) seek(e.clientX); });
-            window.addEventListener('mouseup', () => { const p = state.audioPlayers.get(attId); if (p) p.dragging = false; });
 
-            audio.addEventListener('ended', () => { btn.textContent = '▶'; fill.style.width = '0%'; });
-        }
-
-        function updateAudioDuration(attId, ms) {
-            const ui = state.audioDurEls.get(attId);
-            if (!ui) return;
-            ui.chip.textContent = formatMs(ms);
-            if (ui.audio) {
-                ui.audio.dataset.serverMs = String(ms | 0); // lets us skip the heavy duration hack
-            }
-        }
-
-        function wireAudio(audioEl, attId) {
-            if (!attId || state.audioDurEls.has(attId)) return;
-
-            // add overlay chip (… until meta arrives)
-            const chip = document.createElement('div');
-            chip.className = 'aud-dur';
-            chip.textContent = '…';
-
-            // ensure we have a container for absolute-positioned chip
-            if (!audioEl.parentElement.classList.contains('att-audio')) {
-                const wrap = document.createElement('div');
-                wrap.className = 'att-audio';
-                audioEl.replaceWith(wrap);
-                wrap.append(audioEl, chip);
-            } else {
-                audioEl.parentElement.appendChild(chip);
-            }
-
-            state.audioDurEls.set(attId, { audio: audioEl, chip });
-
-            // fetch server-side duration (fast path—DB-backed or quick probe)
-            fetchAudioMeta(attId);
-
-            // fallback: if the browser computes duration later and we still have no server val
-            audioEl.addEventListener('loadedmetadata', () => {
-                const server = +(audioEl.dataset.serverMs || '0');
-                if (!server && Number.isFinite(audioEl.duration) && audioEl.duration > 0) {
-                    chip.textContent = formatMs(audioEl.duration * 1000);
-                }
-            }, { once: true });
-        }
-
-        function unregisterAudioIn(root) {
-            if (!root) return;
-            root.querySelectorAll('audio[data-att-id]').forEach(a => {
-                const id = +a.dataset.attId || 0;
-                if (id) state.audioDurEls.delete(id);
+            let dragging = false;
+            track.addEventListener('pointerdown', (e) => {
+                dragging = true;
+                track.setPointerCapture?.(e.pointerId);
+                const r = ratioFromX(e.clientX);
+                player.seekRatio(r);
             });
+            track.addEventListener('pointermove', (e) => {
+                if (!dragging) return;
+                const r = ratioFromX(e.clientX);
+                player.seekRatio(r);
+            });
+            const end = (e) => { dragging = false; try { track.releasePointerCapture(e.pointerId); } catch { } };
+            track.addEventListener('pointerup', end);
+            track.addEventListener('pointercancel', end);
         }
         function canonicalAudioMime(mt) {
             return (mt || '').split(';')[0] || 'audio/webm';
