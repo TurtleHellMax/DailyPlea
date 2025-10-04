@@ -97,6 +97,8 @@ app.use('/api', dm.router);
 
 /* ---------------- CSRF ---------------- */
 app.use((req, res, next) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
     const cookieToken = req.cookies.csrf;
     const headerToken = req.get('x-csrf-token');
@@ -130,6 +132,7 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 app.use('/web', express.static('web', {
     setHeaders: (res, p) => {
         if (p.endsWith('.js') || p.endsWith('.mjs')) res.setHeader('Content-Type', 'application/javascript');
+        if (p.endsWith('.wasm')) res.setHeader('Content-Type', 'application/wasm');
     }
 }));
 

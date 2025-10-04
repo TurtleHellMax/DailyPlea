@@ -169,7 +169,9 @@
             outline: 2px solid #fff;
         }
 
-        .left .conv > div { min-width: 0; }
+    .left .conv > div {
+        min-width: 0;
+    }
 
     .avatar {
         width: 44px;
@@ -683,9 +685,9 @@
             display: block;
         }
 
-        #restyle-overlay .pf-preview .thumb img.is-default {
-            transform: scale(1.12); /* tweak 1.05–1.2 to taste */
-        }
+            #restyle-overlay .pf-preview .thumb img.is-default {
+                transform: scale(1.12); /* tweak 1.05–1.2 to taste */
+            }
 
     .msg img.att,
     .msg video.att {
@@ -761,18 +763,18 @@
         position: relative;
     }
 
-    .att-audio .aud-dur {
-        position: absolute;
-        right: 8px;
-        bottom: 8px;
-        padding: 2px 6px;
-        font-size: 12px;
-        background: rgba(0,0,0,.7);
-        border: 1px solid var(--border);
-        color: var(--text);
-        pointer-events: none;
-        user-select: none;
-    }
+        .att-audio .aud-dur {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            padding: 2px 6px;
+            font-size: 12px;
+            background: rgba(0,0,0,.7);
+            border: 1px solid var(--border);
+            color: var(--text);
+            pointer-events: none;
+            user-select: none;
+        }
 
     .msg .from {
         font-weight: 700;
@@ -786,10 +788,144 @@
         border-color: var(--mbc, var(--border));
     }
 
+    /* Per-message 3-dot bubble menu */
+    .msg {
+        position: relative;
+    }
+
+        .msg .bubble-menu-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            right: -30px;
+            left: auto;
+            width: 26px;
+            height: 26px;
+            line-height: 1;
+            display: grid;
+            place-items: center;
+            border: none !important;
+            background: transparent !important;
+            color: var(--text);
+            opacity: 0;
+            transition: opacity .12s ease;
+            cursor: pointer;
+            z-index: 2;
+        }
+
+        .msg.me .bubble-menu-btn {
+            left: -30px;
+            right: auto;
+        }
+
+        .msg:hover .bubble-menu-btn {
+            opacity: 1;
+        }
+
+        .msg:not(.sysmsg) {
+            width: min(70%, 720px);
+            max-width: none; /* override earlier max-width */
+        }
+
+    /* On small screens, use full width */
+    @media (max-width:520px) {
+        .msg:not(.sysmsg) {
+            width: 100%;
+        }
+    }
+
+    /* Prevent the custom audio track from collapsing (esp. in sent-only audio messages) */
+    .audp {
+        grid-template-columns: 38px minmax(160px, 1fr) auto; /* was: 38px 1fr auto */
+    }
+
+    .bubble-menu {
+        position: absolute;
+        top: 34px;
+        right: -4px;
+        left: auto;
+        background: var(--panel);
+        border: var(--bw) solid var(--border);
+        box-shadow: 0 8px 18px rgba(0,0,0,.35);
+        padding: 6px;
+        display: none;
+        min-width: 220px;
+        z-index: 30;
+    }
+
+    .msg.me .bubble-menu {
+        left: -4px;
+        right: auto;
+    }
+
+    .bubble-menu .item {
+        padding: 8px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+        .bubble-menu .item:hover {
+            background: rgba(255,255,255,.06);
+        }
+
+        .bubble-menu .item a {
+            color: inherit;
+            text-decoration: none;
+            display: block;
+            width: 100%;
+        }
+
+    /* Chips: show a loading bar while compressing */
+    .chip .prog-wrap {
+        flex: 1;
+        min-width: 200px;
+        height: 8px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,.08);
+        overflow: hidden;
+        position: relative;
+    }
+
+    .chip .prog {
+        width: 0%;
+        height: 100%;
+        background: linear-gradient(90deg, rgba(255,255,255,.9) 25%, rgba(255,255,255,.35) 50%, rgba(255,255,255,.9) 75%);
+        background-size: 200% 100%;
+        transition: width .10s linear;
+        animation: progstripe 1.1s linear infinite;
+    }
+
+        .chip .prog.done {
+            animation: none;
+            background: #fff; /* filled when complete */
+        }
+
+    @keyframes progstripe {
+        from {
+            background-position: 200% 0;
+        }
+
+        to {
+            background-position: -200% 0;
+        }
+    }
+
     .pixel {
         image-rendering: pixelated;
         image-rendering: crisp-edges; /* fallback */
         image-rendering: -moz-crisp-edges; /* Firefox */
+    }
+
+    .att-text code, .att-text pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+    }
+
+    .docx p {
+        margin: 0 0 8px;
     }
 
     /* also ensure the default preview is pixelated */
@@ -858,6 +994,8 @@
     </div>
 </div>
 
+<script src="/web/vendor/ffmpeg/umd/ffmpeg.js"></script>
+
 <script>
     (() => {
         const API = 'http://localhost:3000/api';
@@ -916,7 +1054,6 @@
             { key: 'red', val: '#ef4444' },
         ];
         function randomGroupColor() { return GROUP_COLORS[(Math.random() * GROUP_COLORS.length) | 0]; }
-
         const afterPaint = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         function esc(s) { return String(s || '').replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])) }
         function fmt(t) { try { return new Date(t).toLocaleString() } catch { return '' } }
@@ -925,7 +1062,6 @@
         function nearBottom(px = 60) { const el = $('msgs'); return (el.scrollHeight - el.scrollTop - el.clientHeight) < px }
         function scrollToBottom() { const el = $('msgs'); el.scrollTop = el.scrollHeight + 9999 }
 
-        const pickDisplay = o => o?.display_name || o?.name || null;
         const pickUsername = o => o?.first_username || o?.username || o?.handle || null;
         const pickPhoto = o => o?.profile_photo || o?.profile_photo_url || o?.photo || o?.photo_url || o?.avatar || o?.avatar_url || o?.picture || o?.image || o?.image_url || null;
         const pickName = o => o?.display_name || o?.name || o?.username || o?.first_username || o?.handle || o?.title || null;
@@ -1021,10 +1157,6 @@
         // In-memory utilities
         function setColorMap(convId, map) { state.msgColorsByConv.set(convId, map || {}); }
         function getColorMap(convId) { return state.msgColorsByConv.get(convId) || {}; }
-        function getBorderColorLS(convId, userId) {
-            const m = getBorderColorMap(convId);
-            return (m && m[userId]) || null;
-        }
 
         async function syncMsgColors(convId, { retry = 0, backoff = 300 } = {}) {
             try {
@@ -1060,7 +1192,6 @@
             }
             return out; // only the newly-assigned entries
         }
-
 
         /* ---------------- meta resolution ---------------- */
         async function fetchConvMeta(id) {
@@ -1184,36 +1315,6 @@
             return null;
         }
 
-        async function fetchUserByOg(og) {
-            if (!og) throw new Error('no-og');
-            if (state.userCache.has(og)) return state.userCache.get(og);
-            const tries = [
-                `/users/${encodeURIComponent(og)}`,
-                `/users/${encodeURIComponent(og)}?view=basic`,
-                `/profiles/${encodeURIComponent(og)}`,
-                `/users/by_username/${encodeURIComponent(og)}`,
-                `/user/${encodeURIComponent(og)}`
-            ];
-            for (const path of tries) {
-                try {
-                    const j = await api(path);
-                    const username = pickUsername(j) || og;
-                    const photo = pickPhoto(j);
-                    const display = pickDisplay(j);
-                    const result = { username, photo, display_name: display, raw: j };
-                    state.userCache.set(og, result);
-                    scheduleSaveMeta();
-                    return result;
-                } catch { }
-            }
-            throw new Error('user-not-found:' + og);
-        }
-        function metaFromUser(u) {
-            const nm = pickName(u) || 'Direct Message';
-            const ph = pickPhoto(u) || DEFAULT_PFP_DM;
-            return { name: nm, photo: ph, is_group: false };
-        }
-
         /* ---------------- conversations list ---------------- */
         function renderConvs(list) {
             const wrap = $('convs'); wrap.innerHTML = '';
@@ -1292,6 +1393,37 @@
         let bottomPadPx = 0, removedBottom = [];
         function setBottomPad(px) { bottomPadPx = Math.max(0, px | 0); $('pad-bottom').style.height = bottomPadPx + 'px'; }
 
+        function closeAllBubbleMenus() {
+            document.querySelectorAll('.bubble-menu').forEach(el => el.style.display = 'none');
+        }
+
+        function attachBubbleMenu(root, message) {
+            const atts = (message.attachments || []);
+            if (!atts.length) return;
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'bubble-menu-btn';
+            btn.textContent = '⋮';
+
+            const menu = document.createElement('div');
+            menu.className = 'bubble-menu';
+            menu.innerHTML = atts.map(a => {
+                const href = `${API}/dm/attachments/${a.id}/download`;
+                const filename = esc(a.filename || 'attachment');
+                return `<div class="item"><a href="${href}" download="${filename}">Download ${filename}</a></div>`;
+            }).join('');
+
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const currentlyOpen = menu.style.display === 'block';
+                closeAllBubbleMenus();
+                menu.style.display = currentlyOpen ? 'none' : 'block';
+            });
+
+            root.append(btn, menu);
+        }
+
         function renderMessage(m, showFrom = false) {
             const isSystem = (m.kind === 'system');
             const wrap = document.createElement('div');
@@ -1333,7 +1465,7 @@
                             }
                         });
                     } else {
-                        wrap.insertAdjacentHTML('beforeend', `<a class="att" href="${url}">📎 ${esc(a.filename)}</a>`);
+                        renderAttachmentInline(wrap, a);
                     }
                 });
 
@@ -1353,32 +1485,17 @@
                 v.addEventListener('loadedmetadata', () => { if (nearBottom(200)) scrollToBottom(); }, { once: true })
             );
 
+            if (!isSystem) attachBubbleMenu(wrap, m);
             return wrap;
         }
 
-        function ensureFiniteDuration(audio) {
-            if (audio?.dataset?.serverMs) return;
-            if (Number.isFinite(audio.duration) && audio.duration > 0) return;
-
-            const onReady = () => {
-                if (Number.isFinite(audio.duration) && audio.duration > 0) {
-                    audio.removeEventListener('durationchange', onReady);
-                    audio.removeEventListener('loadedmetadata', onReady);
-                    audio.removeEventListener('timeupdate', onReady);
-                    if (audio.dataset.nudgedForDuration === '1') {
-                        if (!audio.dataset.pendingSeek) {
-                            const d = audio.duration || 0;
-                            if (d && audio.currentTime >= d - 0.001) { try { audio.currentTime = 0; } catch { } }
-                        }
-                        delete audio.dataset.nudgedForDuration;
-                    }
-                }
-            };
-            audio.addEventListener('durationchange', onReady);
-            audio.addEventListener('loadedmetadata', onReady);
-            audio.addEventListener('timeupdate', onReady);
-
-            audio.dataset.nudgedForDuration = '1';
+        function revokeObjectURLsIn(root) {
+            if (!root) return;
+            root.querySelectorAll('[data-objurl]').forEach(el => {
+                const u = el.dataset.objurl;
+                if (u) { try { URL.revokeObjectURL(u); } catch { } }
+                delete el.dataset.objurl;
+            });
         }
 
         function revokeAudioURLsIn(root) {
@@ -1390,57 +1507,6 @@
                     delete a.dataset.objurl;
                 }
             });
-        }
-
-        async function prepareFiniteAudio(attId, audio) {
-            try {
-                const original = audio.dataset.src || audio.src || '';
-                if (!original) return;
-
-                const res = await fetch(original, { credentials: 'include' });
-                if (!res.ok) throw new Error(`bad status ${res.status}`);
-
-                // 1) Optional header fast path (if your server ever adds it later)
-                const hdr = res.headers.get('X-Audio-Duration-Ms') || res.headers.get('x-audio-duration-ms');
-                const ms = hdr != null ? parseInt(hdr, 10) : NaN;
-                if (Number.isFinite(ms) && ms > 0) {
-                    audio.dataset.serverMs = String(ms);
-                    if (attId) setPlayerTotal(attId, ms);
-                }
-
-                // 2) Make it playable via object URL
-                const blob = await res.blob();
-                const u = URL.createObjectURL(blob);
-                audio.src = u;
-                audio.preload = 'metadata';
-                audio.crossOrigin = 'use-credentials';
-                audio.load();
-                audio.dataset.objurl = u;
-
-                // 3) Ensure duration becomes finite on browsers that need a nudge
-                audio.addEventListener('loadedmetadata', () => ensureFiniteDuration(audio), { once: true });
-                audio.addEventListener('play', () => ensureFiniteDuration(audio), { once: true });
-
-                // 4) If no header duration, decode once to compute duration precisely
-                if (attId && (!audio.dataset.serverMs || audio.dataset.serverMs === '0')) {
-                    try {
-                        const AC = window.AudioContext || window.webkitAudioContext;
-                        const ac = new AC();
-                        const ab = await blob.arrayBuffer();
-                        const buf = await ac.decodeAudioData(ab.slice(0));
-                        const ms2 = Math.round(buf.duration * 1000);
-                        if (Number.isFinite(ms2) && ms2 > 0) setPlayerTotal(attId, ms2);
-                        try { ac.close(); } catch { }
-                    } catch {
-                        // ignore; playback still works; UI will fill duration after metadata
-                    }
-                }
-            } catch {
-                // Fallback to original src if our fetch path failed
-                if (!audio.src && audio.dataset.src) audio.src = audio.dataset.src;
-                audio.addEventListener('loadedmetadata', () => ensureFiniteDuration(audio), { once: true });
-                audio.addEventListener('play', () => ensureFiniteDuration(audio), { once: true });
-            }
         }
 
         function appendMessagesAscending(items) {
@@ -1582,6 +1648,7 @@
 
             // Now render messages
             revokeAudioURLsIn($('msgs'));
+            revokeObjectURLsIn($('msgs'));
             $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
             state.audioPlayers.clear(); // <— add this
             state.renderedMsgIds.clear();
@@ -1702,52 +1769,103 @@
         }
 
         /* ---------------- attachments + voice ---------------- */
-        const MAX = 1024 * 1024;
         const chips = $('att-chips'); const recWarn = $('rec-warn');
 
+        // Predict a single-pass transcode that lands under 1MB
         function refreshChips() {
             chips.innerHTML = '';
             state.pendingFiles.forEach((f, i) => {
-                const c = document.createElement('div'); c.className = 'chip';
-                c.innerHTML = `<span>${esc(f.name)} · ${(f.size / 1024 | 0)} KB</span><span class="x">✕</span>`;
-                c.querySelector('.x').onclick = () => { state.pendingFiles.splice(i, 1); refreshChips(); };
+                const c = document.createElement('div');
+                c.className = 'chip';
+
+                if (f.status === 'compressing') {
+                    const pct = Math.round((f.progress || 0) * 100);
+                    c.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:260px">
+          <div>${esc(f.name)} <span class="muted">· ${esc(f.phase || 'compressing')}… ${pct}%</span></div>
+          <div class="prog-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}">
+            <div class="prog ${pct >= 100 ? 'done' : ''}" style="width:${pct}%"></div>
+          </div>
+        </div>`;
+                    // no ✕ while compressing
+                } else {
+                    c.innerHTML = `<span>${esc(f.name)} · ${(f.size / 1024 | 0)} KB</span><span class="x">✕</span>`;
+                    c.querySelector('.x').onclick = () => { state.pendingFiles.splice(i, 1); refreshChips(); };
+                }
+
                 chips.append(c);
             });
         }
-        function addPendingFile(o) { state.pendingFiles.push(o); refreshChips(); }
 
-        async function gzipBytes(uint8) {
-            if (!('CompressionStream' in window)) return { buf: uint8, encoding: null };
-            const cs = new CompressionStream('gzip'); const w = cs.writable.getWriter(); await w.write(uint8); await w.close();
-            const res = await new Response(cs.readable).arrayBuffer(); return { buf: new Uint8Array(res), encoding: 'gzip' };
+        function addCompressingPlaceholder(fileName) {
+            const tempId = 'tmp_' + Math.random().toString(36).slice(2);
+            state.pendingFiles.push({ tempId, status: 'compressing', name: fileName, progress: 0, phase: 'starting' });
+            refreshChips();
+            syncSendUI();                  // <— add
+            return tempId;
         }
-        async function compressImage(file, maxSide = 1280, q = .75) {
-            const img = await createImageBitmap(file);
-            let { width: w, height: h } = img; const s = Math.min(1, maxSide / Math.max(w, h)); w = (w * s) | 0; h = (h * s) | 0;
-            const canvas = new OffscreenCanvas(w, h); const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
-            let blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: q });
-            while (blob.size > MAX && q > 0.4) { q -= 0.1; blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: q }); }
-            if (blob.size > MAX) throw new Error('Image too large even after compression');
-            return new Uint8Array(await blob.arrayBuffer());
+        const setCompressProgress = (() => {
+            let raf = null;
+            const pending = new Map(); // tempId -> {p, phase}
+            return (tempId, p, phase) => {
+                pending.set(tempId, { p: Math.max(0, Math.min(1, p || 0)), phase });
+                if (raf) return;
+                raf = requestAnimationFrame(() => {
+                    raf = null;
+                    pending.forEach((v, id) => {
+                        const it = state.pendingFiles.find(x => x.tempId === id && x.status === 'compressing');
+                        if (it) { it.progress = v.p; if (v.phase) it.phase = v.phase; }
+                    });
+                    pending.clear();
+                    refreshChips();
+                });
+            };
+        })();
+        function replaceCompressingWith(tempId, obj) {
+            const idx = state.pendingFiles.findIndex(x => x.tempId === tempId);
+            if (idx !== -1) state.pendingFiles.splice(idx, 1, obj);
+            else state.pendingFiles.push(obj);
+            refreshChips();
+            syncSendUI();                  // <— add
         }
-        async function compressGeneric(file) {
-            const uint = new Uint8Array(await file.arrayBuffer());
-            const { buf, encoding } = await gzipBytes(uint);
-            if (buf.length > MAX) throw new Error('File too large after compression');
-            return { buf, encoding };
-        }
+        function addPendingFile(o) { state.pendingFiles.push(o); refreshChips(); syncSendUI(); } // <— add
+
         async function handleFileInput(files) {
             for (const file of files) {
+                if (file.size > 200 * 1024 * 1024) {
+                    throw new Error('Look pal, the file limit is ONE MB. I can compresss stuff, sure, but I cant compress THAT.');
+                }
+                const tempId = addCompressingPlaceholder(file.name);
                 try {
-                    const type = (file.type || '').toLowerCase();
-                    if (type.startsWith('image/')) {
-                        const buf = await compressImage(file);
-                        addPendingFile({ name: file.name.replace(/\.(png|webp|jpeg|jpg)$/i, '.jpg'), type: 'image/jpeg', buf, size: buf.length, encoding: null });
-                    } else {
-                        const { buf, encoding } = await compressGeneric(file);
-                        addPendingFile({ name: (encoding === 'gzip' && !/\.gz$/i.test(file.name)) ? file.name + '.gz' : file.name, type: file.type || 'application/octet-stream', buf, size: buf.length, encoding });
-                    }
-                } catch (e) { alert(`${file.name}: ${e.message || e}`); }
+                    const { blob, encoding } = await compressFileSmart(file, (p, phase) => setCompressProgress(tempId, p, phase));
+                    const u8 = new Uint8Array(await blob.arrayBuffer());
+
+                    const btype = (blob.type || '');
+                    const ftype = (file.type || '');
+                    const isVid = btype.startsWith('video/');
+                    const isAud = btype.startsWith('audio/');
+                    const isImg = ftype.startsWith('image/'); // we renamed images to .jpg based on original input
+
+                    const safeName =
+                        (isVid || isAud)
+                            ? file.name.replace(/\.[^.]+$/, '') + (isVid ? '.webm' : '.webm')
+                            : (isImg
+                                ? file.name.replace(/\.[^.]+$/, '') + '.jpg'
+                                : file.name + (encoding === 'gzip' ? '.gz' : ''));
+
+                    replaceCompressingWith(tempId, {
+                        name: safeName,
+                        type: btype || 'application/octet-stream',
+                        buf: u8,
+                        size: u8.length,
+                        encoding: encoding || null // <-- PRESERVE THIS
+                    });
+                } catch (e) {
+                    const idx = state.pendingFiles.findIndex(x => x.tempId === tempId);
+                    if (idx !== -1) state.pendingFiles.splice(idx, 1);
+                    refreshChips();
+                    alert(`${file.name}: ${errMsg(e)}`);
+                }
             }
         }
 
@@ -1894,13 +2012,6 @@
         function getBorderColorMap(convId) {
             try { return JSON.parse(localStorage.getItem(borderColorKey(convId)) || '{}'); } catch { return {}; }
         }
-        function setBorderColorMap(convId, map) {
-            try { localStorage.setItem(borderColorKey(convId), JSON.stringify(map)); } catch { }
-        }
-        function getBorderColor(convId, userId) {
-            const m = getBorderColorMap(convId);
-            return m && m[userId] || null;
-        }
         function updateAllMessageBorders() {
             const cmap = getColorMap(state.convId);
             document.querySelectorAll('.msgs .msg:not(.sysmsg)').forEach(el => {
@@ -1981,7 +2092,7 @@
                     updateAllMessageBorders();
                     myColorOverlay.style.display = 'none';
                 } catch (e) {
-                    alert(e.detail || e.message || e);
+                    alert(e.detail || errMsg(e));
                 }
             };
             btnCan.onclick = () => { myColorOverlay.style.display = 'none'; };
@@ -2008,65 +2119,6 @@
             renderFriends(friends);
         }
         function closePicker() { $('overlay').style.display = 'none'; }
-
-        let colorOverlay = null;
-        function ensureColorOverlay() {
-            if (colorOverlay) return colorOverlay;
-            colorOverlay = document.createElement('div');
-            colorOverlay.id = 'color-overlay';
-            colorOverlay.className = 'overlay';
-            colorOverlay.innerHTML = `
-    <div class="sheet" style="width:min(640px,94vw)">
-      <h3>Message border colors</h3>
-      <div id="color-list" class="list"></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
-        <button class="btn" id="color-reset" type="button">Reset all</button>
-        <button class="btn" id="color-cancel" type="button">Cancel</button>
-        <button class="btn" id="color-save" type="button">Save</button>
-      </div>
-    </div>`;
-            document.body.append(colorOverlay);
-            colorOverlay.addEventListener('click', e => { if (e.target === colorOverlay) colorOverlay.style.display = 'none'; });
-            return colorOverlay;
-        }
-
-        function openBorderColorsOverlay() {
-            const det = state.currentConvDetail || {};
-            if (!det.is_group) return;
-            const ov = ensureColorOverlay();
-            const list = ov.querySelector('#color-list');
-            const map = getBorderColorMap(state.convId);
-            list.innerHTML = '';
-
-            (det.members || []).forEach(u => {
-                const username = pickName(u) || 'user';
-                const value = map[u.id] || '#e6e6e6';
-                const isDefault = !map[u.id];
-                const row = document.createElement('div');
-                row.className = 'person';
-                const isDefaultAvatar = !u.profile_photo;
-                row.innerHTML = `
-      <img class="pfp ${isDefaultAvatar ? 'pixel' : ''}" src="${u.profile_photo || DEFAULT_PFP_DM}" alt="">
-      <div>
-        <div class="name">${esc(username)}</div>
-        <div class="bio">Set a border color for ${esc(username)}’s messages</div>
-      </div>
-      <div class="act" style="display:flex;gap:8px;align-items:center">
-        <input class="colorpick" type="color" value="${value}">
-        <button class="btn clear" type="button" title="Use default">✕</button>
-      </div>`;
-                const colorInput = row.querySelector('.colorpick');
-                const clearBtn = row.querySelector('.clear');
-                clearBtn.onclick = e => { e.stopPropagation(); delete map[u.id]; colorInput.value = '#e6e6e6'; };
-                colorInput.oninput = () => { map[u.id] = colorInput.value; };
-                list.append(row);
-            });
-
-            ov.querySelector('#color-reset').onclick = () => { setBorderColorMap(state.convId, {}); updateAllMessageBorders(); ov.style.display = 'none'; };
-            ov.querySelector('#color-cancel').onclick = () => { ov.style.display = 'none'; };
-            ov.querySelector('#color-save').onclick = () => { setBorderColorMap(state.convId, map); updateAllMessageBorders(); ov.style.display = 'none'; };
-            ov.style.display = 'flex';
-        }
 
         async function maybeAutoRenameGroup() {
             const det = state.currentConvDetail || state.convDetailById.get(state.convId) || {};
@@ -2120,7 +2172,7 @@
                     closePicker();
                     await loadConversations({ blockingMeta: true });
                     if (res?.id) await openConversation(res.id);
-                } catch (e) { alert(e.detail || e.message || e); }
+                } catch (e) { alert(e.detail || errMsg(e)); }
             } else if (state.pickerMode === 'group-edit') {
                 const detail = state.currentConvDetail || {};
                 const before = new Set(state.initialSelectedIds);
@@ -2162,7 +2214,7 @@
                     await syncMsgColors(state.convId);
                     await fetchAfter(state.lastMsgId);
                     await loadConversations({ blockingMeta: true });
-                } catch (e) { alert(e.detail || e.message || e); }
+                } catch (e) { alert(e.detail || errMsg(e)); }
             } else {
                 closePicker();
             }
@@ -2183,7 +2235,7 @@
                 } else if (state.allConvs[0]) {
                     openConversation(state.allConvs[0].id);
                 }
-            } catch (e) { alert(e.message || e); }
+            } catch (e) { alert(errMsg(e)); }
         }
 
         /* ---------------- 3-dots chat menu ---------------- */
@@ -2196,6 +2248,11 @@
             else chatMenu.style.display = 'none';
         }
         chatMenuBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleChatMenu(); });
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.bubble-menu') && !e.target.closest('.bubble-menu-btn')) {
+                closeAllBubbleMenus();
+            }
+        });
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.menu') && e.target !== chatMenuBtn) hideChatMenu();
         });
@@ -2243,7 +2300,7 @@
                             await loadConversations({ blockingMeta: true });
                             await afterPaint();
                             renderChatMenu();
-                        } catch (e) { alert(e.detail || e.message || e); }
+                        } catch (e) { alert(e.detail || errMsg(e)); }
                     } else if (id === 'manage') {
                         await openManageMembers();
                     } else if (id === 'view-members') {
@@ -2267,7 +2324,7 @@
                             $('chat-pfp').src = DEFAULT_PFP_DM;
                             $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
                             await loadConversations({ blockingMeta: true });
-                        } catch (e) { alert(e.detail || e.message || e); }
+                        } catch (e) { alert(e.detail || errMsg(e)); }
                     } else if (id === 'block-group') {
                         if (!confirm('Block this group? You will also leave it and won’t be added again.')) return;
                         try {
@@ -2278,7 +2335,7 @@
                             $('chat-pfp').src = DEFAULT_PFP_DM;
                             $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
                             await loadConversations({ blockingMeta: true });
-                        } catch (e) { alert(e.detail || e.message || e); }
+                        } catch (e) { alert(e.detail || errMsg(e)); }
                     } else if (id === 'delete-dm') {
                         if (!confirm('Delete this chat for you? The other person will still see it.')) return;
                         try {
@@ -2294,14 +2351,14 @@
                             $('chat-pfp').src = DEFAULT_PFP_DM;
                             $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
                             await loadConversations({ blockingMeta: true });
-                        } catch (e) { alert(e.detail || e.message || e); }
+                        } catch (e) { alert(e.detail || errMsg(e)); }
                     } else if (id === 'block-user') {
                         try {
                             const other = (state.currentConvDetail?.members || []).find(u => (u.id | 0) !== (state.meId | 0));
                             if (!other) { alert('Could not find user to block.'); return; }
                             await api(`/blocks/users`, { method: 'POST', body: { user_id: other.id } });
                             alert('User blocked.');
-                        } catch (e) { alert(e.detail || e.message || e); }
+                        } catch (e) { alert(e.detail || errMsg(e)); }
                     } else if (id === 'my-color') {
                         openMyColorOverlay();
                     }
@@ -2338,7 +2395,7 @@
                         await fetchConvMeta(state.convId);
                         await loadConversations({ blockingMeta: true });
                         alert('Owner updated.');
-                    } catch (e) { alert(e.detail || e.message || e); }
+                    } catch (e) { alert(e.detail || errMsg(e)); }
                 };
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'btn';
@@ -2351,7 +2408,7 @@
                         await fetchConvMeta(state.convId);
                         await loadConversations({ blockingMeta: true });
                         row.remove();
-                    } catch (e) { alert(e.detail || e.message || e); }
+                    } catch (e) { alert(e.detail || errMsg(e)); }
                 };
                 act.append(makeOwner, removeBtn);
                 row.append(act);
@@ -2513,8 +2570,8 @@
 
             // stronger zoom range
             function scaleForZoom() {
-                const MIN = 0.25, MAX = 6; // was 0.5..3; now 0.25..6
-                return MIN + zoom * (MAX - MIN);
+                const MIN = 0.25, MAX_BYTES = 6; // was 0.5..3; now 0.25..6
+                return MIN + zoom * (MAX_BYTES - MIN);
             }
 
             function redraw() {
@@ -2558,7 +2615,7 @@
                     thumb.style.background = '#000';
                     markDirty();
                 } catch (e) {
-                    alert('Could not read image: ' + (e.message || e));
+                    alert('Could not read image: ' + (errMsg(e)));
                 }
             }
 
@@ -2673,7 +2730,7 @@
                     await loadConversations({ blockingMeta: true });
                     hideRestyle();
                 } catch (e) {
-                    alert(e.detail || e.message || e);
+                    alert(e.detail || errMsg(e));
                 }
             };
         }
@@ -2710,10 +2767,11 @@
                 const blob = new Blob([f.buf], { type: f.type || 'application/octet-stream' });
                 const name = f.name || `file-${i}`;
                 fd.append('files', blob, name);
-                if (f.encoding) fd.append(`encoding_${name}`, f.encoding);
+                if (f.encoding) fd.append(`encoding_${name}`, f.encoding); // now works for gzipped files
             });
 
             state.uploading = true;
+            syncSendUI();
             try {
                 console.debug('[aud][send] POST /messages with', { files: state.pendingFiles.length, textLen: text.length });
                 const r = await fetch(`${API}/dm/conversations/${state.convId}/messages`, { method: 'POST', credentials: 'include', body: fd });
@@ -2728,10 +2786,10 @@
                 loadConversations().catch(() => { });
                 if (nearBottom()) { await afterPaint(); scrollToBottom(); }
             } catch (e) {
-                console.debug('[aud][send] failed:', e);
-                alert(e.message || e);
+                alert(errMsg(e));
             } finally {
                 state.uploading = false;
+                syncSendUI();                        // <— add
             }
         }
 
@@ -2868,21 +2926,6 @@
             if (!p) return;
             p.totalMs = ms | 0;
             if (p.totEl) p.totEl.textContent = msToClock(p.totalMs);
-            const chip = state.audioDurEls.get(attId)?.chip;
-            if (chip) chip.textContent = msToClock(p.totalMs);
-
-            // If user scrubbed before duration was known, finalize it now.
-            if (p.pendingSeekRatio != null && Number.isFinite(ms) && ms > 0 && p.audio) {
-                const sec = p.pendingSeekRatio * (ms / 1000);
-                try {
-                    if (typeof p.audio.fastSeek === 'function') p.audio.fastSeek(sec);
-                    else p.audio.currentTime = sec;
-                } catch {
-                    p.audio.currentTime = sec;
-                }
-                p.pendingSeekRatio = null;
-                delete p.audio.dataset.pendingSeek;
-            }
         }
 
         function unregisterPlayersIn(root) {
@@ -2903,6 +2946,36 @@
             return m + ':' + String(r).padStart(2, '0');
         }
 
+        function fallbackHTMLAudio(attId, root, btn, track, fill, curEl, totEl) {
+            const tag = root.querySelector('.aud-src');
+            if (!tag) return;
+
+            tag.addEventListener('loadedmetadata', () => {
+                if (totEl && Number.isFinite(tag.duration)) {
+                    totEl.textContent = msToClock(tag.duration * 1000);
+                }
+            });
+
+            btn.addEventListener('click', () => {
+                if (tag.paused) { tag.play(); btn.textContent = '⏸'; }
+                else { tag.pause(); btn.textContent = '▶'; }
+            });
+
+            tag.addEventListener('timeupdate', () => {
+                if (Number.isFinite(tag.duration) && tag.duration > 0) {
+                    fill.style.width = `${(tag.currentTime / tag.duration) * 100}%`;
+                    if (curEl) curEl.textContent = msToClock(tag.currentTime * 1000);
+                }
+            });
+
+            tag.addEventListener('ended', () => { btn.textContent = '▶'; fill.style.width = '0%'; });
+
+            // keep it in the map for cleanup symmetry
+            const p = state.audioPlayers.get(attId) || {};
+            p.tag = tag;
+            state.audioPlayers.set(attId, p);
+        }
+
         async function initAudioPlayer(attId, url, root) {
             const btn = root.querySelector('.audp-btn');
             const track = root.querySelector('.audp-track');
@@ -2919,21 +2992,24 @@
                 onEnded: () => { btn.textContent = '▶'; fill.style.width = '0%'; }
             });
 
-            // load + show total duration
-            try { await player.load(); } catch (e) {
-                // Fallback: if decode fails (e.g., unsupported codec), leave your old <audio> path.
-                console.warn('Buffer decode failed, falling back to <audio> for', url, e);
-                // (Optionally call your old prepareFiniteAudio() and wire the tag)
-                return;
+            // NEW: keep a handle so setPlayerTotal/unregister can find it
+            state.audioPlayers.set(attId, {
+                root, btn, track, fill, curEl, totEl,
+                player, totalMs: 0, pendingSeekRatio: null
+            });
+
+            try {
+                await player.load();
+            } catch (e) {
+                // see fallback below
+                return fallbackHTMLAudio(attId, root, btn, track, fill, curEl, totEl);
             }
 
-            // Button
             btn.addEventListener('click', () => {
                 if (btn.textContent === '▶') { player.play(); btn.textContent = '⏸'; }
                 else { player.pause(); btn.textContent = '▶'; }
             });
 
-            // Scrubbing (pointer)
             const clamp01 = x => Math.min(1, Math.max(0, x));
             const ratioFromX = (x) => {
                 const r = track.getBoundingClientRect();
@@ -2944,13 +3020,11 @@
             track.addEventListener('pointerdown', (e) => {
                 dragging = true;
                 track.setPointerCapture?.(e.pointerId);
-                const r = ratioFromX(e.clientX);
-                player.seekRatio(r);
+                player.seekRatio(ratioFromX(e.clientX));
             });
             track.addEventListener('pointermove', (e) => {
                 if (!dragging) return;
-                const r = ratioFromX(e.clientX);
-                player.seekRatio(r);
+                player.seekRatio(ratioFromX(e.clientX));
             });
             const end = (e) => { dragging = false; try { track.releasePointerCapture(e.pointerId); } catch { } };
             track.addEventListener('pointerup', end);
@@ -3003,6 +3077,7 @@
 
                 const rec = new MediaRecorder(stream, opts);
                 state.recording = { active: true, chunks: [], size: 0, rec, warnShown: false, mime };
+                syncSendUI();
 
                 rec.onstart = () => console.debug('[rec] onstart');
                 rec.onerror = (e) => console.error('[rec] error', e);
@@ -3049,7 +3124,7 @@
 
                         const ab = await blob.arrayBuffer();
                         const buf = new Uint8Array(ab);
-                        if (buf.length > MAX) {
+                        if (buf.length > MAX_BYTES) {
                             alert('Voice message too large');
                             return;
                         }
@@ -3061,10 +3136,11 @@
                         addPendingFile({ name, type: ftype, buf, size: buf.length, encoding: null, durationMs: estMs });
                     } catch (e) {
                         console.error('[rec] finalize failed', e);
-                        alert(e.message || e);
+                        alert(errMsg(e));
                     } finally {
                         try { stream.getTracks().forEach(t => t.stop()); } catch { }
                         state.recording = { active: false, chunks: [], size: 0, rec: null, warnShown: false, mime: state.recording.mime };
+                        syncSendUI();
                         try { $('btn-voice').textContent = 'Hold to record'; } catch { }
                     }
                 };
@@ -3082,6 +3158,1220 @@
             if (r && r.state !== 'inactive') { try { r.stop(); } catch (e) { console.error('[rec] stop error', e); } }
             state.recording.active = false;
             if (force) recWarn.textContent = 'Stopped to keep under 1MB.';
+        }
+
+        /* ------------------------------------------------------------
+   FFmpeg (CDN) loader + <1 MB compressors
+   No self-hosting. No @ffmpeg/util needed.
+   ------------------------------------------------------------ */
+
+        // === Small helpers (replace the need for @ffmpeg/util) ===
+        const DEBUG_UPLOAD = true;
+        function dbg(...a) { if (DEBUG_UPLOAD) console.log('[att]', ...a); }
+        function dberr(...a) { if (DEBUG_UPLOAD) console.error('[att]', ...a); }
+        function wrapProgress(onProgress, label = '') {
+            let last = -1;
+            return (p, phase) => {
+                const pct = Math.max(0, Math.min(1, +p || 0));
+                if (pct - last >= 0.01 || pct === 1) {
+                    dbg('progress', { label, pct: +pct.toFixed(3), phase });
+                    last = pct;
+                }
+                try { onProgress && onProgress(pct, phase); } catch (e) { dberr('progress cb threw', e); }
+            };
+        }
+
+        // === 8K guard: pre-resize huge images *before* heavy compression ===
+        const MAX_LONG_SIDE_8K = 8192;
+
+        async function tiffViaCanvasIfPossible(file, onProgress) {
+            try {
+                onProgress?.(0.04, 'trying native TIFF decode');
+                const bmp = await createImageBitmap(file); // throws if unsupported
+                const w0 = bmp.width, h0 = bmp.height;
+                if (!w0 || !h0) throw new Error('empty-bitmap');
+
+                const MAX_LONG_START = 8192;      // initial clamp for safety
+                const MIN_LONG = 480;       // how small we’re willing to go
+                const SCALE_STEP = 0.86;      // shrink 14% each round if needed
+                const qSteps = [0.82, 0.7, 0.6, 0.5, 0.42, 0.35, 0.28, 0.22, 0.18];
+
+                const firstScale = Math.min(1, MAX_LONG_START / Math.max(w0, h0));
+                let W = Math.max(1, Math.round(w0 * firstScale));
+                let H = Math.max(1, Math.round(h0 * firstScale));
+
+                // staging canvas
+                const stage = ('OffscreenCanvas' in window)
+                    ? new OffscreenCanvas(W, H)
+                    : Object.assign(document.createElement('canvas'), { width: W, height: H });
+                const sctx = stage.getContext('2d');
+                sctx.imageSmoothingEnabled = true;
+                sctx.imageSmoothingQuality = 'high';
+                sctx.drawImage(bmp, 0, 0, W, H);
+                try { bmp.close && bmp.close(); } catch { }
+
+                async function encodeAtQ(cvs, q) {
+                    if (cvs.convertToBlob) return cvs.convertToBlob({ type: 'image/jpeg', quality: q });
+                    return new Promise(res => cvs.toBlob(res, 'image/jpeg', q));
+                }
+
+                // work canvas that we’ll repeatedly shrink
+                let work = stage;
+                let longSide = Math.max(W, H);
+
+                while (true) {
+                    onProgress?.(0.35, `encoding ${work.width}×${work.height}`);
+                    // try quality ladder first
+                    for (const q of qSteps) {
+                        let blob = await encodeAtQ(work, q);
+                        if (!blob) continue;
+                        if (blob.size <= 1024 * 1024) {
+                            onProgress?.(0.98, 'finalizing');
+                            return new Uint8Array(await blob.arrayBuffer());
+                        }
+                    }
+                    // still too big → downscale and try qualities again
+                    if (longSide <= MIN_LONG) break;
+                    longSide = Math.max(MIN_LONG, Math.floor(longSide * SCALE_STEP));
+                    const scale = longSide / Math.max(work.width, work.height);
+                    const w = Math.max(1, Math.round(work.width * scale));
+                    const h = Math.max(1, Math.round(work.height * scale));
+
+                    const smaller = ('OffscreenCanvas' in window)
+                        ? new OffscreenCanvas(w, h)
+                        : Object.assign(document.createElement('canvas'), { width: w, height: h });
+                    const ctx = smaller.getContext('2d');
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(work, 0, 0, w, h);
+                    work = smaller;
+                }
+
+                throw new Error('still-over-1mb');
+            } catch {
+                return null; // fall back to ffmpeg/UTIF path
+            }
+        }
+
+        async function getBitmapDims(file) {
+            try {
+                const bmp = await createImageBitmap(file);
+                const dims = { w: bmp.width || 0, h: bmp.height || 0 };
+                try { bmp.close && bmp.close(); } catch { }
+                return dims;
+            } catch {
+                return { w: 0, h: 0 };
+            }
+        }
+        /**
+         * If the image's longest side > 8192, downscale to ≤8192 first.
+         * Returns the original `file` if no change was needed, otherwise a new File (JPEG ~0.92).
+         * Note: we intentionally skip TIFF here — we keep using the ffmpeg path for those.
+         */
+        async function downscaleIfOver8K(file, onProgress) {
+            const name = (file?.name || '').trim() || 'image';
+            const mt = (file?.type || '').toLowerCase();
+            const isTiff = /image\/(tif|tiff)/i.test(mt) || /\.(tif|tiff)$/i.test(name);
+            if (isTiff) return file; // TIFF stays on the ffmpeg path
+
+            const { w, h } = await getBitmapDims(file);
+            const maxSide = Math.max(w, h);
+            if (!w || !h || maxSide <= MAX_LONG_SIDE_8K) return file;
+
+            const scale = MAX_LONG_SIDE_8K / maxSide;
+            const W = Math.max(1, Math.round(w * scale));
+            const H = Math.max(1, Math.round(h * scale));
+            onProgress?.(0.03, `pre-resize to ≤8K (${W}×${H})`);
+
+            const canvas = ('OffscreenCanvas' in window)
+                ? new OffscreenCanvas(W, H)
+                : Object.assign(document.createElement('canvas'), { width: W, height: H });
+
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            const bmp = await createImageBitmap(file);
+            ctx.drawImage(bmp, 0, 0, W, H);
+            try { bmp.close && bmp.close(); } catch { }
+
+            let blob;
+            if (canvas.convertToBlob) {
+                blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
+            } else {
+                blob = await new Promise(res => (canvas).toBlob(res, 'image/jpeg', 0.92));
+            }
+
+            const outName = /\.[a-z0-9]+$/i.test(name) ? name.replace(/\.[a-z0-9]+$/i, '.jpg') : (name + '.jpg');
+            return new File([blob], outName, { type: 'image/jpeg' });
+        }
+        // === sending lock: block while compressing or uploading ===
+        function uploadsInFlight() {
+            return state.uploading || state.pendingFiles.some(f => f.status === 'compressing');
+        }
+        function syncSendUI() {
+            const btn = $('btn-send');
+            const busy = uploadsInFlight() || state.recording.active;
+            btn.disabled = busy;
+            btn.textContent = state.uploading ? 'Sending…' : 'Send';
+            btn.title = busy
+                ? (state.uploading ? 'Uploading message…' : 'Waiting for attachments to finish…')
+                : '';
+        }
+        // Quick introspection of a Blob/File
+        async function sniffBlob(b) {
+            try {
+                const size = b?.size ?? 0;
+                const mt = b?.type || '';
+                const head = await b.slice(0, 16).arrayBuffer().then(ab => Array.from(new Uint8Array(ab)));
+                return { size, type: mt, head };
+            } catch (e) { return { size: b?.size ?? 0, type: b?.type || '', head: 'err' }; }
+        }
+        function isPreviewableMime(mt = '') {
+            mt = (mt || '').toLowerCase();
+            return mt.startsWith('text/')
+                || mt.includes('javascript')
+                || mt.includes('json')
+                || mt.includes('xml')
+                || mt.includes('csv')
+                || mt === 'application/pdf';
+        }
+        function concatU8(chunks, totalLen) {
+            const out = new Uint8Array(totalLen);
+            let o = 0;
+            for (const c of chunks) { out.set(c, o); o += c.length; }
+            return out;
+        }
+        // Try to gunzip a blob/stream when the name or type suggests gzip
+        async function maybeGunzipBlob(blob, name = '') {
+            const isGzName = /\.gz$/i.test(name);
+            const isGzType = /application\/(x-)?gzip/i.test(blob?.type || '');
+            if (!(isGzName || isGzType)) return blob;
+            if (!('DecompressionStream' in window)) return blob;
+            try {
+                const ds = new DecompressionStream('gzip');
+                const s = blob.stream().pipeThrough(ds);
+                return await new Response(s).blob();
+            } catch { return blob; }
+        }
+        // Same-origin fetch → (maybe) gunzip → Blob
+        async function fetchBlobMaybeGunzip(url, name = '') {
+            const res = await fetch(url, { credentials: 'include' });
+            let b = await res.blob();
+            b = await maybeGunzipBlob(b, name);
+            return b;
+        }
+        function blobDownload(name, blob) {
+            const a = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            a.href = url;
+            a.download = name || 'download';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+        }
+        // turns a regular <a> into a safe downloader that gunzips if needed
+        function fixDownloadLink(anchorEl, url, name, mime) {
+            anchorEl.addEventListener('click', async (e) => {
+                // Only intercept left-click / keyboard activate
+                if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                try {
+                    let b = await fetchBlobMaybeGunzip(url, name);
+                    // Ensure MIME if the server sent a generic one
+                    if (mime && b.type !== mime) b = new Blob([await b.arrayBuffer()], { type: mime });
+                    blobDownload(name, b);
+                } catch (err) {
+                    console.error('[att] safe download failed; falling back', err);
+                    // Fallback: let the browser try the raw URL
+                    window.open(url, '_blank');
+                }
+            }, { passive: false });
+        }
+        function fixFilenameForType(name = '', type = '') {
+            const base = (name && name.trim()) ? name : 'attachment';
+            const lower = (type || '').toLowerCase();
+            const hasExt = /\.[a-z0-9]+$/i.test(base);
+            if (hasExt) return base;
+
+            if (lower === 'application/pdf') return base + '.pdf';
+            if (lower.startsWith('text/')) return base + '.txt';
+            if (lower.includes('javascript')) return base + '.js';
+            if (lower.includes('json')) return base + '.json';
+            if (lower.includes('yaml') || lower.includes('yml')) return base + '.yml';
+            if (lower.includes('xml')) return base + '.xml';
+            if (lower.includes('csv')) return base + '.csv';
+            return base; // unknown—leave as-is
+        }
+        function fileNameOf(file, fallback = 'attachment') {
+            return (file && typeof file.name === 'string' && file.name.trim()) ? file.name : fallback;
+        }
+        // Replace the current fetchFile with this chunked version:
+        async function fetchFile(input, onProgress) {
+            if (input instanceof Blob) {
+                const total = input.size || 1;
+                const CHUNK = 2 * 1024 * 1024; // 2MB
+                const parts = [];
+                let off = 0, last = 0;
+
+                while (off < total) {
+                    const end = Math.min(off + CHUNK, total);
+                    const ab = await input.slice(off, end).arrayBuffer();
+                    parts.push(new Uint8Array(ab));
+                    off = end;
+
+                    // tick up to 0.25 while we ingest into JS memory
+                    const p = Math.min(0.25, off / total * 0.25);
+                    if (p - last >= 0.01 || off === total) { onProgress?.(p, 'loading input'); last = p; }
+                }
+                return concatU8(parts, parts.reduce((n, u) => n + u.length, 0));
+            }
+            // URL/string fallback:
+            const res = await fetch(input);
+            const buf = new Uint8Array(await res.arrayBuffer());
+            onProgress?.(0.25, 'loading input');
+            return buf;
+        }
+        function errMsg(e) { if (typeof e === 'string') return e; if (e && typeof e.message === 'string') return e.message; if (e && typeof e.detail === 'string') return e.detail; if (e && typeof e.toString === 'function') { const str = e.toString(); if (str !== '[object Object]') return str; } try { return JSON.stringify(e); } catch { return String(e); } }
+        // === Single FFmpeg instance, lazy-loaded from CDN ===
+        const CORE_BASE = '/web/vendor/ffmpeg/core';
+        let __ff, __ffLoaded = false;
+        let __ffProgressCb = null;
+
+        async function getFFmpeg() {
+            if (__ffLoaded) return __ff;
+
+            const FFmpegCtor = window.FFmpegWASM?.FFmpeg || window.FFmpeg?.FFmpeg || window.FFmpeg;
+            if (!FFmpegCtor) throw new Error('FFmpeg UMD not found. Expected window.FFmpegWASM.FFmpeg (v0.12+).');
+            __ff = new FFmpegCtor();
+
+            // route progress to the per-call callback if present
+            __ff.on('progress', ({ progress }) => {
+                try { __ffProgressCb && __ffProgressCb(Math.min(progress, 0.98), 'transcoding'); } catch { }
+            });
+            __ff.on('log', ({ message }) => console.debug('[ffmpeg]', message));
+
+            await __ff.load({
+                coreURL: `${CORE_BASE}/ffmpeg-core.js`,
+                wasmURL: `${CORE_BASE}/ffmpeg-core.wasm`,
+                workerURL: `${CORE_BASE}/ffmpeg-core.worker.js`,
+            });
+            __ffLoaded = true;
+            return __ff;
+        }
+
+        // === Probes (duration / dimensions) using browser media ===
+        function probeDuration(file) {
+            return new Promise((resolve) => {
+                try {
+                    const el = document.createElement('video');
+                    el.preload = 'metadata';
+                    el.src = URL.createObjectURL(file);
+                    el.onloadedmetadata = () => {
+                        const d = Number.isFinite(el.duration) ? el.duration : 0;
+                        URL.revokeObjectURL(el.src);
+                        resolve(d);
+                    };
+                    el.onerror = () => { try { URL.revokeObjectURL(el.src); } catch { } resolve(0); };
+                } catch { resolve(0); }
+            });
+        }
+        function probeVideoSize(file) {
+            return new Promise((resolve) => {
+                try {
+                    const el = document.createElement('video');
+                    el.preload = 'metadata';
+                    el.src = URL.createObjectURL(file);
+                    el.onloadedmetadata = () => {
+                        const w = el.videoWidth || 0, h = el.videoHeight || 0;
+                        URL.revokeObjectURL(el.src);
+                        resolve({ w, h });
+                    };
+                    el.onerror = () => { try { URL.revokeObjectURL(el.src); } catch { } resolve({ w: 0, h: 0 }); };
+                } catch { resolve({ w: 0, h: 0 }); }
+            });
+        }
+        function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
+        // === Compute a sensible plan to fit under maxBytes ===
+        const MAX_BYTES = 1024 * 1024;
+        function planVideo({ durationSec, srcW, srcH }) {
+            const dur = Math.max(0.5, Number.isFinite(durationSec) ? durationSec : 10);
+            const budgetBits = (MAX_BYTES - 16 * 1024) * 8; // leave a bit for container overhead
+            const totalKbps = clamp(Math.floor(budgetBits / dur / 1000), 128, 900);
+            const aKbps = clamp(Math.floor(totalKbps * 0.18), 24, 64);
+            const vKbps = clamp(totalKbps - aKbps, 96, 820);
+            const fps = dur >= 20 ? 16 : 24;
+
+            // choose a width that roughly matches bits-per-pixel needs
+            const aspect = (srcW > 0 && srcH > 0) ? (srcW / srcH) : (16 / 9);
+            const targetBpp = 0.07;
+            const wFloat = Math.sqrt((vKbps * 1000) / (targetBpp * fps * aspect));
+            const snaps = [200, 240, 272, 320, 360, 400, 480];
+            let maxW = snaps.reduce((a, b) => Math.abs(b - wFloat) < Math.abs(a - wFloat) ? b : a, snaps[0]);
+            maxW = Math.min(srcW || maxW, maxW);
+            return { fps, vKbps, aKbps, maxW };
+        }
+        function planAudio(durationSec) {
+            const dur = Math.max(0.5, Number.isFinite(durationSec) ? durationSec : 10);
+            const budgetBits = (MAX_BYTES - 8 * 1024) * 8;
+            const kbps = clamp(Math.floor(budgetBits / dur / 1000), 12, 64);
+            return { kbps };
+        }
+
+        /* === UTIF.js loader + BigTIFF detector === */
+        let __utifLoaded = null; // will hold the UTIF namespace once loaded
+        async function ensureUTIFLoaded() {
+            if (__utifLoaded) return __utifLoaded;
+            await new Promise((res, rej) => {
+                const s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/utif@3.0.0/UTIF.min.js';
+                s.crossOrigin = 'anonymous';
+                s.referrerPolicy = 'no-referrer';
+                s.onload = res;
+                s.onerror = () => rej(new Error('UTIF loader failed'));
+                document.head.appendChild(s);
+            });
+            // Some bundles expose UTIF under .default — normalize it
+            const g = window.UTIF || (window.UTIF && window.UTIF.default) || window.UTIF?.default;
+            if (!g || (!g.decode && !g.decodeImage)) {
+                throw new Error('UTIF loaded but API not found');
+            }
+            __utifLoaded = g;
+            return __utifLoaded;
+        }
+
+        // Quick signature check: returns 'big', 'classic', or 'unknown'
+        async function sniffTiffKind(file) {
+            try {
+                const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+                const le = (head[0] === 0x49 && head[1] === 0x49); // 'II'
+                const be = (head[0] === 0x4D && head[1] === 0x4D); // 'MM'
+                if (!le && !be) return 'unknown';
+                // Classic TIFF: 42 (0x2A00 little, 0x002A big)
+                // BigTIFF:     43 (0x2B00 little, 0x002B big) followed by 0x0008 0x0000
+                const tag = le ? head[2] : head[3];
+                if (tag === 0x2B) return 'big';
+                if (tag === 0x2A) return 'classic';
+                return 'unknown';
+            } catch { return 'unknown'; }
+        }
+
+        async function decodeTiffWithUTIFToJpegUnder1MB(file, onProgress) {
+            const UTIF = await ensureUTIFLoaded();
+            onProgress?.(0.32, 'UTIF: reading TIFF');
+
+            const ab = await file.arrayBuffer();
+            const ifds = UTIF.decode(ab);
+            if (!ifds || !ifds.length) throw new Error('UTIF: no IFDs');
+
+            if (typeof UTIF.decodeImages === 'function') {
+                UTIF.decodeImages(ab, ifds);           // v2
+            } else if (typeof UTIF.decodeImage === 'function') {
+                for (const ifd of ifds) UTIF.decodeImage(ab, ifd); // v3
+            } else {
+                throw new Error('UTIF: no decodeImage(s) API');
+            }
+
+            const page = ifds[0];
+            const W0 = page.width || page.t256 || page.ImageWidth || 0;
+            const H0 = page.height || page.t257 || page.ImageLength || 0;
+            if (!W0 || !H0) throw new Error('UTIF: unknown image dimensions');
+
+            const rgba = UTIF.toRGBA8(page);
+
+            // Paint decoded RGBA to a staging canvas
+            const stage = ('OffscreenCanvas' in window)
+                ? new OffscreenCanvas(W0, H0)
+                : Object.assign(document.createElement('canvas'), { width: W0, height: H0 });
+            const sctx = stage.getContext('2d');
+            sctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), W0, H0), 0, 0);
+
+            // Start with ≤8192 on the long edge for safety, then allow further downsizing if needed
+            const MAX_LONG_START = 8192;
+            const MIN_LONG = 480;   // how small we’re willing to go (tune as you like)
+            const SCALE_STEP = 0.86;  // shrink 14% each time if still >1MB
+            const qSteps = [0.82, 0.7, 0.6, 0.5, 0.42, 0.35, 0.28, 0.22, 0.18];
+
+            // prepare first working canvas at ≤8192 long edge
+            const firstScale = Math.min(1, MAX_LONG_START / Math.max(W0, H0));
+            let W = Math.max(1, Math.round(W0 * firstScale));
+            let H = Math.max(1, Math.round(H0 * firstScale));
+
+            const makeCanvas = (w, h) => ('OffscreenCanvas' in window)
+                ? new OffscreenCanvas(w, h)
+                : Object.assign(document.createElement('canvas'), { width: w, height: h });
+
+            let work = makeCanvas(W, H);
+            {
+                const ctx = work.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(stage, 0, 0, W, H);
+            }
+
+            async function encodeAtQ(cvs, q) {
+                if (cvs.convertToBlob) return cvs.convertToBlob({ type: 'image/jpeg', quality: q });
+                return new Promise(res => cvs.toBlob(res, 'image/jpeg', q));
+            }
+
+            let longSide = Math.max(W, H);
+            while (true) {
+                onProgress?.(0.9, `UTIF: encoding ${work.width}×${work.height}`);
+                // try a quality ladder first
+                for (const q of qSteps) {
+                    let blob = await encodeAtQ(work, q);
+                    if (!blob) continue;
+                    if (blob.size <= 1024 * 1024) {
+                        onProgress?.(0.98, 'finalizing');
+                        return new Uint8Array(await blob.arrayBuffer());
+                    }
+                }
+                // still too big → downscale and try again
+                if (longSide <= MIN_LONG) break;
+                longSide = Math.max(MIN_LONG, Math.floor(longSide * SCALE_STEP));
+                const scale = longSide / Math.max(work.width, work.height);
+                const w = Math.max(1, Math.round(work.width * scale));
+                const h = Math.max(1, Math.round(work.height * scale));
+
+                const smaller = makeCanvas(w, h);
+                const ctx = smaller.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(work, 0, 0, w, h);
+                work = smaller;
+            }
+
+            throw new Error('UTIF: still over 1MB');
+        }
+
+        // === TIFF/unsupported/huge images → try native → (BigTIFF/huge) UTIF → FFmpeg → UTIF fallback ===
+        async function transcodeTiffToJpegUnder1MB(file, onProgress) {
+            // 0) Try native decode first (fast path if the browser can decode)
+            const nativeU8 = await tiffViaCanvasIfPossible(file, onProgress);
+            if (nativeU8) return nativeU8;
+
+            // 0.5) If it's BigTIFF or very large, prefer UTIF first (FFmpeg wasm often can’t parse headers)
+            const kind = await sniffTiffKind(file);
+            if (kind === 'big' || (file.size || 0) > 100 * 1024 * 1024) {
+                try {
+                    return await decodeTiffWithUTIFToJpegUnder1MB(file, onProgress);
+                } catch { /* fall through to ffmpeg path */ }
+            }
+
+            const ff = await getFFmpeg();
+            const name = fileNameOf(file);
+
+            // Guard truly massive inputs (prevents “stuck at 30%” feel)
+            const TOO_LARGE_BYTES = 200 * 1024 * 1024; // 200MB
+            if ((file.size || 0) > TOO_LARGE_BYTES) {
+                // For very large TIFFs, UTIF is usually more reliable in-browser
+                try {
+                    return await decodeTiffWithUTIFToJpegUnder1MB(file, onProgress);
+                } catch {
+                    throw new Error(
+                        `This TIFF is ${(file.size / 1048576 | 0)} MB — browser-side decoding is likely to stall. `
+                        + `Please export as JPEG/PNG (or a smaller TIFF) and try again.`
+                    );
+                }
+            }
+
+            const inExt = (name.split('.').pop() || 'tiff').toLowerCase();
+            const inName = `in.${inExt}`;
+            const outName = 'out.jpg';
+
+            const data = await fetchFile(file, (p, phase) => {
+                onProgress?.(Math.min(0.25, p), phase || 'reading TIFF');
+            });
+            await ff.writeFile(inName, data);
+            onProgress?.(0.28, 'writing to ffmpeg fs');
+
+            let side = 1600; // clamp longest side early to cap memory
+            let q = 8;       // ffmpeg JPEG q: 2(best)..31(worst)
+            let pass = 0;
+            let out;
+
+            while (pass < 5) {
+                pass += 1;
+                try { await ff.deleteFile(outName); } catch { }
+
+                __ffProgressCb = (p) => {
+                    const ui = 0.30 + Math.max(0, Math.min(1, p)) * 0.65;
+                    onProgress?.(ui, `decoding & scaling (q=${q}, max=${side}px)`);
+                };
+
+                const vf = `scale='if(gt(iw,ih),min(${side},iw),-2)':'if(lte(iw,ih),min(${side},ih),-2)':force_original_aspect_ratio=decrease`;
+
+                // Try autodetect first
+                let args = [
+                    '-hide_banner', '-loglevel', 'warning', '-y',
+                    '-max_alloc', '134217728',
+                    '-probesize', '10M',
+                    '-analyzeduration', '200M',
+                    '-threads', '1',
+                    '-i', inName,
+                    '-frames:v', '1',
+                    '-vf', vf,
+                    '-sws_flags', 'fast_bilinear',
+                    '-pix_fmt', 'yuvj420p',
+                    '-q:v', String(q),
+                    '-f', 'mjpeg',
+                    outName
+                ];
+
+                try {
+                    await ff.exec(args);
+                } catch (err) {
+                    const msg = String(err?.message || err);
+                    // If the demuxer couldn’t find a stream/dimensions, try a stricter image2 single-image path
+                    if (/Unknown input format|could not find codec|Invalid data|unspecified size|does not contain any stream/i.test(msg)) {
+                        args = [
+                            '-hide_banner', '-loglevel', 'warning', '-y',
+                            '-max_alloc', '134217728',
+                            '-probesize', '20M',
+                            '-analyzeduration', '400M',
+                            '-threads', '1',
+                            '-f', 'image2', '-pattern_type', 'none',
+                            '-i', inName,
+                            '-frames:v', '1',
+                            '-vf', vf,
+                            '-sws_flags', 'fast_bilinear',
+                            '-pix_fmt', 'yuvj420p',
+                            '-q:v', String(q),
+                            '-f', 'mjpeg',
+                            outName
+                        ];
+                        try {
+                            await ff.exec(args);
+                        } catch (err2) {
+                            // Fall back to UTIF.js if FFmpeg still can’t see the image stream
+                            try {
+                                const u8 = await decodeTiffWithUTIFToJpegUnder1MB(file, onProgress);
+                                return u8;
+                            } catch {
+                                throw new Error('Failed to produce a JPEG from this TIFF. ffmpeg could not find a valid image stream, and UTIF.js fallback also failed. This file may require full desktop tools.');
+                            }
+                        }
+                    } else if (/index out of bounds|Aborted\(\)/i.test(msg)) {
+                        // wasm OOM → UTIF fallback
+                        try {
+                            const u8 = await decodeTiffWithUTIFToJpegUnder1MB(file, onProgress);
+                            return u8;
+                        } catch {
+                            throw new Error(
+                                'FFmpeg ran out of memory or could not parse this TIFF in the browser. '
+                                + 'Try exporting as JPEG/PNG (or a smaller TIFF) and re-upload.'
+                            );
+                        }
+                    } else {
+                        throw err;
+                    }
+                }
+
+                // Try to read output
+                try {
+                    out = await ff.readFile(outName);
+                } catch {
+                    // If FFmpeg wrote nothing (no stream), use UTIF fallback
+                    const u8 = await decodeTiffWithUTIFToJpegUnder1MB(file, onProgress);
+                    return u8;
+                }
+
+                if (out.length <= 1024 * 1024) break;
+
+                // tighten for next attempt
+                if (q < 18) q += 3; else side = Math.max(640, Math.floor(side * 0.85));
+            }
+
+            onProgress?.(0.98, 'finalizing');
+
+            if (!out || out.length > 1024 * 1024) {
+                throw new Error('Could not reduce TIFF under 1 MB. Please export as JPEG/PNG and try again.');
+            }
+            return new Uint8Array(out);
+        }
+
+        // === Image compressor: canvas -> JPEG (fast & tiny dep) ===
+        async function compressImageUnder1MB(file, onProgress) {
+            const name = fileNameOf(file);
+            const mt = (file.type || '').toLowerCase();
+            const isTiff = /image\/(tif|tiff)/i.test(mt) || /\.(tif|tiff)$/i.test(name);
+            const isHuge = (file.size || 0) > 25 * 1024 * 1024;
+
+            // TIFF or super-huge → ffmpeg path
+            if (isTiff || isHuge) {
+                return transcodeTiffToJpegUnder1MB(file, onProgress);
+            }
+
+            // 8K guard first: for non-TIFF types
+            try {
+                const maybeDown = await downscaleIfOver8K(file, onProgress);
+                if (maybeDown && maybeDown !== file) {
+                    file = maybeDown; // proceed with the pre-resized file
+                }
+            } catch { /* non-fatal — continue with original */ }
+
+            onProgress?.(0.05, 'reading');  // ← keep your existing line after the guard
+
+            // Some browsers throw here for odd inputs — catch and fallback
+            let bmp;
+            try {
+                bmp = await createImageBitmap(file);
+            } catch {
+                return transcodeTiffToJpegUnder1MB(file, onProgress);
+            }
+
+            const maxSide = 1280;
+            const s = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+            const w = Math.max(1, Math.round(bmp.width * s));
+            const h = Math.max(1, Math.round(bmp.height * s));
+
+            const canvas = ('OffscreenCanvas' in window)
+                ? new OffscreenCanvas(w, h)
+                : Object.assign(document.createElement('canvas'), { width: w, height: h });
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(bmp, 0, 0, w, h);
+            onProgress?.(0.4, 'resizing');
+
+            let q = 0.75;
+            let blob;
+
+            async function encode(qval) {
+                if (canvas.convertToBlob) return canvas.convertToBlob({ type: 'image/jpeg', quality: qval });
+                return new Promise(res => (canvas).toBlob(res, 'image/jpeg', qval));
+            }
+
+            blob = await encode(q);
+            onProgress?.(0.6, 'encoding');
+
+            while (blob.size > MAX_BYTES && q > 0.35) {
+                q = Math.max(0.35, q - 0.1);
+                blob = await encode(q);
+            }
+
+            if (blob.size > MAX_BYTES) throw new Error('Exceeds 1 MB even after downscaling.');
+            onProgress?.(1, 'finalizing');
+            return new Uint8Array(await blob.arrayBuffer());
+        }
+
+        // === Generic compressor: gzip (browser built-in) ===
+        async function gzipGeneric(file, onProgress) {
+            const t0 = performance.now();
+            const prog = wrapProgress(onProgress, 'gzipGeneric');
+            dbg('gzipGeneric.in', { name: file?.name || '(no name)', size: file?.size || 0, type: file?.type || '(none)' });
+
+            prog(0.02, 'starting');
+
+            // Fallback: no CompressionStream → passthrough (≤1MB only)
+            if (!('CompressionStream' in window)) {
+                dbg('gzipGeneric: CompressionStream unavailable — passthrough path');
+                const raw = new Uint8Array(await file.arrayBuffer());
+                if (raw.length > MAX_BYTES) throw new Error('File exceeds 1 MB and gzip is unavailable here.');
+                const blob = new Blob([raw], { type: file.type || 'application/octet-stream' });
+                prog(1, 'finalizing');
+                dbg('gzipGeneric.out(passthrough)', await sniffBlob(blob), { dtMs: +(performance.now() - t0).toFixed(1) });
+                return { blob, encoding: null };
+            }
+
+            // --- Important: consume readable concurrently to avoid backpressure deadlocks ---
+            const cs = new CompressionStream('gzip');
+            const writer = cs.writable.getWriter();
+            const reader = cs.readable.getReader();
+
+            const total = file.size || 1;
+            const CHUNK = 256 * 1024; // 256KB
+            let offset = 0, lastTick = 0;
+
+            // Collect compressed chunks while we write input slices
+            let outLen = 0;
+            const outChunks = [];
+            const consumePromise = (async () => {
+                try {
+                    while (true) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+                        if (value && value.length) {
+                            outChunks.push(value);
+                            outLen += value.length;
+                        }
+                    }
+                } catch (e) {
+                    dberr('gzipGeneric.consume error', e);
+                    throw e;
+                }
+            })();
+
+            // Watchdog so we can see stalls
+            let lastMove = performance.now();
+            const WD_MS = 5000;
+            const wd = setInterval(() => {
+                const now = performance.now();
+                if (now - lastMove > WD_MS) {
+                    dbg('gzipGeneric.watchdog', { offset, total, pct: +(offset / total).toFixed(3) });
+                    lastMove = now;
+                }
+            }, WD_MS);
+
+            try {
+                while (offset < total) {
+                    const end = Math.min(offset + CHUNK, total);
+                    const ab = await file.slice(offset, end).arrayBuffer();
+                    await writer.write(new Uint8Array(ab));
+                    offset = end;
+
+                    const p = Math.min(0.9, offset / total);
+                    if (p - lastTick >= 0.02 || offset === total) {
+                        prog(p, 'compressing');
+                        lastTick = p;
+                        lastMove = performance.now();
+                    }
+                }
+            } catch (e) {
+                dberr('gzipGeneric.loop error', e);
+                throw e;
+            } finally {
+                clearInterval(wd);
+                try { await writer.close(); } catch (e) { dberr('gzipGeneric.close writer error', e); }
+            }
+
+            // Finish consuming compressed output
+            await consumePromise;
+
+            const gzU8 = concatU8(outChunks, outLen);
+            if (gzU8.length > MAX_BYTES) throw new Error('Exceeds 1 MB even after gzip.');
+            prog(1, 'finalizing');
+
+            const outBlob = new Blob([gzU8], { type: file.type || 'application/octet-stream' });
+            dbg('gzipGeneric.out', await sniffBlob(outBlob), {
+                ratio: +(gzU8.length / (file.size || 1)).toFixed(3),
+                dtMs: +(performance.now() - t0).toFixed(1)
+            });
+
+            return { blob: outBlob, encoding: 'gzip' };
+        }
+
+        // === AUDIO: FFmpeg -> WebM/Opus under 1 MB ===
+        async function compressAudioUnder1MB(file, onProgress) {
+            const ff = await getFFmpeg();
+            const dur = await probeDuration(file) || 10;
+            const { kbps } = planAudio(dur);
+
+            const inName = 'in.' + (file.name.split('.').pop() || 'dat');
+            const outName = 'out.webm';
+            await ff.writeFile(inName, await fetchFile(file));
+
+            __ffProgressCb = (p, phase) => onProgress?.(p, `encoding ${kbps}kbps`);
+            await ff.exec([
+                '-hide_banner', '-y',
+                '-i', inName,
+                '-vn',
+                '-ac', '1',
+                '-ar', '48000',
+                '-c:a', 'libopus',
+                '-b:a', `${kbps}k`,
+                outName
+            ]);
+
+            let out = await ff.readFile(outName);
+            let tries = 0, cur = kbps;
+            while (out.length > MAX_BYTES && tries < 3) {
+                tries += 1; cur = Math.max(12, Math.floor(cur * 0.75));
+                await ff.exec(['-y', '-i', inName, '-vn', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', `${cur}k`, outName]);
+                out = await ff.readFile(outName);
+            }
+
+            if (out.length > MAX_BYTES) throw new Error('Audio exceeds 1 MB even after multiple passes.');
+            return new Blob([out], { type: 'audio/webm' });
+        }
+
+        async function compressVideoUnder1MB(file, onProgress) {
+            const ff = await getFFmpeg();
+
+            // capture logs for useful tails
+            const logs = [];
+            const logHandler = ({ message }) => { if (message) logs.push(String(message)); };
+            ff.on?.('log', logHandler);
+
+            const tail = () => logs.slice(-80).join('\n');
+
+            try {
+                // probe input
+                const [dur, { w: srcW, h: srcH }] = await Promise.all([probeDuration(file), probeVideoSize(file)]);
+                // your planVideo should return { vKbps, aKbps, fps, maxW, cutSec }
+                const plan = planVideo({ durationSec: dur, srcW, srcH });
+                let v = plan.vKbps, a = plan.aKbps, fps = plan.fps, width = plan.maxW, cutSec = Math.max(4, plan.cutSec || Math.min(25, dur || 10));
+
+                const inName = 'in.' + (file.name.split('.').pop() || 'dat');
+                const outName = 'out.webm';
+
+                // write source into wasm FS
+                await ff.writeFile(inName, await fetchFile(file));
+
+                let pass = 0;
+                let out;
+
+                while (pass < 5) {
+                    pass += 1;
+                    // clear previous output (kept in the wasm FS)
+                    try { await ff.deleteFile(outName); } catch { }
+
+                    __ffProgressCb = (p) => onProgress?.(Math.min(0.98, p), `pass ${pass}: ${width}w @${fps}fps, v${v}k/a${a}k, t=${cutSec}s`);
+
+                    const vf = `scale=${width}:-2,fps=${fps}`;
+
+                    // VP8 is much lighter than VP9 in wasm builds
+                    const args = [
+                        '-hide_banner', '-loglevel', 'warning', '-y',
+                        // IMPORTANT: trim AT INPUT so the demuxer only feeds N seconds forward
+                        '-t', String(cutSec),
+                        '-i', inName,
+                        // video
+                        '-vf', vf,
+                        '-pix_fmt', 'yuv420p',
+                        '-c:v', 'libvpx',             // VP8 (wasm friendly)
+                        '-b:v', `${v}k`,
+                        '-maxrate', `${v}k`,
+                        '-bufsize', `${v * 2}k`,
+                        '-quality', 'good',
+                        '-cpu-used', '8',
+                        '-lag-in-frames', '0',
+                        '-auto-alt-ref', '0',
+                        '-tile-columns', '0',
+                        '-g', '48',
+                        '-threads', '1',
+                        // audio
+                        '-c:a', 'libopus',
+                        '-b:a', `${a}k`,
+                        '-ac', '1',
+                        '-ar', '48000',
+                        // container
+                        '-deadline', 'realtime',
+                        outName
+                    ];
+
+                    try {
+                        await ff.exec(args);
+                    } catch (err) {
+                        const msg = String(err?.message || err);
+                        // wasm OOM or bounds blow-up: try again with shorter cut first
+                        if (/index out of bounds|Aborted\(\)/i.test(msg)) {
+                            if (cutSec > 8) { cutSec = Math.max(4, Math.floor(cutSec / 2)); continue; }
+                            throw new Error(
+                                `FFmpeg (wasm) ran out of memory while encoding.\n` +
+                                `Tried multiple passes and duration halving.\n--- ffmpeg tail ---\n${tail()}`
+                            );
+                        }
+                        // other ffmpeg error
+                        throw new Error(`${msg}\n--- ffmpeg tail ---\n${tail()}`);
+                    }
+
+                    out = await ff.readFile(outName);
+                    if (out.length <= MAX_BYTES) break;
+
+                    // tighten for next attempt
+                    v = Math.max(56, Math.floor(v * 0.8));
+                    a = Math.max(12, Math.floor(a * 0.85));
+                    width = Math.max(200, Math.floor(width * 0.9));
+
+                    // if still too big late in the game, also drop fps or duration
+                    if (pass >= 3) {
+                        fps = Math.max(10, Math.floor(fps * 0.85));
+                        if (cutSec > 10) cutSec = Math.max(6, Math.floor(cutSec * 0.75));
+                    }
+                }
+
+                if (!out || out.length > MAX_BYTES) {
+                    throw new Error(`Video exceeds 1 MB after retries.\n--- ffmpeg tail ---\n${tail()}`);
+                }
+
+                return new Blob([out], { type: 'video/webm' });
+            } catch (e) {
+                const msg = e?.message || String(e);
+                throw new Error(msg.includes('ffmpeg tail') ? msg : `${msg}\n--- ffmpeg tail ---\n${tail()}`);
+            } finally {
+                __ffProgressCb = null;
+                try { ff.off?.('log', logHandler); } catch { }
+                // best-effort cleanup
+                try { await ff.deleteFile('out.webm'); } catch { }
+                try { await ff.deleteFile('in.mov'); } catch { }
+                try { await ff.deleteFile('in.mp4'); } catch { }
+                try { await ff.deleteFile('in.dat'); } catch { }
+            }
+        }
+
+        // === PUBLIC: route to correct compressor (used by your handleFileInput) ===
+        async function compressFileSmart(file, onProgress) {
+            const t0 = performance.now();
+            const origName = fileNameOf(file);
+            const mt = (file.type || '').toLowerCase();
+            const prog = wrapProgress(onProgress, 'compressFileSmart');
+
+            dbg('compressFileSmart.in', { name: origName, size: file.size || 0, type: file.type || '(none)' });
+
+            let result;
+            try {
+                if (mt.startsWith('video/')) {
+                    prog(0.02, 'starting');
+                    const blob = await compressVideoUnder1MB(file, prog);
+                    const mime = blob.type || 'video/webm';
+                    const name = fixFilenameForType(origName, mime);
+                    const f = new File([blob], name, { type: mime });
+                    result = { file: f, blob, encoding: null, filename: name, mime_type: mime };
+                    dbg('compressFileSmart.video', await sniffBlob(blob));
+                    return result;
+                }
+
+                if (mt.startsWith('audio/')) {
+                    prog(0.02, 'starting');
+                    const blob = await compressAudioUnder1MB(file, prog);
+                    const mime = blob.type || 'audio/webm';
+                    const name = fixFilenameForType(origName, mime);
+                    const f = new File([blob], name, { type: mime });
+                    result = { file: f, blob, encoding: null, filename: name, mime_type: mime };
+                    dbg('compressFileSmart.audio', await sniffBlob(blob));
+                    return result;
+                }
+
+                if (mt.startsWith('image/')) {
+                    prog(0.02, 'starting');
+
+                    // TIFF or huge images → use ffmpeg fallback; otherwise canvas path
+                    const isTiff = /image\/(tif|tiff)/i.test(mt) || /\.(tif|tiff)$/i.test(origName);
+                    const isHuge = (file.size || 0) > 25 * 1024 * 1024;
+
+                    let u8;
+                    if (isTiff || isHuge) {
+                        u8 = await transcodeTiffToJpegUnder1MB(file, prog);
+                    } else {
+                        u8 = await compressImageUnder1MB(file, prog);
+                    }
+
+                    const blob = new Blob([u8], { type: 'image/jpeg' });
+                    const name = /\.(tif|tiff)$/i.test(origName)
+                        ? origName.replace(/\.(tif|tiff)$/i, '.jpg')
+                        : (/\.[a-z0-9]+$/i.test(origName) ? origName : (origName + '.jpg'));
+
+                    const f = new File([blob], name, { type: 'image/jpeg' });
+                    result = { file: f, blob, encoding: null, filename: name, mime_type: 'image/jpeg' };
+                    dbg('compressFileSmart.image', await sniffBlob(blob));
+                    return result;
+                }
+
+                // Everything else → prefer passthrough if previewable or ≤ 1MB; gzip only when it helps
+                prog(0.02, 'starting');
+
+                const canPreview = isPreviewableMime(mt) || isTextLike(origName, mt);
+
+                // If the file is already under the cap OR is previewable (text/code/PDF), do NOT gzip.
+                if ((file.size || 0) <= MAX_BYTES || canPreview) {
+                    const name = fixFilenameForType(origName, file.type || '');
+                    // Ensure the browser & server keep the original type for inline rendering
+                    const mime = (file.type || 'application/octet-stream');
+                    // Wrap in a File to preserve filename in FormData explicitly
+                    const f = (file instanceof File) ? file : new File([file], name, { type: mime });
+                    result = { file: f, blob: f, encoding: null, filename: name, mime_type: mime };
+                    dbg('compressFileSmart.other(passthrough)', await sniffBlob(f));
+                    return result;
+                }
+
+                // Otherwise we try gzip to squeeze under 1MB (binary docs, etc.)
+                const { blob, encoding } = await gzipGeneric(file, prog);
+                const mime = blob.type || (file.type || 'application/octet-stream');
+                const name = fixFilenameForType(origName, mime);
+                // Keep original extension if you want; do NOT force “.gz” so server can set Content-Encoding
+                const f = new File([blob], name, { type: mime });
+                result = { file: f, blob, encoding, filename: name, mime_type: mime };
+                dbg('compressFileSmart.other(gzipped)', { encoding, ...(await sniffBlob(blob)) });
+                return result;
+
+            } catch (e) {
+                dberr('compressFileSmart.error', e);
+                throw e;
+            } finally {
+                prog(1, 'finalizing');
+                dbg('compressFileSmart.done', { dtMs: +(performance.now() - t0).toFixed(1) });
+            }
+        }
+
+        function niceBytes(n) {
+            const u = ['B', 'KB', 'MB']; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+            return `${Math.round(n)} ${u[i]}`;
+        }
+        function baseMime(mt = '') { return (mt || '').split(';')[0].trim().toLowerCase(); }
+        function extOf(name = '') { const m = name.match(/\.([^.]+)$/); return m ? m[1].toLowerCase() : ''; }
+        function isTextLike(name, mt) {
+            const e = extOf(name);
+            if ((mt || '').startsWith('text/')) return true;
+            const codeish = ['txt', 'md', 'markdown', 'log', 'csv', 'tsv', 'json', 'yml', 'yaml', 'xml', 'html', 'css', 'js', 'ts', 'tsx', 'jsx', 'c', 'cc', 'cpp', 'h', 'hpp', 'go', 'rs', 'py', 'rb', 'php', 'java', 'kt', 'swift', 'sql', 'sh', 'bat', 'ps1'];
+            return codeish.includes(e);
+        }
+
+        /* ====== 8) INLINE RENDERERS FOR ATTACHMENTS ====== */
+        /* Call this from renderMessage(...) fallback branch for non-image/video/audio */
+        function renderAttachmentInline(rootEl, a) {
+            const url = `${API}/dm/attachments/${a.id}/download?inline=1`;
+            const mt = baseMime(a.mime_type || '');
+            const name = a.filename || 'attachment';
+
+            // PDF
+            if (mt === 'application/pdf' || extOf(name) === 'pdf') {
+                const wrap = document.createElement('div');
+                const frame = document.createElement('iframe');
+                frame.className = 'att';
+                frame.title = name;
+                frame.loading = 'lazy';
+                frame.style.width = '100%';
+                frame.style.height = '420px';
+                wrap.appendChild(frame);
+                rootEl.appendChild(wrap);
+
+                (async () => {
+                    try {
+                        const blob = await fetchBlobMaybeGunzip(url, name);
+                        const obj = URL.createObjectURL(blob);
+                        frame.src = obj;
+                        // DO NOT revoke onload. Keep alive while the iframe exists.
+                        frame.dataset.objurl = obj; // let revokeObjectURLsIn() clean it up later
+                    } catch {
+                        // graceful fallback: plain link (your 3-dot menu still has the real download)
+                        const aEl = document.createElement('a');
+                        aEl.className = 'att';
+                        aEl.href = url; aEl.download = name;
+                        aEl.textContent = `📎 ${name} (${niceBytes(a.size || 0)})`;
+                        wrap.replaceWith(aEl);
+                        fixDownloadLink(aEl, url, name, mt);
+                    }
+                })();
+                return;
+            }
+
+            // DOCX/DOC (best-effort via docx-preview; otherwise link)
+            if (['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'].includes(mt) ||
+                ['docx', 'doc'].includes(extOf(name))) {
+                const box = document.createElement('div');
+                box.className = 'att';
+                box.style.border = '1px solid var(--border)';
+                box.style.background = '#0e1116';
+                box.style.padding = '10px';
+                box.innerHTML = `<div class="muted" style="margin-bottom:6px">Previewing ${esc(name)}…</div><div class="docx"></div>`;
+                rootEl.appendChild(box);
+                (async () => {
+                    try {
+                        await ensureDocxPreviewLoaded();
+                        const ab = await (await fetch(url, { credentials: 'include' })).arrayBuffer();
+                        const container = box.querySelector('.docx');
+                        await window.docx.renderAsync(ab, container);
+                    } catch (e) {
+                        // graceful fallback
+                        box.innerHTML = `<a class="att" href="${url}" download="${esc(name)}">📎 ${esc(name)} (${niceBytes(a.size || 0)})</a>`;
+                    }
+                })();
+                return;
+            }
+
+            // TEXT / CODE (fetch small preview then <pre>)
+            if (isTextLike(name, mt)) {
+                (async () => {
+                    try {
+                        // note: auto-gunzip, so .js.gz will still show text
+                        const blob0 = await fetchBlobMaybeGunzip(url, name);
+
+                        // Show up to ~256KB inline
+                        const maxShow = 256 * 1024;
+                        if (blob0.size > maxShow) {
+                            const aEl = document.createElement('a');
+                            aEl.className = 'att';
+                            aEl.href = url; aEl.download = name;
+                            aEl.textContent = `📎 ${name} (${niceBytes(blob0.size)} — too large to preview)`;
+                            rootEl.appendChild(aEl);
+                            fixDownloadLink(aEl, url, name, mt);
+                            return;
+                        }
+                        const text = await blob0.text();
+                        const pre = document.createElement('pre');
+                        pre.className = 'att att-text';
+                        pre.style.maxHeight = '420px';
+                        pre.style.overflow = 'auto';
+                        pre.textContent = text;
+                        rootEl.appendChild(pre);
+                    } catch {
+                        const aEl = document.createElement('a');
+                        aEl.className = 'att';
+                        aEl.href = url; aEl.download = name;
+                        aEl.textContent = `📎 ${name}`;
+                        rootEl.appendChild(aEl);
+                        fixDownloadLink(aEl, url, name, mt);
+                    }
+                })();
+                return;
+            }
+
+            // Unknown types: just a download link (allowed as long as size ≤ 1MB on upload)
+            const aEl = document.createElement('a');
+            aEl.className = 'att';
+            aEl.href = url; aEl.download = name;
+            aEl.textContent = `📎 ${name} (${niceBytes(a.size || 0)})`;
+            rootEl.appendChild(aEl);
+            fixDownloadLink(aEl, url, name, mt);
+        }
+
+        /* Lazy-load docx-preview only if needed */
+        let __docxLoaded = false;
+        async function ensureDocxPreviewLoaded() {
+            if (__docxLoaded) return;
+            await new Promise((res, rej) => {
+                const s = document.createElement('script');
+                s.src = 'https://unpkg.com/docx-preview@0.3.4/dist/docx-preview.min.js';
+                s.onload = res; s.onerror = rej; document.head.appendChild(s);
+            });
+            __docxLoaded = true;
+        }
+    })();
+</script>
+
+<script>
+    const API = 'http://localhost:3000/api';
+    /* ---------- SAFETY: prevent auto-downloads from media tags ---------- */
+    (() => {
+        // Escape a string for use inside a new RegExp
+        const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        // Any direct media src at this endpoint will be intercepted
+        const ATT_RX = new RegExp('^' + escRe(API) + '/dm/attachments/\\d+/download');
+
+        // Wrap setAttribute on IMG/VIDEO/AUDIO to turn "src" → safe blob URL
+        const targets = [window.HTMLImageElement, window.HTMLVideoElement, window.HTMLAudioElement].filter(Boolean);
+
+        async function safeSwapSrc(el, url) {
+            try {
+                // Use your existing helper that also auto-gunzips when needed
+                const blob = await fetchBlobMaybeGunzip(url, el.getAttribute('data-filename') || '');
+                const obj = URL.createObjectURL(blob);
+                el.src = obj;
+                el.dataset.objurl = obj; // revokeObjectURLsIn() already cleans these up
+            } catch {
+                // If we can’t fetch safely, leave src unset.
+                // Your renderers/menus already provide explicit download links.
+            }
+        }
+
+        for (const Ctor of targets) {
+            const _setAttr = Ctor.prototype.setAttribute;
+            Ctor.prototype.setAttribute = function (name, value) {
+                if (name === 'src' && typeof value === 'string' && ATT_RX.test(value)) {
+                    // Prevent direct navigation to the download URL
+                    // (which can trigger auto-save on some browsers)
+                    // Use a data attr as a breadcrumb for debugging
+                    _setAttr.call(this, 'data-safe-src', value);
+                    // Ensure src is blank until we swap to a blob URL
+                    try { this.removeAttribute('src'); } catch { }
+                    // Kick off the safe fetch → object URL
+                    safeSwapSrc(this, value);
+                    return;
+                }
+                return _setAttr.call(this, name, value);
+            };
         }
     })();
 </script>

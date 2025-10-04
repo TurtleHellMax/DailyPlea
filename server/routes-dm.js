@@ -594,6 +594,9 @@ router.get('/dm/conversations/:id/messages', requireAuth, (req, res) => {
     const convId = +req.params.id;
     if (!isMember(convId, req.userId)) return res.status(403).json({ error: 'forbidden' });
 
+    // === GLOBAL 1 MB LIMIT (hard cap) ===
+    const LIMIT_BYTES = 1 * 1024 * 1024;
+
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '20', 10)));
     const before = parseInt(req.query.before || '0', 10) || 0;
     const after = parseInt(req.query.after || '0', 10) || 0;
@@ -927,29 +930,36 @@ router.get('/dm/attachments/:id/download', requireAuth, async (req, res) => {
     }
 
     const mime = row.mime_type || 'application/octet-stream';
-    const media = isStreamableMedia(mime);
+    const media = /^audio\/|^video\//i.test(String(mime || ''));
 
-    // If it's media and stored gzipped, decompress BEFORE serving so the browser can time-seek
+    // For media, always serve UNCOMPRESSED bytes so time-seek works
     if (media && String(row.encoding || '').toLowerCase() === 'gzip') {
         try { buf = await gunzip(buf); }
         catch { return res.status(415).json({ error: 'bad_media_compression' }); }
     }
 
-    // Headers
+    // Decide inline vs attachment based on query (?inline=1 for preview iframes)
+    const dispKind = (String(req.query.inline || '') === '1') ? 'inline' : 'attachment';
+    const filename = row.filename || 'attachment';
+
+    // Core headers
     res.setHeader('Content-Type', mime);
     res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Disposition', `${dispKind}; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    // avoid proxies transforming gzip/media
+    res.setHeader('Cache-Control', 'private, no-transform');
 
-    if (Number.isFinite(row.duration_ms) && row.duration_ms > 0) {
-        res.setHeader('X-Audio-Duration-Ms', String(row.duration_ms));
-    }
-
-    // Only advertise gzip for NON-media; browsers can’t time-seek gzip-encoded media
+    // Only advertise gzip when returning gzipped bytes (non-media only)
     const isGz = String(row.encoding || '').toLowerCase() === 'gzip';
     if (!media && isGz) {
         res.setHeader('Content-Encoding', 'gzip');
+    } else {
+        // make sure we DO NOT send Content-Encoding for media or uncompressed content
+        res.removeHeader('Content-Encoding');
     }
 
-    const outBuf = (!media && isGz) ? buf /* compressed bytes */ : buf /* uncompressed bytes */;
+    // Choose the buffer to serve (gzipped bytes for non-media if stored gz; otherwise plain)
+    const outBuf = (!media && isGz) ? buf : buf;
 
     const size = outBuf.length;
     const range = req.headers.range;
@@ -974,7 +984,6 @@ router.get('/dm/attachments/:id/download', requireAuth, async (req, res) => {
     end = Math.max(start, Math.min(end, size - 1));
 
     const chunk = outBuf.slice(start, end + 1);
-
     res.status(206);
     res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
     res.setHeader('Content-Length', chunk.length);
