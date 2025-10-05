@@ -6,6 +6,8 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
+const mimeTypes = require('mime-types');
 
 const { issueCsrfToken } = require('./security');
 const { db, migrate } = require('./db');
@@ -17,7 +19,7 @@ migrate();
 
 const app = express();
 
-app.set('trust proxy', false);
+app.set('trust proxy', true);
 
 /* ---------------- helpers ---------------- */
 function listRoutes(app) {
@@ -37,7 +39,10 @@ function listRoutes(app) {
 }
 
 /* ---------------- middleware ---------------- */
-app.get('/api/_routes', (req, res) => res.json(listRoutes(app)));
+if (process.env.NODE_ENV !== 'production') {
+    app.get('/api/_routes', (req, res) => res.json(listRoutes(app)));
+    try { app.use('/api/dev', require('./routes-dev').router); } catch { }
+}
 
 app.use(express.static(WEB_ROOT, {
     setHeaders(res, filePath) {
@@ -62,9 +67,6 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-User-Id', 'Range'],
     exposedHeaders: ['X-Audio-Duration-Ms', 'Accept-Ranges', 'Content-Range']
 }));
-
-/* ---------------- dev routes (optional) ---------------- */
-try { app.use('/api/dev', require('./routes-dev').router); } catch { }
 
 /* ---------------- base info ---------------- */
 app.get('/api', (req, res) => {
@@ -99,6 +101,10 @@ app.use('/api', dm.router);
 app.use((req, res, next) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    next();
+});
+// keep CSRF check as a separate middleware *after* that:
+app.use((req, res, next) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
     const cookieToken = req.cookies.csrf;
     const headerToken = req.get('x-csrf-token');
@@ -110,7 +116,11 @@ app.use((req, res, next) => {
 
 app.get('/api/csrf', (req, res) => {
     const t = issueCsrfToken();
-    res.cookie('csrf', t, { httpOnly: false, sameSite: 'lax', secure: false });
+    res.cookie('csrf', t, {
+        httpOnly: false,          // double-submit requires readable cookie
+        sameSite: 'strict',       // or 'lax' if you must
+        secure: true              // set true in HTTPS prod
+    });
     res.json({ token: t });
 });
 

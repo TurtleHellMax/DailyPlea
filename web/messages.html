@@ -1832,8 +1832,8 @@
 
         async function handleFileInput(files) {
             for (const file of files) {
-                if (file.size > 200 * 1024 * 1024) {
-                    throw new Error('Look pal, the file limit is ONE MB. I can compresss stuff, sure, but I cant compress THAT.');
+                if (file.size > 10000 * 1024 * 1024) {
+                    throw new Error('Look pal, the file limit is ONE MB. I can compress stuff, sure, but I cant compress THAT.');
                 }
                 const tempId = addCompressingPlaceholder(file.name);
                 try {
@@ -3166,6 +3166,8 @@
    ------------------------------------------------------------ */
 
         // === Small helpers (replace the need for @ffmpeg/util) ===
+        const HW_THREADS = Math.max(1, Math.min(8, (navigator.hardwareConcurrency | 0) || 2));
+
         const DEBUG_UPLOAD = true;
         function dbg(...a) { if (DEBUG_UPLOAD) console.log('[att]', ...a); }
         function dberr(...a) { if (DEBUG_UPLOAD) console.error('[att]', ...a); }
@@ -3434,33 +3436,58 @@
         }
         function errMsg(e) { if (typeof e === 'string') return e; if (e && typeof e.message === 'string') return e.message; if (e && typeof e.detail === 'string') return e.detail; if (e && typeof e.toString === 'function') { const str = e.toString(); if (str !== '[object Object]') return str; } try { return JSON.stringify(e); } catch { return String(e); } }
         // === Single FFmpeg instance, lazy-loaded from CDN ===
-        const CORE_BASE = '/web/vendor/ffmpeg/core';
         let __ff, __ffLoaded = false;
         let __ffProgressCb = null;
+
+        const CORE_BASE_ST = '/web/vendor/ffmpeg/core';     // single-thread
+        const CORE_BASE_MT = '/web/vendor/ffmpeg/core-mt';  // pthreads + SIMD
 
         async function getFFmpeg() {
             if (__ffLoaded) return __ff;
 
             const FFmpegCtor = window.FFmpegWASM?.FFmpeg || window.FFmpeg?.FFmpeg || window.FFmpeg;
             if (!FFmpegCtor) throw new Error('FFmpeg UMD not found. Expected window.FFmpegWASM.FFmpeg (v0.12+).');
+
             __ff = new FFmpegCtor();
 
-            // route progress to the per-call callback if present
+            // Prefer MT core only when threads are actually usable
+            const wantMT = self.crossOriginIsolated === true;
+
+            const base = wantMT ? CORE_BASE_MT : CORE_BASE_ST;
+
             __ff.on('progress', ({ progress }) => {
-                try { __ffProgressCb && __ffProgressCb(Math.min(progress, 0.98), 'transcoding'); } catch { }
+                try {
+                    const p = Math.max(0, Math.min(0.97, progress || 0));
+                    __ffProgressCb && __ffProgressCb(p, 'transcoding');
+                } catch { }
             });
             __ff.on('log', ({ message }) => console.debug('[ffmpeg]', message));
 
             await __ff.load({
-                coreURL: `${CORE_BASE}/ffmpeg-core.js`,
-                wasmURL: `${CORE_BASE}/ffmpeg-core.wasm`,
-                workerURL: `${CORE_BASE}/ffmpeg-core.worker.js`,
+                coreURL: `${base}/ffmpeg-core.js`,
+                wasmURL: `${base}/ffmpeg-core.wasm`,
+                workerURL: `${base}/ffmpeg-core.worker.js`,
             });
+
             __ffLoaded = true;
             return __ff;
         }
 
+
         // === Probes (duration / dimensions) using browser media ===
+        async function multiProbeBps(ff, inName, opts) {
+            const { totalSec = 0 } = opts || {};
+            const spots = [];
+            // probe an early and a mid segment to catch action-y sections
+            spots.push(Math.max(0, Math.floor(totalSec * 0.10)));
+            if (totalSec > 12) spots.push(Math.max(0, Math.floor((totalSec - 6) / 2)));
+            let worst = 0;
+            for (const ss of spots) {
+                const bps = await probeBytesPerSecond(ff, inName, { ...opts, seekSec: ss || 0 });
+                worst = Math.max(worst, bps);
+            }
+            return worst || await probeBytesPerSecond(ff, inName, opts);
+        }
         function probeDuration(file) {
             return new Promise((resolve) => {
                 try {
@@ -3496,22 +3523,62 @@
         // === Compute a sensible plan to fit under maxBytes ===
         const MAX_BYTES = 1024 * 1024;
         function planVideo({ durationSec, srcW, srcH }) {
-            const dur = Math.max(0.5, Number.isFinite(durationSec) ? durationSec : 10);
-            const budgetBits = (MAX_BYTES - 16 * 1024) * 8; // leave a bit for container overhead
-            const totalKbps = clamp(Math.floor(budgetBits / dur / 1000), 128, 900);
-            const aKbps = clamp(Math.floor(totalKbps * 0.18), 24, 64);
-            const vKbps = clamp(totalKbps - aKbps, 96, 820);
-            const fps = dur >= 20 ? 16 : 24;
+            // If duration is unknown/very small, assume long content but clip to 6s.
+            const durKnown = Number.isFinite(durationSec) && durationSec > 0;
+            const cutSec = durKnown ? Math.min(durationSec, 6) : 6;
 
-            // choose a width that roughly matches bits-per-pixel needs
+            // Reserve some container overhead
+            const budgetBits = (MAX_BYTES - 20 * 1024) * 8;
+
+            // average kbps allowed across that clip
+            const totalKbps = Math.max(12, Math.floor(budgetBits / cutSec / 1000));
+
+            // Start with NO audio to maximize chance of <1MB
+            const aKbps = 0;
+            const vKbps = Math.max(10, totalKbps - aKbps);
+
             const aspect = (srcW > 0 && srcH > 0) ? (srcW / srcH) : (16 / 9);
-            const targetBpp = 0.07;
+            const fps = cutSec >= 5 ? 8 : 10;
+
+            // Very low bits-per-pixel target
+            const targetBpp = 0.035;
             const wFloat = Math.sqrt((vKbps * 1000) / (targetBpp * fps * aspect));
-            const snaps = [200, 240, 272, 320, 360, 400, 480];
+            const snaps = [96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256, 272, 288, 320];
             let maxW = snaps.reduce((a, b) => Math.abs(b - wFloat) < Math.abs(a - wFloat) ? b : a, snaps[0]);
             maxW = Math.min(srcW || maxW, maxW);
-            return { fps, vKbps, aKbps, maxW };
+
+            return { fps, vKbps, aKbps, maxW, cutSec };
         }
+
+        async function probeBytesPerSecond(ff, inName, {
+            width, fps, vkbps, akbps, sampleSec = 6, seekSec = 0
+        }) {
+            const outProbe = 'probe.webm';
+            try { await ff.deleteFile(outProbe); } catch { }
+            const vf = `scale=${width}:-2,fps=${fps}`;
+
+            const args = [
+                '-hide_banner', '-loglevel', 'warning', '-y',
+                '-nostdin', '-sn', '-dn', '-analyzeduration', '4M', '-probesize', '256k',
+                '-ss', String(Math.max(0, seekSec)), // sample a representative section
+                '-t', String(sampleSec),
+                '-threads', String(HW_THREADS),
+                '-filter_threads', String(Math.max(1, HW_THREADS - 1)),
+                '-i', inName,
+                '-map', '0:v:0', '-map', '0:a:0?',
+                '-vf', vf, '-pix_fmt', 'yuv420p',
+                '-c:v', 'libvpx',
+                '-b:v', `${vkbps}k`, '-maxrate', `${vkbps}k`, '-bufsize', `${Math.max(2 * vkbps, 32)}k`,
+                '-quality', 'realtime', '-cpu-used', '8', '-lag-in-frames', '0', '-g', '90', '-deadline', 'realtime',
+                '-c:a', 'libopus', '-b:a', `${akbps}k`, '-ac', '1', '-ar', '48000',
+                outProbe
+            ];
+
+            await ff.exec(args);
+            const u8 = await ff.readFile(outProbe);
+            return u8.length / sampleSec; // bytes per second
+        }
+
         function planAudio(durationSec) {
             const dur = Math.max(0.5, Number.isFinite(durationSec) ? durationSec : 10);
             const budgetBits = (MAX_BYTES - 8 * 1024) * 8;
@@ -3708,7 +3775,9 @@
                     '-max_alloc', '134217728',
                     '-probesize', '10M',
                     '-analyzeduration', '200M',
-                    '-threads', '1',
+                    '-threads', String(HW_THREADS),
+                    '-filter_threads', String(Math.max(1, HW_THREADS - 1)),
+                    '-fs', String(MAX_BYTES),
                     '-i', inName,
                     '-frames:v', '1',
                     '-vf', vf,
@@ -3730,7 +3799,9 @@
                             '-max_alloc', '134217728',
                             '-probesize', '20M',
                             '-analyzeduration', '400M',
-                            '-threads', '1',
+                            '-threads', String(HW_THREADS),
+                            '-filter_threads', String(Math.max(1, HW_THREADS - 1)),
+                            '-fs', String(MAX_BYTES),
                             '-f', 'image2', '-pattern_type', 'none',
                             '-i', inName,
                             '-frames:v', '1',
@@ -3856,6 +3927,7 @@
         }
 
         // === Generic compressor: gzip (browser built-in) ===
+        // === Generic compressor: gzip (browser built-in) ===
         async function gzipGeneric(file, onProgress) {
             const t0 = performance.now();
             const prog = wrapProgress(onProgress, 'gzipGeneric');
@@ -3874,7 +3946,7 @@
                 return { blob, encoding: null };
             }
 
-            // --- Important: consume readable concurrently to avoid backpressure deadlocks ---
+            // Stream: write input → read compressed output concurrently
             const cs = new CompressionStream('gzip');
             const writer = cs.writable.getWriter();
             const reader = cs.readable.getReader();
@@ -3883,9 +3955,10 @@
             const CHUNK = 256 * 1024; // 256KB
             let offset = 0, lastTick = 0;
 
-            // Collect compressed chunks while we write input slices
             let outLen = 0;
             const outChunks = [];
+            let exceeded = false;
+
             const consumePromise = (async () => {
                 try {
                     while (true) {
@@ -3894,6 +3967,12 @@
                         if (value && value.length) {
                             outChunks.push(value);
                             outLen += value.length;
+                            // EARLY EXIT: if compressed stream already exceeds cap, stop immediately
+                            if (outLen > MAX_BYTES) {
+                                exceeded = true;
+                                try { await reader.cancel('size-limit'); } catch { }
+                                break;
+                            }
                         }
                     }
                 } catch (e) {
@@ -3902,7 +3981,7 @@
                 }
             })();
 
-            // Watchdog so we can see stalls
+            // Watchdog (unchanged)
             let lastMove = performance.now();
             const WD_MS = 5000;
             const wd = setInterval(() => {
@@ -3920,6 +3999,12 @@
                     await writer.write(new Uint8Array(ab));
                     offset = end;
 
+                    // NEW: abort immediately if we’ve already exceeded budget
+                    if (exceeded || outLen > MAX_BYTES) {
+                        try { await writer.abort('size-limit'); } catch { }
+                        throw new Error('Exceeds 1 MB even after gzip (early abort).');
+                    }
+
                     const p = Math.min(0.9, offset / total);
                     if (p - lastTick >= 0.02 || offset === total) {
                         prog(p, 'compressing');
@@ -3935,7 +4020,6 @@
                 try { await writer.close(); } catch (e) { dberr('gzipGeneric.close writer error', e); }
             }
 
-            // Finish consuming compressed output
             await consumePromise;
 
             const gzU8 = concatU8(outChunks, outLen);
@@ -3964,6 +4048,8 @@
             __ffProgressCb = (p, phase) => onProgress?.(p, `encoding ${kbps}kbps`);
             await ff.exec([
                 '-hide_banner', '-y',
+                '-fs', String(MAX_BYTES),
+                '-threads', String(HW_THREADS),
                 '-i', inName,
                 '-vn',
                 '-ac', '1',
@@ -3977,12 +4063,202 @@
             let tries = 0, cur = kbps;
             while (out.length > MAX_BYTES && tries < 3) {
                 tries += 1; cur = Math.max(12, Math.floor(cur * 0.75));
-                await ff.exec(['-y', '-i', inName, '-vn', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', `${cur}k`, outName]);
+                await ff.exec(['-y', '-fs', String(MAX_BYTES), '-i', inName, '-vn', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', `${cur}k`, outName]);
                 out = await ff.readFile(outName);
             }
 
             if (out.length > MAX_BYTES) throw new Error('Audio exceeds 1 MB even after multiple passes.');
             return new Blob([out], { type: 'audio/webm' });
+        }
+
+        // Extract a poster frame as a safe fallback (JPG under 1 MB)
+        async function extractPosterFrame(ff, inName, outNameJpg = 'thumb.jpg', width = 256) {
+            const vf = `scale=${width}:-2:flags=fast_bilinear`;
+            for (const t of [60, 5, 120]) { // try a few safe offsets
+                try { await ff.deleteFile(outNameJpg); } catch { }
+                try {
+                    await ff.exec([
+                        '-hide_banner', '-loglevel', 'warning', '-y', '-nostdin', '-sn', '-dn',
+                        '-threads', String(HW_THREADS),
+                        '-filter_threads', String(Math.max(1, HW_THREADS - 1)),
+                        '-i', inName,
+                        '-ss', String(t),
+                        '-vframes', '1',
+                        '-vf', vf,
+                        '-qscale:v', '7',
+                        outNameJpg
+                    ]);
+                    const jpg = await ff.readFile(outNameJpg).catch(() => null);
+                    if (jpg && jpg.length) return jpg;
+                } catch { }
+            }
+            return null;
+        }
+
+        async function compressVideoUnder1MB_STRICT(file, onProgress) {
+            const ff = await getFFmpeg();
+
+            const logs = [];
+            const logHandler = ({ message }) => { if (message) logs.push(String(message)); };
+            ff.on?.('log', logHandler);
+            const tail = () => logs.slice(-80).join('\n');
+
+            try {
+                const [dur, { w: srcW, h: srcH }] = await Promise.all([probeDuration(file), probeVideoSize(file)]);
+                const totalSec = (Number.isFinite(dur) && dur > 0) ? dur : 10;
+
+                // Always keep audio; we’ll only lower its bitrate (never drop it).
+                let a = 20;                                    // audio kbps (min 6)
+                const overheadBits = 24 * 1024 * 8;            // container allowance
+                const budgetBits = Math.max(8 * 1024, (MAX_BYTES * 8) - overheadBits);
+                let v = Math.max(8, Math.floor(budgetBits / totalSec / 1000) - a); // video kbps (min 6)
+
+                // Initial width/fps from bitrate & aspect; loop will ratchet these down as needed.
+                const aspect = (srcW > 0 && srcH > 0) ? (srcW / srcH) : (16 / 9);
+                let fps = 12;
+                const targetBpp = 0.035;
+                const wFloat = Math.sqrt((v * 1000) / (targetBpp * fps * aspect));
+                const snaps = [96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256, 272, 288, 320, 360, 384, 426];
+                let width = Math.min(srcW || snaps.at(-1), snaps.reduce((a_, b) => Math.abs(b - wFloat) < Math.abs(a_ - wFloat) ? b : a_, snaps[0]));
+
+                const inName = 'in.' + (file.name.split('.').pop() || 'dat');
+                const outName = 'out.webm';
+                await ff.writeFile(inName, await fetchFile(file));
+
+                // Pick a representative probe window (middle of the video if long enough)
+                let seekMid = 0;
+                if (Number.isFinite(totalSec) && totalSec > 10) {
+                    seekMid = Math.floor((totalSec - 6) / 2);
+                }
+                // 1) run 6s probe at current guess
+                const bps = await multiProbeBps(ff, inName, {
+                    width, fps, vkbps: v, akbps: a, sampleSec: 6, totalSec: totalSec, seekSec: seekMid
+                });
+
+                // 2) estimate full size and pre-adjust before the full encode loop
+                const estBytes = bps * totalSec;
+                // leave margin so we don't land just over 1MB
+                const SAFE_MAX = Math.floor(MAX_BYTES * 0.85);
+
+                if (estBytes > SAFE_MAX) {
+                    // Ratio we need to shrink by
+                    const shrink = SAFE_MAX / estBytes;
+
+                    // Prefer reducing video bitrate first (keeps duration+audio)
+                    v = Math.max(6, Math.floor(v * shrink));
+
+                    // If still aggressive shrink, also nudge resolution/fps
+                    if (shrink < 0.85) {
+                        width = Math.max(96, Math.floor(width * Math.sqrt(shrink))); // bpp-ish scaling
+                        fps = Math.max(5, Math.floor(fps * Math.max(0.80, shrink)));
+                    }
+                } else if (estBytes < SAFE_MAX * 0.65) {
+                    // We have headroom → spend it for quality (still below cap)
+                    const grow = Math.min(1.35, SAFE_MAX / Math.max(estBytes, 1));
+                    v = Math.min(220, Math.ceil(v * Math.min(1.25, grow)));
+                    if (a === 20 && estBytes < SAFE_MAX * 0.5) a = 24; // small audio bump if very small
+                    width = Math.min(426, Math.ceil(width * Math.min(1.15, Math.sqrt(grow))));
+                    if (fps < 12) fps = Math.min(12, Math.ceil(fps * 1.1));
+                }
+
+                {
+                    const minV = 6, minA = 6, minW = 96, minF = 5;
+                    const worstMinBps = await multiProbeBps(ff, inName, {
+                        width: minW, fps: minF, vkbps: minV, akbps: minA, sampleSec: 6, totalSec: totalSec
+                    });
+                    if (worstMinBps * totalSec > SAFE_MAX) {
+                        // Full-length cannot fit under any sane settings—fail *before* long transcode.
+                        throw new Error(`cannot_preserve_full_length_under_1mb (min settings estimate ${(worstMinBps * totalSec | 0)} bytes)`);
+                    }
+                }
+
+                let pass = 0, out;
+                let triedNoAudio = false;
+
+                while (pass < 14) {
+                    pass += 1;
+                    try { await ff.deleteFile(outName); } catch { }
+
+                    __ffProgressCb = (p) => onProgress?.(Math.min(0.98, p), `pass ${pass}: full length, ${width}w @${fps}fps, v${v}k / a${a}k`);
+
+                    const vf = `scale=${width}:-2,fps=${fps}`;
+                    const args = [
+                        '-hide_banner', '-loglevel', 'warning', '-y',
+                        '-nostdin', '-sn', '-dn', '-analyzeduration', '4M', '-probesize', '256k',
+                        '-threads', String(HW_THREADS),
+                        '-filter_threads', String(Math.max(1, HW_THREADS - 1)),
+                        '-i', inName,
+                        // Full duration (NO -t / -ss). Map primary video + optional primary audio.
+                        '-map', '0:v:0', '-map', '0:a:0?',
+                        // Video (VP8 = wasm-friendly)
+                        '-vf', vf, '-pix_fmt', 'yuv420p',
+                        '-c:v', 'libvpx', '-b:v', `${v}k`,
+                        '-maxrate', `${v}k`, '-bufsize', `${Math.max(2 * v, 32)}k`,
+                        '-quality', 'realtime', '-cpu-used', '8', '-lag-in-frames', '0', '-g', '90', '-deadline', 'realtime',
+                        // Audio (keep if source has it)
+                        '-c:a', 'libopus', '-b:a', `${a}k`, '-ac', '1', '-ar', '48000',
+                        outName
+                    ];
+
+                    try {
+                        await ff.exec(args);
+                    } catch (err) {
+                        const msg = String(err?.message || err);
+                        // If input has no audio, retry once without audio flags.
+                        if (!triedNoAudio && /Stream specifier|matches no streams|cannot find a stream/i.test(msg)) {
+                            triedNoAudio = true;
+                            const argsNoAud = [
+                                '-hide_banner', '-loglevel', 'warning', '-y',
+                                '-nostdin', '-sn', '-dn', '-analyzeduration', '4M', '-probesize', '256k',
+                                '-i', inName,
+                                '-map', '0:v:0',
+                                '-vf', vf, '-pix_fmt', 'yuv420p',
+                                '-c:v', 'libvpx', '-b:v', `${v}k`, '-maxrate', `${v}k`, '-bufsize', `${Math.max(2 * v, 32)}k`,
+                                '-quality', 'realtime', '-cpu-used', '8', '-lag-in-frames', '0', '-g', '90', '-deadline', 'realtime',
+                                '-an',
+                                outName
+                            ];
+                            await ff.exec(argsNoAud);
+                        } else if (/index out of bounds|Aborted\(\)/i.test(msg)) {
+                            // wasm OOM → make cheaper and retry
+                            width = Math.max(96, Math.floor(width * 0.85));
+                            fps = Math.max(5, Math.floor(fps * 0.90));
+                            v = Math.max(6, Math.floor(v * 0.85));
+                            a = Math.max(6, Math.floor(a * 0.90));
+                            continue;
+                        } else {
+                            throw new Error(`${msg}\n--- ffmpeg tail ---\n${tail()}`);
+                        }
+                    }
+
+                    out = await ff.readFile(outName);
+                    if (out.length <= MAX_BYTES) break;
+
+                    // Too big → reduce quality but keep length + audio
+                    v = Math.max(6, Math.floor(v * 0.75));
+                    a = Math.max(6, Math.floor(a * 0.85));
+                    width = Math.max(96, Math.floor(width * 0.90));
+                    fps = Math.max(5, Math.floor(fps * 0.92));
+                }
+
+                if (!out || out.length > MAX_BYTES) {
+                    throw new Error(`Could not fit under 1MB while preserving full length and audio.
+Final attempt: ${width}w @${fps}fps, v${v}k/a${a}k.
+--- ffmpeg tail ---
+${tail()}`);
+                }
+                return new Blob([out], { type: 'video/webm' });
+            } catch (e) {
+                const msg = e?.message || String(e);
+                throw new Error(msg.includes('ffmpeg tail') ? msg : `${msg}\n--- ffmpeg tail ---\n${tail()}`);
+            } finally {
+                __ffProgressCb = null;
+                try { ff.off?.('log', logHandler); } catch { }
+                try { await ff.deleteFile('out.webm'); } catch { }
+                try { await ff.deleteFile('in.mov'); } catch { }
+                try { await ff.deleteFile('in.mp4'); } catch { }
+                try { await ff.deleteFile('in.dat'); } catch { }
+            }
         }
 
         async function compressVideoUnder1MB(file, onProgress) {
@@ -3992,99 +4268,147 @@
             const logs = [];
             const logHandler = ({ message }) => { if (message) logs.push(String(message)); };
             ff.on?.('log', logHandler);
-
             const tail = () => logs.slice(-80).join('\n');
 
             try {
-                // probe input
                 const [dur, { w: srcW, h: srcH }] = await Promise.all([probeDuration(file), probeVideoSize(file)]);
-                // your planVideo should return { vKbps, aKbps, fps, maxW, cutSec }
                 const plan = planVideo({ durationSec: dur, srcW, srcH });
-                let v = plan.vKbps, a = plan.aKbps, fps = plan.fps, width = plan.maxW, cutSec = Math.max(4, plan.cutSec || Math.min(25, dur || 10));
+                let v = plan.vKbps, a = plan.aKbps, fps = plan.fps, width = plan.maxW;
+                let cutSec = plan.cutSec;
 
                 const inName = 'in.' + (file.name.split('.').pop() || 'dat');
                 const outName = 'out.webm';
-
-                // write source into wasm FS
                 await ff.writeFile(inName, await fetchFile(file));
 
-                let pass = 0;
-                let out;
+                const SAFE_MAX = Math.floor(MAX_BYTES * 0.85); // 15% headroom to avoid “just over”
+                // First probe with the current guess:
+                let bps = await multiProbeBps(ff, inName, { width, fps, vkbps: v, akbps: a, sampleSec: 6, totalSec: dur || 0 });
+                // Estimated bytes for chosen clip duration:
+                let estBytes = bps * cutSec;
+                // Ratchet *before* first full encode
+                let guard = 0;
+                while (estBytes > SAFE_MAX && guard++ < 6) {
+                    // Prefer bitrate first, then width, then fps, then cut length.
+                    v = Math.max(8, Math.floor(v * 0.80));
+                    width = Math.max(96, Math.floor(width * 0.90));
+                    if (guard >= 2) fps = Math.max(5, Math.floor(fps * 0.92));
+                    if (guard >= 3) cutSec = Math.max(2, Math.floor(cutSec * 0.9));
+                    bps = await multiProbeBps(ff, inName, { width, fps, vkbps: v, akbps: a, sampleSec: 6, totalSec: dur || 0 });
+                    estBytes = bps * cutSec;
+                }
+                // Absolute feasibility check at minimums — avoid futile encodes
+                {
+                    const minV = 8, minW = 96, minF = 5, minT = 2, minA = 0;
+                    const worstMinBps = await multiProbeBps(ff, inName, { width: minW, fps: minF, vkbps: minV, akbps: minA, sampleSec: 4, totalSec: dur || 0 });
+                    if (worstMinBps * minT > SAFE_MAX) {
+                        // Too dense even for 2s @ 96px wide → bail early (or poster frame)
+                        const jpg = await extractPosterFrame(ff, inName, 'thumb.jpg', 256);
+                        if (jpg) {
+                            const blob = new Blob([jpg], { type: 'image/jpeg' });
+                            throw new Error(`video_too_dense_for_1mb;poster_frame:${blob.size}`);
+                        }
+                        throw new Error('video_too_dense_for_1mb');
+                    }
+                }
 
-                while (pass < 5) {
+                let pass = 0, out;
+
+                while (pass < 7) {
                     pass += 1;
-                    // clear previous output (kept in the wasm FS)
                     try { await ff.deleteFile(outName); } catch { }
 
-                    __ffProgressCb = (p) => onProgress?.(Math.min(0.98, p), `pass ${pass}: ${width}w @${fps}fps, v${v}k/a${a}k, t=${cutSec}s`);
+                    __ffProgressCb = (p) =>
+                        onProgress?.(Math.min(0.98, p), `pass ${pass}: ${width}w @${fps}fps, v${v}k ${a ? `/ a${a}k` : '/ no audio'} (${cutSec}s)`);
 
+                    // Scale + fps
                     const vf = `scale=${width}:-2,fps=${fps}`;
 
-                    // VP8 is much lighter than VP9 in wasm builds
-                    const args = [
+                    let seekSec = 0;
+                    if (Number.isFinite(dur) && dur > cutSec + 2) {
+                        seekSec = Math.max(1, Math.floor((dur - cutSec) / 2));
+                    }
+
+                    // Build args. Start with no audio; we’ll only add tiny audio if we get well under the cap.
+                    const base = [
                         '-hide_banner', '-loglevel', 'warning', '-y',
-                        // IMPORTANT: trim AT INPUT so the demuxer only feeds N seconds forward
-                        '-t', String(cutSec),
+                        // Input-side: avoid parsing PGS subs & heavy probing
+                        '-nostdin', '-sn', '-dn', '-analyzeduration', '4M', '-probesize', '256k',
                         '-i', inName,
-                        // video
+                        // Keep only primary video stream
+                        '-map', '0:v:0',
+                        // Clip to tiny excerpt
+                        '-ss', String(seekSec), '-t', String(cutSec),
+                        '-fs', String(MAX_BYTES),
+                        // Video — VP8 is wasm-friendly & quick
                         '-vf', vf,
                         '-pix_fmt', 'yuv420p',
-                        '-c:v', 'libvpx',             // VP8 (wasm friendly)
+                        '-c:v', 'libvpx',
                         '-b:v', `${v}k`,
                         '-maxrate', `${v}k`,
-                        '-bufsize', `${v * 2}k`,
-                        '-quality', 'good',
+                        '-bufsize', `${Math.max(2 * v, 32)}k`,
+                        '-quality', 'realtime',
                         '-cpu-used', '8',
                         '-lag-in-frames', '0',
-                        '-auto-alt-ref', '0',
-                        '-tile-columns', '0',
-                        '-g', '48',
-                        '-threads', '1',
-                        // audio
-                        '-c:a', 'libopus',
-                        '-b:a', `${a}k`,
-                        '-ac', '1',
-                        '-ar', '48000',
-                        // container
-                        '-deadline', 'realtime',
-                        outName
+                        '-g', '60',
+                        '-deadline', 'realtime'
                     ];
+
+                    const withAudio = (a && a > 0) ? base.concat([
+                        // tiny mono Opus (only if we’ve enabled audio)
+                        '-c:a', 'libopus', '-b:a', `${a}k`, '-ac', '1', '-ar', '48000'
+                    ]) : base.concat(['-an']);
+
+                    const args = withAudio.concat([outName]);
 
                     try {
                         await ff.exec(args);
                     } catch (err) {
                         const msg = String(err?.message || err);
-                        // wasm OOM or bounds blow-up: try again with shorter cut first
                         if (/index out of bounds|Aborted\(\)/i.test(msg)) {
-                            if (cutSec > 8) { cutSec = Math.max(4, Math.floor(cutSec / 2)); continue; }
-                            throw new Error(
-                                `FFmpeg (wasm) ran out of memory while encoding.\n` +
-                                `Tried multiple passes and duration halving.\n--- ffmpeg tail ---\n${tail()}`
-                            );
+                            // Make the job cheaper and try again
+                            width = Math.max(96, Math.floor(width * 0.85));
+                            fps = Math.max(5, Math.floor(fps * 0.9));
+                            v = Math.max(8, Math.floor(v * 0.85));
+                            // Also try even shorter clip if we’re still big
+                            cutSec = Math.max(2, Math.floor(cutSec * 0.85));
+                            continue;
                         }
-                        // other ffmpeg error
                         throw new Error(`${msg}\n--- ffmpeg tail ---\n${tail()}`);
                     }
 
                     out = await ff.readFile(outName);
+                    const UNDER_TINY = 300 * 1024;   // 300 KB
+                    const UNDER_ROOM = 700 * 1024;   // 700 KB gives headroom for audio
+
+                    if (out && out.length < UNDER_TINY && cutSec < 12) {
+                        // Make the clip longer first — most desirable improvement
+                        cutSec = Math.min(12, Math.ceil(cutSec * 1.6)); // 6s -> ~10s
+                        continue; // re-encode with longer t
+                    }
+
+                    if (out && out.length < UNDER_ROOM) {
+                        // Spend more bits and pixels; optionally add tiny audio
+                        v = Math.min(200, Math.ceil(v * 1.35));      // raise video bitrate
+                        width = Math.min(426, Math.ceil(width * 1.15)); // bump width a bit
+                        if (fps < 12) fps = Math.min(12, Math.ceil(fps * 1.1)); // small fps nudge
+                        if (a === 0 && out.length > 200 * 1024) a = 24; // add mono Opus if we have space
+                        continue; // try again with higher quality
+                    }
+
                     if (out.length <= MAX_BYTES) break;
 
-                    // tighten for next attempt
-                    v = Math.max(56, Math.floor(v * 0.8));
-                    a = Math.max(12, Math.floor(a * 0.85));
-                    width = Math.max(200, Math.floor(width * 0.9));
-
-                    // if still too big late in the game, also drop fps or duration
-                    if (pass >= 3) {
-                        fps = Math.max(10, Math.floor(fps * 0.85));
-                        if (cutSec > 10) cutSec = Math.max(6, Math.floor(cutSec * 0.75));
-                    }
+                    // Tighten for next attempt:
+                    // 1) lower video bitrate, 2) smaller res/fps, 3) shorten clip, 4) (only if under budget) add minimal audio later
+                    v = Math.max(8, Math.floor(v * 0.72));
+                    width = Math.max(96, Math.floor(width * 0.88));
+                    if (pass >= 2) fps = Math.max(5, Math.floor(fps * 0.9));
+                    if (pass >= 3) cutSec = Math.max(2, Math.floor(cutSec * 0.85));
+                    // Still too large after 4 passes? keep audio disabled; only consider audio if we fall < 700KB later (not shown here).
                 }
 
                 if (!out || out.length > MAX_BYTES) {
-                    throw new Error(`Video exceeds 1 MB after retries.\n--- ffmpeg tail ---\n${tail()}`);
+                    throw new Error(`Video still >1MB after reductions.\n--- ffmpeg tail ---\n${tail()}`);
                 }
-
                 return new Blob([out], { type: 'video/webm' });
             } catch (e) {
                 const msg = e?.message || String(e);
@@ -4113,7 +4437,7 @@
             try {
                 if (mt.startsWith('video/')) {
                     prog(0.02, 'starting');
-                    const blob = await compressVideoUnder1MB(file, prog);
+                    const blob = await compressVideoUnder1MB_STRICT(file, prog);
                     const mime = blob.type || 'video/webm';
                     const name = fixFilenameForType(origName, mime);
                     const f = new File([blob], name, { type: mime });
