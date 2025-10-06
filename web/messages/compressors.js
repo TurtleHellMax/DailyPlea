@@ -708,29 +708,57 @@
         const outName = 'out.webm';
         await ff.writeFile(inName, await fetchFile(file));
 
-        __ffProgressCb = (p, phase) => onProgress?.(p, `encoding ${kbps}kbps`);
-        await ff.exec([
-            '-hide_banner', '-y',
-            '-fs', String(MAX_BYTES),
+        const buildArgs = (codec, bitrateKbps) => ([
+            '-hide_banner', '-loglevel', 'warning', '-y',
             '-threads', String(HW_THREADS),
+            // input first (so -fs doesn't bind to it)
             '-i', inName,
+            // audio encode settings
             '-vn',
             '-ac', '1',
             '-ar', '48000',
-            '-c:a', 'libopus',
-            '-b:a', `${kbps}k`,
+            '-c:a', codec,
+            '-b:a', `${bitrateKbps}k`,
+            // <-- -fs must appear before the OUTPUT so it applies to that file
+            '-fs', String(MAX_BYTES),
             outName
         ]);
 
-        let out = await ff.readFile(outName);
-        let tries = 0, cur = kbps;
-        while (out.length > MAX_BYTES && tries < 3) {
-            tries += 1; cur = Math.max(12, Math.floor(cur * 0.75));
-            await ff.exec(['-y', '-fs', String(MAX_BYTES), '-i', inName, '-vn', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', `${cur}k`, outName]);
-            out = await ff.readFile(outName);
+        __ffProgressCb = (p) => onProgress?.(p, `encoding ${kbps}kbps`);
+
+        // try encoders in order: libopus → opus → libvorbis
+        const encoders = ['libopus', 'opus', 'libvorbis'];
+
+        let out = null;
+        let cur = kbps;
+        let encIdx = 0;
+
+        while (true) {
+            try { await ff.deleteFile(outName); } catch { }
+            try {
+                await ff.exec(buildArgs(encoders[encIdx], cur));
+                out = await ff.readFile(outName);
+            } catch (e) {
+                const msg = String(e?.message || e);
+                // Unknown encoder? try the next one once.
+                if (/Unknown encoder|Encoder .* not found|Invalid argument/i.test(msg) && encIdx < encoders.length - 1) {
+                    encIdx += 1;
+                    continue;
+                }
+                throw e;
+            }
+
+            if (out.length <= MAX_BYTES) break;
+
+            // Too big — reduce bitrate and retry up to 3 times
+            if (cur <= 12) {
+                // last resort: try next encoder if available, otherwise fail
+                if (encIdx < encoders.length - 1) { encIdx += 1; cur = kbps; continue; }
+                throw new Error('Audio exceeds 1 MB even after multiple passes.');
+            }
+            cur = Math.max(12, Math.floor(cur * 0.75));
         }
 
-        if (out.length > MAX_BYTES) throw new Error('Audio exceeds 1 MB even after multiple passes.');
         return new Blob([out], { type: 'audio/webm' });
     }
 
