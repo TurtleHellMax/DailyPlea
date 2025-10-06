@@ -67,6 +67,7 @@
 
 <script src="/web/vendor/ffmpeg/umd/ffmpeg.js"></script>
 <script src="/web/messages/compressors.js"></script>
+<script src="/web/messages/ui-overlays.js"></script>
 
 <script>
     (() => {
@@ -114,6 +115,7 @@
         /* ---------------- defaults & helpers ---------------- */
         const DEFAULT_PFP_DM = '/web/default-avatar.png';
         const DEFAULT_PFP_GROUP = '/web/default-groupavatar.png';
+        const MAX_BYTES = 1024 * 1024; // 1 MB
 
         const GROUP_COLORS = [
             { key: 'blue', val: '#3b82f6' },
@@ -186,6 +188,8 @@
                 (j.convMeta || []).forEach(([k, v]) => state.convMeta.set(+k || k, v));
             } catch { }
         }
+
+        function errMsg(e) { if (typeof e === 'string') return e; if (e && typeof e.message === 'string') return e.message; if (e && typeof e.detail === 'string') return e.detail; if (e && typeof e.toString === 'function') { const str = e.toString(); if (str !== '[object Object]') return str; } try { return JSON.stringify(e); } catch { return String(e); } } // === Single FFmpeg instance, lazy-loaded from CDN === let __ff, __ffLoaded = false; let __ffProgressCb = null; const CORE_BASE_ST = '/web/vendor/ffmpeg/core'; // single-thread const CORE_BASE_MT = '/web/vendor/ffmpeg/core-mt'; // pthreads + SIMD async function getFFmpeg() { if (__ffLoaded) return __ff; const FFmpegCtor = window.FFmpegWASM?.FFmpeg || window.FFmpeg?.FFmpeg || window.FFmpeg; if (!FFmpegCtor) throw new Error('FFmpeg UMD not found. Expected window.FFmpegWASM.FFmpeg (v0.12+).'); __ff = new FFmpegCtor(); // Prefer MT core only when threads are actually usable const wantMT = self.crossOriginIsolated === true; const base = wantMT ? CORE_BASE_MT : CORE_BASE_ST; __ff.on('progress', ({ progress }) => { try { const p = Math.max(0, Math.min(0.97, progress || 0)); __ffProgressCb && __ffProgressCb(p, 'transcoding'); } catch { } }); __ff.on('log', ({ message }) => console.debug('[ffmpeg]', message)); await __ff.load({ coreURL: ${base}/ffmpeg-core.js, wasmURL: ${base}/ffmpeg-core.wasm, workerURL: ${base}/ffmpeg-core.worker.js, }); __ffLoaded = true; return __ff; }
 
         /* ---------------- API core ---------------- */
         async function api(path, opts = {}) {
@@ -941,9 +945,6 @@
             }
         }
 
-        /* ---------------- overlay (friends / group create/edit/view) ---------------- */
-        const overlay = $('overlay'), userList = $('user-list');
-
         async function fetchFriends() {
             let arr = [];
             try {
@@ -973,104 +974,6 @@
             return String(raw);
         }
 
-        function refreshSelectedChips() {
-            const chipBox = $('selected-chips'); chipBox.innerHTML = '';
-            const ids = [...state.selectedIds];
-            ids.forEach(uid => {
-                const u = state.idToFriend.get(uid) || {};
-                const label = friendDisplay(u);
-                const el = document.createElement('div');
-                el.className = 'chip';
-                el.innerHTML = `<span>${esc(label)}</span><span class="x" title="Remove">✕</span>`;
-                el.querySelector('.x').onclick = (e) => { e.stopPropagation(); state.selectedIds.delete(uid); renderFriends(state.friendsCache); refreshSelectedChips(); refreshGroupSubmitState(); };
-                chipBox.append(el);
-            });
-        }
-
-        function refreshGroupSubmitState() {
-            const btn = $('btn-group-submit');
-            const mode = state.pickerMode;
-            if (mode === 'group-create') {
-                btn.textContent = 'Create Group';
-                btn.disabled = (state.selectedIds.size < 2);
-            } else if (mode === 'group-edit') {
-                btn.textContent = 'Save Changes';
-                const changed = !eqSets(state.selectedIds, state.initialSelectedIds);
-                btn.disabled = !changed;
-            } else {
-                btn.textContent = 'Close';
-                btn.disabled = false;
-            }
-            $('group-cta').style.display = (mode === 'group-create' || mode === 'group-edit') ? '' : 'none';
-        }
-
-        function eqSets(a, b) { if (a.size !== b.size) return false; for (const v of a) if (!b.has(v)) return false; return true; }
-
-        function renderFriends(list) {
-            state.friendsCache = list || [];
-            state.idToFriend.clear();
-            list.forEach(u => state.idToFriend.set(u.id, u));
-
-            userList.innerHTML = '';
-            const q = $('user-q').value.trim().toLowerCase();
-            let items = list.filter(u => {
-                if (!q) return true;
-                return (u.username || '').toLowerCase().includes(q) ||
-                    (u.first_username || '').toLowerCase().includes(q) ||
-                    (u.bio || '').toLowerCase().includes(q);
-            });
-
-            const mode = state.pickerMode;
-            items.forEach(u => {
-                const row = document.createElement('div'); row.className = 'person';
-                const label = friendDisplay(u);
-                const checked = state.selectedIds.has(u.id);
-                const isDefaultAvatar = !u.profile_photo; // <-- add this line
-
-                let right = '';
-                if (mode === 'dm') {
-                    right = `<div class="act"><button class="btn person-message">Message</button></div>`;
-                } else if (mode === 'group-create' || mode === 'group-edit') {
-                    right = `<div class="act">
-                    <input type="checkbox" class="checkbox person-check" ${checked ? 'checked' : ''}/>
-                </div>`;
-                } else {
-                    right = `<div class="act"></div>`;
-                }
-
-                row.innerHTML = `
-                <img class="pfp ${isDefaultAvatar ? 'pixel' : ''}" src="${u.profile_photo || DEFAULT_PFP_DM}" alt="">
-                <div>
-                    <div class="name">${esc(label)}</div>
-                    <div class="bio">${esc(u.bio || '')}</div>
-                </div>
-                ${right}
-            `;
-
-                if (mode === 'dm') {
-                    row.onclick = (e) => { if (e.target.closest('.person-message')) return; startDmWith(u); };
-                    row.querySelector('.person-message').onclick = async (e) => { e.stopPropagation(); await startDmWith(u); };
-                } else if (mode === 'group-create' || mode === 'group-edit') {
-                    const toggle = () => {
-                        if (state.selectedIds.has(u.id)) state.selectedIds.delete(u.id);
-                        else state.selectedIds.add(u.id);
-                        renderFriends(state.friendsCache);
-                        refreshSelectedChips();
-                        refreshGroupSubmitState();
-                    };
-                    row.onclick = toggle;
-                    const cb = row.querySelector('.person-check');
-                    if (cb) cb.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
-                } else {
-                    row.onclick = () => { };
-                }
-
-                userList.append(row);
-            });
-
-            refreshSelectedChips();
-        }
-
         function isGroupChat() { return !!(state.currentConvDetail?.is_group); }
 
         function usernameFor(userId) {
@@ -1094,104 +997,6 @@
             });
         }
 
-        let myColorOverlay = null;
-        function ensureMyColorOverlay() {
-            if (myColorOverlay) return myColorOverlay;
-            myColorOverlay = document.createElement('div');
-            myColorOverlay.id = 'my-color-overlay';
-            myColorOverlay.className = 'overlay';
-            myColorOverlay.innerHTML = `
-    <div class="sheet" style="width:min(460px,94vw)">
-      <h3>My Message Color</h3>
-      <div class="person" style="cursor:default">
-        <img class="pfp" id="my-color-pfp" src="" alt="">
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <div class="name" id="my-color-name">@me</div>
-          <div class="bio">Change the border color of <b>your</b> messages in this group.</div>
-        </div>
-        <div class="act" style="display:flex;gap:8px;align-items:center">
-          <input class="colorpick" id="my-color-input" type="color" value="#e6e6e6">
-          <button class="btn" id="my-color-clear" type="button" title="Use default">Use default</button>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
-        <button class="btn" id="my-color-cancel" type="button">Cancel</button>
-        <button class="btn" id="my-color-save" type="button">Save</button>
-      </div>
-    </div>`;
-            document.body.append(myColorOverlay);
-            myColorOverlay.addEventListener('click', e => { if (e.target === myColorOverlay) myColorOverlay.style.display = 'none'; });
-            return myColorOverlay;
-        }
-
-        async function openMyColorOverlay() {
-            const det = state.currentConvDetail || {};
-            if (!det.is_group) return;
-
-            const ov = ensureMyColorOverlay();
-            const nameEl = ov.querySelector('#my-color-name');
-            const pfpEl = ov.querySelector('#my-color-pfp');
-            const input = ov.querySelector('#my-color-input');
-            const btnClr = ov.querySelector('#my-color-clear');
-            const btnSav = ov.querySelector('#my-color-save');
-            const btnCan = ov.querySelector('#my-color-cancel');
-
-            // Fill in my display bits
-            const me = (det.members || []).find(u => (u.id | 0) === (state.meId | 0)) || {};
-            nameEl.textContent = pickName(me) || 'Me';
-            const isDefaultAvatar = !me.profile_photo;
-            pfpEl.classList.toggle('pixel', isDefaultAvatar);
-            pfpEl.src = me.profile_photo || DEFAULT_PFP_DM;
-
-            // Ensure we have the latest map
-            await syncMsgColors(state.convId);
-            const map = getColorMap(state.convId);
-            const current = map[state.meId] || '#e6e6e6';
-            input.value = /^#[0-9a-f]{6}$/i.test(current) ? current : '#e6e6e6';
-
-            btnClr.onclick = () => { input.value = '#e6e6e6'; };
-
-            btnSav.onclick = async () => {
-                const val = input.value.toLowerCase();
-                // treat default as "clear" (null)
-                const toSet = (val === '#e6e6e6') ? null : val;
-                try {
-                    await setMyMsgColor(state.convId, toSet);
-                    // reflect locally
-                    const m = { ...getColorMap(state.convId) };
-                    if (toSet) m[state.meId] = toSet; else delete m[state.meId];
-                    setColorMap(state.convId, m);
-                    updateAllMessageBorders();
-                    myColorOverlay.style.display = 'none';
-                } catch (e) {
-                    alert(e.detail || errMsg(e));
-                }
-            };
-            btnCan.onclick = () => { myColorOverlay.style.display = 'none'; };
-
-            myColorOverlay.style.display = 'flex';
-        }
-
-        async function openPicker(mode = 'dm', opts = {}) {
-            state.pickerMode = mode;
-            state.selectedIds = new Set(opts.preselectIds || []);
-            state.initialSelectedIds = new Set(opts.preselectIds || []);
-            $('overlay').style.display = 'flex';
-            $('user-q').value = '';
-            $('sheet-title').textContent =
-                mode === 'dm' ? 'Start a conversation'
-                    : mode === 'group-create' ? 'Create a Group'
-                        : mode === 'group-edit' ? 'Edit Group Members'
-                            : 'Group Members';
-
-            $('group-cta').style.display = (mode === 'group-create' || mode === 'group-edit') ? '' : 'none';
-            refreshGroupSubmitState();
-
-            const friends = await fetchFriends();
-            renderFriends(friends);
-        }
-        function closePicker() { $('overlay').style.display = 'none'; }
-
         async function maybeAutoRenameGroup() {
             const det = state.currentConvDetail || state.convDetailById.get(state.convId) || {};
             if (!det?.is_group) return;
@@ -1212,86 +1017,6 @@
             }
         }
 
-        $('btn-newdm').onclick = () => openPicker('dm');
-        $('btn-newgroup').onclick = () => openPicker('group-create');
-
-        overlay.addEventListener('click', e => { if (e.target === overlay) closePicker(); });
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePicker(); hideChatMenu(); hideRestyle(); } });
-
-        $('user-q').addEventListener('input', async () => renderFriends(state.friendsCache));
-        $('btn-cancel').onclick = () => closePicker();
-
-        $('btn-group-submit').onclick = async () => {
-            if (state.pickerMode === 'group-create') {
-                if (state.selectedIds.size < 2) return;
-                const ids = [...state.selectedIds]; // others (in pick order)
-                const others = ids.map(id => state.idToFriend.get(id)).filter(Boolean);
-                const meLabel = state.meSlug || 'Me'; // username is fine; no @
-                const names = [meLabel, ...others.map(u => friendDisplay(u) || 'User')];
-                const title = joinNames(names);
-                try {
-                    const rc = randomGroupColor();
-                    const res = await api('/dm/conversations', { method: 'POST', body: { user_ids: ids, title, color: rc.val } });
-                    // mark this conversation as using the default/auto title scheme
-                    setConvMeta(res.id, { name: title, is_group: true, auto_title: true });
-
-                    // Assign distinct colors to everyone (me + others)
-                    const allIds = [state.meId, ...ids];
-                    const initial = chooseUniqueColorsForUsers(allIds, {}); // fresh set
-                    try { await patchMsgColors(res.id, initial); } catch { }
-                    setColorMap(res.id, { ...initial });
-
-                    closePicker();
-                    await loadConversations({ blockingMeta: true });
-                    if (res?.id) await openConversation(res.id);
-                } catch (e) { alert(e.detail || errMsg(e)); }
-            } else if (state.pickerMode === 'group-edit') {
-                const detail = state.currentConvDetail || {};
-                const before = new Set(state.initialSelectedIds);
-                const after = new Set(state.selectedIds);
-                const add = [...after].filter(x => !before.has(x));
-                const remove = [...before].filter(x => !after.has(x));
-                if (add.length === 0 && remove.length === 0) return;
-                try {
-                    const resp = await api(`/dm/conversations/${state.convId}/members`, {
-                        method: 'PATCH',
-                        body: { add_user_ids: add, remove_user_ids: remove }
-                    });
-
-                    // keep this client-side nicety (server also assigns colors)
-                    if (add.length) {
-                        let existing = {};
-                        try { existing = await fetchMsgColors(state.convId); } catch { }
-                        const newOnes = chooseUniqueColorsForUsers(add, existing);
-                        if (Object.keys(newOnes).length) {
-                            try { await patchMsgColors(state.convId, newOnes); } catch { }
-                        }
-                    }
-
-                    closePicker();
-
-                    if (resp?.deleted) {
-                        state.convId = null;
-                        state.currentConvDetail = null;
-                        $('chat-title').textContent = 'Pick a conversation';
-                        $('chat-pfp').src = DEFAULT_PFP_DM;
-                        $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
-                        state.audioDurEls.clear();
-                        await loadConversations({ blockingMeta: true });
-                        return;
-                    }
-
-                    await fetchConvMeta(state.convId);
-                    await maybeAutoRenameGroup();
-                    await syncMsgColors(state.convId);
-                    await fetchAfter(state.lastMsgId);
-                    await loadConversations({ blockingMeta: true });
-                } catch (e) { alert(e.detail || errMsg(e)); }
-            } else {
-                closePicker();
-            }
-        };
-
         async function startDmWith(u) {
             try {
                 const og = u.first_username || u.username;
@@ -1311,132 +1036,6 @@
         }
 
         /* ---------------- 3-dots chat menu ---------------- */
-        const chatMenu = $('chat-menu');
-        const chatMenuBtn = $('chat-menu-btn');
-
-        function hideChatMenu() { chatMenu.style.display = 'none'; }
-        function toggleChatMenu() {
-            if (chatMenu.style.display === 'none' || !chatMenu.style.display) { renderChatMenu(); chatMenu.style.display = 'block'; }
-            else chatMenu.style.display = 'none';
-        }
-        chatMenuBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleChatMenu(); });
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.bubble-menu') && !e.target.closest('.bubble-menu-btn')) {
-                closeAllBubbleMenus();
-            }
-        });
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.menu') && e.target !== chatMenuBtn) hideChatMenu();
-        });
-
-        function renderChatMenu() {
-            const det = state.currentConvDetail || state.convDetailById.get(state.convId) || {};
-            const isGroup = !!det.is_group;
-            const isOwner = !!det.is_owner;
-
-            chatMenuBtn.style.display = '';
-
-            const items = [];
-            if (isGroup) {
-                if (isOwner) {
-                    items.push({ id: 'rename', label: 'Rename group' });
-                    items.push({ id: 'manage', label: 'Manage members' });
-                } else {
-                    items.push({ id: 'view-members', label: 'View members' });
-                }
-                items.push({ id: 'restyle', label: 'Restyle Group' });
-                items.push({ id: 'my-color', label: 'My Message Color' });
-                items.push({ id: 'leave', label: 'Leave group' });
-                items.push({ id: 'block-group', label: 'Block this group' });
-            } else {
-                items.push({ id: 'delete-dm', label: 'Delete chat (for me)' });
-                items.push({ id: 'block-user', label: 'Block user' });
-            }
-
-            chatMenu.innerHTML = items.map(i => `<div class="item" data-id="${i.id}">${esc(i.label)}</div>`).join('');
-
-            chatMenu.querySelectorAll('.item').forEach(el => {
-                el.onclick = async () => {
-                    const id = el.dataset.id;
-                    hideChatMenu();
-                    if (id === 'rename') {
-                        const current = state.currentConvDetail?.title || state.convMeta.get(state.convId)?.name || '';
-                        const name = prompt('New group name:', current) || '';
-                        const trimmed = name.trim();
-                        if (!trimmed) return;
-                        try {
-                            await api(`/dm/conversations/${state.convId}/title`, { method: 'PATCH', body: { title: trimmed } });
-                            setConvMeta(state.convId, { auto_title: false });
-                            await fetchConvMeta(state.convId);
-                            await fetchAfter(state.lastMsgId);
-                            await loadConversations({ blockingMeta: true });
-                            await afterPaint();
-                            renderChatMenu();
-                        } catch (e) { alert(e.detail || errMsg(e)); }
-                    } else if (id === 'manage') {
-                        await openManageMembers();
-                    } else if (id === 'view-members') {
-                        state.pickerMode = 'view-members';
-                        $('sheet-title').textContent = 'Group Members';
-                        $('group-cta').style.display = 'none';
-                        $('overlay').style.display = 'flex';
-                        $('user-q').value = '';
-                        const members = (state.currentConvDetail?.members || []).map(u => ({
-                            id: u.id, username: u.username, first_username: u.first_username, profile_photo: u.profile_photo, bio: ''
-                        }));
-                        renderFriends(members);
-                    } else if (id === 'restyle') {
-                        openRestyleOverlay();
-                    } else if (id === 'leave') {
-                        if (!confirm('Leave this group?')) return;
-                        try {
-                            await api(`/dm/conversations/${state.convId}/leave`, { method: 'POST' });
-                            state.convId = null; state.currentConvDetail = null;
-                            $('chat-title').textContent = 'Pick a conversation';
-                            $('chat-pfp').src = DEFAULT_PFP_DM;
-                            $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
-                            await loadConversations({ blockingMeta: true });
-                        } catch (e) { alert(e.detail || errMsg(e)); }
-                    } else if (id === 'block-group') {
-                        if (!confirm('Block this group? You will also leave it and won’t be added again.')) return;
-                        try {
-                            await api(`/dm/conversations/${state.convId}/block`, { method: 'POST' });
-                            await api(`/dm/conversations/${state.convId}/leave`, { method: 'POST' });
-                            state.convId = null; state.currentConvDetail = null;
-                            $('chat-title').textContent = 'Pick a conversation';
-                            $('chat-pfp').src = DEFAULT_PFP_DM;
-                            $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
-                            await loadConversations({ blockingMeta: true });
-                        } catch (e) { alert(e.detail || errMsg(e)); }
-                    } else if (id === 'delete-dm') {
-                        if (!confirm('Delete this chat for you? The other person will still see it.')) return;
-                        try {
-                            // mark cutoff BEFORE we delete (so we hide everything up to current last)
-                            setHideBeforeId(state.convId, state.lastMsgId || Number.MAX_SAFE_INTEGER);
-
-                            // Personal delete on the backend (no system message)
-                            await api(`/dm/conversations/${state.convId}/delete_for_me`, { method: 'POST' });
-
-                            // Reset UI
-                            state.convId = null; state.currentConvDetail = null;
-                            $('chat-title').textContent = 'Pick a conversation';
-                            $('chat-pfp').src = DEFAULT_PFP_DM;
-                            $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
-                            await loadConversations({ blockingMeta: true });
-                        } catch (e) { alert(e.detail || errMsg(e)); }
-                    } else if (id === 'block-user') {
-                        try {
-                            const other = (state.currentConvDetail?.members || []).find(u => (u.id | 0) !== (state.meId | 0));
-                            if (!other) { alert('Could not find user to block.'); return; }
-                            await api(`/blocks/users`, { method: 'POST', body: { user_id: other.id } });
-                            alert('User blocked.');
-                        } catch (e) { alert(e.detail || errMsg(e)); }
-                    } else if (id === 'my-color') {
-                        openMyColorOverlay();
-                    }
-                };
-            });
-        }
 
         /* ---------------- Manage members (owner only) ---------------- */
         async function openManageMembers() {
@@ -1486,340 +1085,6 @@
                 row.append(act);
             });
         }
-
-        /* ---------------- Restyle Group (color + icon) ---------------- */
-        let restyleEl = null;
-
-        function ensureRestyle() {
-            if (restyleEl) return restyleEl;
-            restyleEl = document.createElement('div');
-            restyleEl.id = 'restyle-overlay';
-            restyleEl.className = 'overlay';
-            restyleEl.innerHTML = `
-    <div class="sheet" style="width:min(720px,94vw)">
-      <h3>Restyle Group</h3>
-
-      <div class="pf-preview">
-        <div class="thumb"><img id="restyle-preview" alt="preview"></div>
-        <div class="muted">PNG will be generated at up to <b>512px</b> (longest side). Final file must be ≤ <b>1&nbsp;MB</b>.</div>
-      </div>
-
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 10px">
-        <div style="font-weight:700">Color</div>
-        <div id="restyle-color-choices" style="display:flex;flex-wrap:wrap;gap:8px"></div>
-      </div>
-
-      <div class="file-row">
-        <label class="pill">
-          <span>Choose image</span>
-          <input id="restyle-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style="display:none">
-        </label>
-        <span class="muted">or drag & drop onto the canvas</span>
-        <div id="restyle-filename" class="muted" style="font-size:13px"></div>
-        <button class="btn" id="restyle-clear" type="button">Use default</button>
-      </div>
-
-      <div class="editor" style="margin-top:10px">
-        <div class="stage" id="restyle-drop">
-          <canvas id="restyle-canvas" width="320" height="320"></canvas>
-        </div>
-
-        <div class="controls">
-          <div class="ctl">
-            <div class="muted" style="margin-bottom:6px">Zoom</div>
-            <input id="restyle-zoom" type="range" min="0" max="1" step="0.01" value="0.5">
-          </div>
-          <div class="ctl">
-            <div class="muted" style="margin-bottom:6px">Rotate</div>
-            <input id="restyle-rot" type="range" min="-180" max="180" step="1" value="0">
-          </div>
-        </div>
-
-        <div class="actions" style="display:flex;gap:10px;margin-top:4px;justify-content:flex-end">
-          <button class="btn secondary" id="restyle-cancel" type="button">Cancel</button>
-          <button class="btn" id="restyle-save" disabled>Save changes</button>
-        </div>
-        <div class="note">Tips: drag the image to reposition. Use zoom/rotate. Output is PNG with transparency preserved.</div>
-      </div>
-    </div>`;
-            document.body.append(restyleEl);
-            restyleEl.addEventListener('click', (e) => { if (e.target === restyleEl) hideRestyle(); });
-            return restyleEl;
-        }
-
-        function hideRestyle() { if (restyleEl) restyleEl.style.display = 'none'; }
-        function openRestyleOverlay() {
-            const meta = state.convMeta.get(state.convId) || {};
-            const det = state.currentConvDetail || state.convDetailById.get(state.convId) || {};
-            if (!det.is_group) return;
-
-            // ensure white knobs override (once)
-            if (!document.getElementById('restyle-white-range')) {
-                const st = document.createElement('style');
-                st.id = 'restyle-white-range';
-                st.textContent = `
-#restyle-overlay input[type="range"]::-webkit-slider-thumb { background:#fff !important; }
-#restyle-overlay input[type="range"]::-moz-range-thumb { background:#fff !important; }
-#restyle-overlay input[type="range"]:active::-webkit-slider-thumb { background:#fff !important; }
-#restyle-overlay input[type="range"]:active::-moz-range-thumb { background:#fff !important; }`;
-                document.head.appendChild(st);
-            }
-
-            const el = ensureRestyle();
-            el.style.display = 'flex';
-
-            const preview = el.querySelector('#restyle-preview');
-            const fileIn = el.querySelector('#restyle-file');
-            const fileName = el.querySelector('#restyle-filename');
-            const clearBtn = el.querySelector('#restyle-clear');
-            const saveBtn = el.querySelector('#restyle-save');
-            const cancelBtn = el.querySelector('#restyle-cancel');
-
-            const colorBox = el.querySelector('#restyle-color-choices');
-            colorBox.innerHTML = '';
-
-            const canvas = el.querySelector('#restyle-canvas');
-            const ctx = canvas.getContext('2d');
-            const drop = el.querySelector('#restyle-drop');
-            const zoomEl = el.querySelector('#restyle-zoom');
-            const rotEl = el.querySelector('#restyle-rot');
-
-            const hadCustomIcon = !!meta.photo && meta.photo !== DEFAULT_PFP_GROUP;
-            let clearedToDefault = false;
-            let imgBitmap = null;
-            let imgW = 0, imgH = 0;
-            let pos = { x: 0, y: 0 };
-            let dragging = false, last = { x: 0, y: 0 };
-            let zoom = parseFloat(zoomEl.value);
-            let rot = parseFloat(rotEl.value) * Math.PI / 180;
-            let selectedColor = meta.color || '#ffffff';
-            let selectedColorKey = (GROUP_COLORS.find(c => c.val === selectedColor)?.key) || null;
-
-            let dirty = false;
-            function markDirty() { dirty = true; saveBtn.disabled = false; }
-            saveBtn.disabled = true;
-
-            // color chips
-            GROUP_COLORS.forEach(c => {
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.className = 'btn';
-                b.style.cssText = `border-color:${c.val};background:${c.val};color:#000`;
-                b.textContent = c.key;
-                if (c.val === selectedColor) b.style.outline = '2px solid #fff';
-                b.onclick = () => {
-                    selectedColor = c.val;
-                    selectedColorKey = c.key;
-                    colorBox.querySelectorAll('.btn').forEach(x => x.style.outline = '');
-                    b.style.outline = '2px solid #fff';
-                    paintPreview();
-                    markDirty();
-                };
-                colorBox.append(b);
-            });
-
-            function setImgSafe(img, src, fallback) {
-                img.onerror = () => { img.src = fallback; };
-                img.src = src || fallback;
-            }
-
-            function paintPreview() {
-                const showDefault = (!hadCustomIcon || clearedToDefault) && !imgBitmap;
-                preview.classList.toggle('is-default', showDefault);
-
-                const activeSrc = showDefault ? DEFAULT_PFP_GROUP : (meta.photo || DEFAULT_PFP_GROUP);
-                setImgSafe(preview, activeSrc, DEFAULT_PFP_GROUP);
-
-                const thumb = el.querySelector('.pf-preview .thumb');
-                // border should reflect the chosen color (was stuck white)
-                thumb.style.borderColor = selectedColor;
-                // background stays tinted only when using the default icon
-                thumb.style.background = showDefault ? selectedColor : '#000';
-            }
-
-            paintPreview();
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // stronger zoom range
-            function scaleForZoom() {
-                const MIN = 0.25, MAX_BYTES = 6; // was 0.5..3; now 0.25..6
-                return MIN + zoom * (MAX_BYTES - MIN);
-            }
-
-            function redraw() {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                if (!imgBitmap) return;
-                ctx.save();
-                ctx.translate(canvas.width / 2 + pos.x, canvas.height / 2 + pos.y);
-                ctx.rotate(rot);
-                const s = scaleForZoom();
-                const dw = imgW * s, dh = imgH * s;
-                ctx.drawImage(imgBitmap, -dw / 2, -dh / 2, dw, dh);
-                ctx.restore();
-            }
-
-            function loadBitmapFromFile(file) {
-                return new Promise((resolve, reject) => {
-                    const r = new FileReader();
-                    r.onload = async () => {
-                        try { resolve(await createImageBitmap(new Blob([r.result]))); }
-                        catch (e) { reject(e); }
-                    };
-                    r.onerror = () => reject(r.error);
-                    r.readAsArrayBuffer(file);
-                });
-            }
-
-            async function setImageFile(file) {
-                if (!file) return;
-                try {
-                    imgBitmap = await loadBitmapFromFile(file);
-                    imgW = imgBitmap.width; imgH = imgBitmap.height;
-                    pos = { x: 0, y: 0 };
-                    zoom = 0.5; zoomEl.value = '0.5';
-                    rot = 0; rotEl.value = '0';
-                    fileName.textContent = file.name;
-                    clearedToDefault = false;
-                    redraw();
-                    const url = URL.createObjectURL(file);
-                    preview.src = url;
-                    const thumb = el.querySelector('.pf-preview .thumb');
-                    thumb.style.background = '#000';
-                    markDirty();
-                } catch (e) {
-                    alert('Could not read image: ' + (errMsg(e)));
-                }
-            }
-
-            // dnd
-            drop.addEventListener('dragover', e => { e.preventDefault(); });
-            drop.addEventListener('drop', e => {
-                e.preventDefault();
-                const f = e.dataTransfer?.files?.[0];
-                if (f) setImageFile(f);
-            });
-
-            // choose
-            fileIn.onchange = () => {
-                const f = fileIn.files?.[0];
-                if (f) setImageFile(f);
-            };
-
-            // clear to default
-            clearBtn.onclick = () => {
-                imgBitmap = null; imgW = imgH = 0;
-                pos = { x: 0, y: 0 };
-                zoom = 0.5; zoomEl.value = '0.5';
-                rot = 0; rotEl.value = '0';
-                fileIn.value = ''; fileName.textContent = '';
-                clearedToDefault = true;
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                paintPreview();
-                markDirty();
-            };
-
-            // pan
-            canvas.addEventListener('pointerdown', e => {
-                dragging = true; last = { x: e.clientX, y: e.clientY };
-                canvas.setPointerCapture(e.pointerId);
-            });
-            canvas.addEventListener('pointermove', e => {
-                if (!dragging) return;
-                const dx = e.clientX - last.x, dy = e.clientY - last.y;
-                last = { x: e.clientX, y: e.clientY };
-                pos.x += dx; pos.y += dy;
-                redraw();
-                markDirty();
-            });
-            const endDrag = e => { dragging = false; try { canvas.releasePointerCapture(e.pointerId); } catch { } };
-            canvas.addEventListener('pointerup', endDrag);
-            canvas.addEventListener('pointercancel', endDrag);
-            canvas.addEventListener('pointerleave', endDrag);
-
-            // sliders
-            zoomEl.oninput = () => { zoom = parseFloat(zoomEl.value); redraw(); markDirty(); };
-            rotEl.oninput = () => { rot = parseFloat(rotEl.value) * Math.PI / 180; redraw(); markDirty(); };
-
-            cancelBtn.onclick = () => hideRestyle();
-
-            async function exportPNGMax512() {
-                const BYTES_MAX = 1024 * 1024;
-                let size = 512;
-
-                async function renderTo(px) {
-                    const out = ('OffscreenCanvas' in window) ? new OffscreenCanvas(px, px)
-                        : Object.assign(document.createElement('canvas'), { width: px, height: px });
-                    const octx = out.getContext('2d');
-                    octx.clearRect(0, 0, px, px);
-
-                    if (imgBitmap) {
-                        const s = scaleForZoom();
-                        octx.save();
-                        octx.translate(px / 2 + (pos.x * (px / canvas.width)), px / 2 + (pos.y * (px / canvas.height)));
-                        octx.rotate(rot);
-                        const dw = imgW * s * (px / canvas.width);
-                        const dh = imgH * s * (px / canvas.height);
-                        octx.drawImage(imgBitmap, -dw / 2, -dh / 2, dw, dh);
-                        octx.restore();
-                    }
-
-                    let blob;
-                    if (out.convertToBlob) blob = await out.convertToBlob({ type: 'image/png' });
-                    else blob = await new Promise(res => out.toBlob(res, 'image/png'));
-                    return new Uint8Array(await blob.arrayBuffer());
-                }
-
-                let png = imgBitmap ? await renderTo(size) : null;
-                while (png && png.length > BYTES_MAX && size > 192) {
-                    size = Math.floor(size * 0.85);
-                    png = await renderTo(size);
-                }
-                if (png && png.length > BYTES_MAX) throw new Error('Icon too large even after resizing');
-                return { png, size };
-            }
-
-            saveBtn.onclick = async () => {
-                try {
-                    const fd = new FormData();
-                    const beforeColor = meta.color || '#ffffff';
-                    if (selectedColor && selectedColor !== beforeColor) fd.append('color', selectedColor);
-
-                    if (imgBitmap) {
-                        const { png } = await exportPNGMax512();
-                        if (png) fd.append('icon', new Blob([png], { type: 'image/png' }), 'group-icon.png');
-                    } else if (clearedToDefault) {
-                        fd.append('use_default_icon', '1');
-                    }
-
-                    await fetch(`${API}/dm/conversations/${state.convId}/appearance`, { method: 'PATCH', credentials: 'include', body: fd });
-
-                    // Local UI polish; server will broadcast conv_meta + system messages
-                    if (selectedColor && selectedColor !== beforeColor) {
-                        setConvMeta(state.convId, { color: selectedColor });
-                    }
-
-                    await fetchConvMeta(state.convId);
-                    await loadConversations({ blockingMeta: true });
-                    hideRestyle();
-                } catch (e) {
-                    alert(e.detail || errMsg(e));
-                }
-            };
-        }
-
-        /* ---------------- wire UI ---------------- */
-        $('btn-attach').onclick = () => $('file').click();
-        $('file').onchange = async e => { await handleFileInput(e.target.files); e.target.value = ''; };
-        $('btn-send').onclick = sendMessage;
-        $('text').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
-
-        const voice = $('btn-voice');
-        const startRec = e => { e.preventDefault(); voice.textContent = 'Recording… release to stop'; startRecording(); };
-        const stopRec = e => { e.preventDefault(); voice.textContent = 'Hold to record'; stopRecording(false); };
-        voice.addEventListener('pointerdown', startRec);
-        voice.addEventListener('pointerup', stopRec);
-        voice.addEventListener('pointercancel', stopRec);
-        voice.addEventListener('mouseleave', () => { if (state.recording.active) stopRec(new Event('pointerup')); });
 
         async function sendMessage() {
             if (!state.convId || state.uploading) return;
@@ -2426,6 +1691,148 @@
             });
             __docxLoaded = true;
         }
+
+        /* ===== WIRING: put this just before the closing "})();" of your big app IIFE ===== */
+        window.fetchBlobMaybeGunzip = fetchBlobMaybeGunzip; // needed by your safety block below
+
+        const {
+            wireBasicChatControls,
+            FriendPickerUI,
+            ChatMenuUI,
+            MyColorOverlayUI,
+            RestyleGroupUI
+        } = window.UIOverlays || window;
+
+        // 1) Composer buttons (Send / Attach / Voice)
+        wireBasicChatControls({
+            onFilesChosen: handleFileInput,
+            onSend: sendMessage,
+            onStartRecording: startRecording,
+            onStopRecording: () => stopRecording(false),
+            isRecording: () => state.recording.active
+        });
+
+        // 2) People picker (DM / Group Create / Group Edit)
+        const friendPicker = new FriendPickerUI({
+            fetchFriends,
+            onStartDm: (u) => startDmWith(u),
+            onCreateGroup: async (ids) => {
+                try {
+                    const color = randomGroupColor().val;
+                    const res = await api('/dm/conversations', { method: 'POST', body: { user_ids: ids, color } });
+                    await loadConversations({ blockingMeta: true });
+                    const cid = res.conversation_id || res.id;
+                    if (cid) { await fetchConvMeta(cid); openConversation(cid); }
+                } catch (e) { alert(e.detail || (e.message || e)); }
+            },
+            onEditGroup: async ({ add = [], remove = [] }) => {
+                try {
+                    await api(`/dm/conversations/${state.convId}/members`, {
+                        method: 'PATCH',
+                        body: { add_user_ids: add, remove_user_ids: remove }
+                    });
+                    await fetchConvMeta(state.convId);
+                    await loadConversations({ blockingMeta: true });
+                    maybeAutoRenameGroup();
+                } catch (e) { alert(e.detail || (e.message || e)); }
+            },
+            getConvContext: () => ({ isGroup: !!(state.currentConvDetail?.is_group), meId: state.meId }),
+            usernameFor: (id) => usernameFor(id),
+            DEFAULT_PFP_DM
+        });
+
+        // Buttons that open the picker
+        document.getElementById('btn-newdm')?.addEventListener('click', () => friendPicker.open('dm'));
+        document.getElementById('btn-newgroup')?.addEventListener('click', () => friendPicker.open('group-create'));
+        function closePicker() { try { friendPicker.close(); } catch { } } // startDmWith() calls this
+
+        // 3) 3-dots chat menu (top right)
+        const chatMenu = new ChatMenuUI({
+            menuEl: document.getElementById('chat-menu'),
+            buttonEl: document.getElementById('chat-menu-btn'),
+            getContext: () => ({
+                isGroup: !!(state.currentConvDetail?.is_group),
+                isOwner: !!(state.currentConvDetail?.is_owner)
+            }),
+            handlers: {
+                rename: async () => {
+                    const cur = state.convMeta.get(state.convId)?.name || '';
+                    const name = prompt('Group name:', cur);
+                    if (name == null) return;
+                    try {
+                        await api(`/dm/conversations/${state.convId}/title`, { method: 'PATCH', body: { title: name } });
+                        setConvMeta(state.convId, { name, auto_title: false });
+                    } catch (e) { alert(e.detail || (e.message || e)); }
+                },
+                manage: () => friendPicker.open('group-edit', {
+                    preselectIds: (state.currentConvDetail?.members || [])
+                        .filter(u => (u.id | 0) !== (state.meId | 0)).map(u => u.id)
+                }),
+                viewMembers: () => friendPicker.open('view-members', {
+                    preselectIds: (state.currentConvDetail?.members || [])
+                        .filter(u => (u.id | 0) !== (state.meId | 0)).map(u => u.id)
+                }),
+                restyle: () => restyle.show(),
+                myColor: () => myColor.show(),
+                leave: async () => {
+                    if (!confirm('Leave this group?')) return;
+                    try { await api(`/dm/conversations/${state.convId}/leave`, { method: 'POST' }); await loadConversations({ blockingMeta: true }); }
+                    catch (e) { alert(e.detail || (e.message || e)); }
+                },
+                deleteDm: async () => {
+                    if (!confirm('Delete this chat (for you)?')) return;
+                    try { await api(`/dm/conversations/${state.convId}`, { method: 'DELETE' }); await loadConversations({ blockingMeta: true }); }
+                    catch (e) { alert(e.detail || (e.message || e)); }
+                }
+            }
+        });
+        // updateTopBar() calls this:
+        function renderChatMenu() { try { chatMenu.render(); } catch { } }
+
+        // 4) “My Message Color” picker
+        const myColor = new MyColorOverlayUI({
+            syncColors: () => syncMsgColors(state.convId, { retry: 2 }),
+            getColorMap: () => getColorMap(state.convId),
+            setMyColor: (hexOrNull) => setMyMsgColor(state.convId, hexOrNull),
+            getContext: () => ({
+                meId: state.meId,
+                meName: state.meSlug || 'Me',
+                mePhoto: '', // you can plumb a real one if you have it
+                isGroup: !!(state.currentConvDetail?.is_group)
+            }),
+            DEFAULT_PFP_DM
+        });
+
+        // 5) “Restyle Group” overlay (color + icon)
+        const restyle = new RestyleGroupUI({
+            GROUP_COLORS,
+            DEFAULT_PFP_GROUP,
+            getMeta: () => {
+                const meta = state.convMeta.get(state.convId) || {};
+                return { isGroup: !!(state.currentConvDetail?.is_group), color: meta.color, photo: meta.photo };
+            },
+            onSave: async ({ color, iconBlob, useDefaultIcon }) => {
+                try {
+                    if (color) {
+                        await api(`/dm/conversations/${state.convId}/color`, { method: 'PATCH', body: { color } });
+                        setConvMeta(state.convId, { color });
+                    }
+                    if (useDefaultIcon) {
+                        await api(`/dm/conversations/${state.convId}/icon`, { method: 'DELETE' });
+                        setConvMeta(state.convId, { photo: DEFAULT_PFP_GROUP });
+                    } else if (iconBlob) {
+                        const fd = new FormData(); fd.append('icon', iconBlob, 'icon.png');
+                        const r = await fetch(`${API}/dm/conversations/${state.convId}/icon`, {
+                            method: 'POST', credentials: 'include', body: fd
+                        });
+                        if (!r.ok) throw new Error(await r.text());
+                        // optimistic local swap; server will also push conv_meta
+                        const ts = Date.now();
+                        setConvMeta(state.convId, { photo: `${API}/dm/conversations/${state.convId}/icon?ts=${ts}` });
+                    }
+                } catch (e) { alert(e.detail || (e.message || e)); }
+            }
+        });
     })();
 </script>
 
