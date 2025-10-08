@@ -482,13 +482,38 @@ function ensureDMTables() {
     db.exec(`
     PRAGMA foreign_keys=ON;
 
+    CREATE TABLE IF NOT EXISTS dm_hidden (
+      user_id            INTEGER NOT NULL,
+      conversation_id    INTEGER NOT NULL,
+      last_hidden_msg_id INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(user_id, conversation_id),
+      FOREIGN KEY(user_id)         REFERENCES users(id)             ON DELETE CASCADE,
+      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id)  ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_hidden_conv ON dm_hidden(conversation_id);
+
+    -- Prevent re-adding a user to a group they’ve blocked
+    CREATE TABLE IF NOT EXISTS dm_conv_blocks (
+      user_id         INTEGER NOT NULL,
+      conversation_id INTEGER NOT NULL,
+      created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id, conversation_id),
+      FOREIGN KEY(user_id)         REFERENCES users(id)             ON DELETE CASCADE,
+      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id)  ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS dm_conversations (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       is_group     INTEGER NOT NULL DEFAULT 0,
       title        TEXT,
       owner_id     INTEGER,
-      color        TEXT,                         -- NEW
+      color        TEXT,
       deleted_at   TEXT,
+      -- NEW policy toggles (defaults apply to NEW conversations)
+      message_delete_enabled     INTEGER NOT NULL DEFAULT 1,
+      message_delete_window_sec  INTEGER,
+      reactions_enabled          INTEGER NOT NULL DEFAULT 1,
+      reactions_mode             TEXT NOT NULL DEFAULT 'both', -- 'emoji'|'custom'|'both'
       created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE SET NULL
     );
@@ -518,6 +543,12 @@ function ensureDMTables() {
       kind            TEXT NOT NULL DEFAULT 'text',
       body_cipher     BLOB,
       body_nonce      BLOB,
+      -- NEW snapshots & soft-delete
+      deleted_at          TEXT,
+      deletable           INTEGER NOT NULL DEFAULT 0,
+      delete_deadline_at  TEXT,
+      reactable           INTEGER NOT NULL DEFAULT 0,
+      reaction_mode_at_send TEXT,
       created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
       FOREIGN KEY(sender_id)       REFERENCES users(id)            ON DELETE CASCADE
@@ -539,7 +570,7 @@ function ensureDMTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_dm_attachments_msg_id ON dm_attachments(message_id);
 
-    -- NEW: encrypted per-group icon
+    -- Encrypted per-group icon
     CREATE TABLE IF NOT EXISTS dm_group_icons (
       conversation_id INTEGER PRIMARY KEY,
       mime_type       TEXT NOT NULL,
@@ -567,27 +598,9 @@ function ensureDMTables() {
       FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
       FOREIGN KEY(user_id)         REFERENCES users(id)            ON DELETE CASCADE
     );
-    CREATE TABLE IF NOT EXISTS dm_hidden (
-      user_id            INTEGER NOT NULL,
-      conversation_id    INTEGER NOT NULL,
-      last_hidden_msg_id INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY(user_id, conversation_id),
-      FOREIGN KEY(user_id)         REFERENCES users(id)             ON DELETE CASCADE,
-      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id)  ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_dm_hidden_conv ON dm_hidden(conversation_id);
-
-    CREATE TABLE IF NOT EXISTS dm_conv_blocks (
-      user_id         INTEGER NOT NULL,
-      conversation_id INTEGER NOT NULL,
-      created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY(user_id, conversation_id),
-      FOREIGN KEY(user_id)         REFERENCES users(id)             ON DELETE CASCADE,
-      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id)  ON DELETE CASCADE
-    );
-
     CREATE INDEX IF NOT EXISTS idx_dm_msgcolors_conv ON dm_message_colors(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_dm_msgcolors_user ON dm_message_colors(user_id);
+
     DROP TRIGGER IF EXISTS trg_dm_message_colors_updated_at;
     CREATE TRIGGER trg_dm_message_colors_updated_at
     AFTER UPDATE ON dm_message_colors
@@ -595,15 +608,144 @@ function ensureDMTables() {
       UPDATE dm_message_colors SET updated_at = CURRENT_TIMESTAMP
       WHERE conversation_id = NEW.conversation_id AND user_id = NEW.user_id;
     END;
+
+    /* ---------- NEW: read/received cursors for receipts bar ---------- */
+    CREATE TABLE IF NOT EXISTS dm_read_states (
+      conversation_id      INTEGER NOT NULL,
+      user_id              INTEGER NOT NULL,
+      last_received_msg_id INTEGER NOT NULL DEFAULT 0,
+      last_read_msg_id     INTEGER NOT NULL DEFAULT 0,
+      updated_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(conversation_id, user_id),
+      FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE,
+      FOREIGN KEY(user_id)         REFERENCES users(id)            ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_read_states_conv ON dm_read_states(conversation_id);
+
+    DROP TRIGGER IF EXISTS trg_dm_read_states_touch;
+    CREATE TRIGGER trg_dm_read_states_touch
+    AFTER UPDATE ON dm_read_states
+    FOR EACH ROW BEGIN
+      UPDATE dm_read_states SET updated_at = CURRENT_TIMESTAMP
+      WHERE conversation_id = NEW.conversation_id AND user_id = NEW.user_id;
+    END;
+
+    /* ---------- NEW: stacked reactions ---------- */
+    CREATE TABLE IF NOT EXISTS custom_emojis (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT,
+      slug          TEXT UNIQUE,
+      owner_user_id INTEGER,
+      mime_type     TEXT,
+      filepath      TEXT NOT NULL,  -- server path to sprite/image
+      width         INTEGER,
+      height        INTEGER,
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(owner_user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_custom_emojis_owner ON custom_emojis(owner_user_id);
+    CREATE INDEX IF NOT EXISTS idx_custom_emojis_name  ON custom_emojis(name);
+
+    CREATE TABLE IF NOT EXISTS user_custom_emojis (
+      user_id   INTEGER NOT NULL,
+      emoji_id  INTEGER NOT NULL,
+      added_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id, emoji_id),
+      FOREIGN KEY(user_id)  REFERENCES users(id)         ON DELETE CASCADE,
+      FOREIGN KEY(emoji_id) REFERENCES custom_emojis(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_custom_emojis_user ON user_custom_emojis(user_id);
+
+    CREATE TABLE IF NOT EXISTS user_recent_reactions (
+      user_id      INTEGER NOT NULL,
+      reaction_key TEXT NOT NULL, -- 'u:<unicode>' or 'c:<custom_id>'
+      last_used_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id, reaction_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_recent_reactions_time
+      ON user_recent_reactions(user_id, last_used_at DESC);
+
+    CREATE TABLE IF NOT EXISTS dm_message_reactions (
+      message_id       INTEGER NOT NULL,
+      user_id          INTEGER NOT NULL,
+      kind             TEXT NOT NULL,          -- 'emoji' | 'custom'
+      reaction_key     TEXT NOT NULL,          -- normalized key: 'u:<unicode>' or 'c:<id>'
+      unicode          TEXT,                   -- when kind='emoji'
+      custom_emoji_id  INTEGER,                -- when kind='custom'
+      created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (message_id, user_id, reaction_key),
+      FOREIGN KEY(message_id)      REFERENCES dm_messages(id)      ON DELETE CASCADE,
+      FOREIGN KEY(user_id)         REFERENCES users(id)            ON DELETE CASCADE,
+      FOREIGN KEY(custom_emoji_id) REFERENCES custom_emojis(id)    ON DELETE SET NULL,
+      CHECK (kind IN ('emoji','custom'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_reactions_msg_key ON dm_message_reactions(message_id, reaction_key);
+    CREATE INDEX IF NOT EXISTS idx_dm_reactions_msg     ON dm_message_reactions(message_id);
+    CREATE INDEX IF NOT EXISTS idx_dm_reactions_user    ON dm_message_reactions(user_id);
+
+    CREATE TABLE IF NOT EXISTS dm_settings (
+      conversation_id           INTEGER PRIMARY KEY
+        REFERENCES dm_conversations(id) ON DELETE CASCADE,
+      allow_delete              INTEGER NOT NULL DEFAULT 0,
+      delete_window_sec         INTEGER,
+      delete_effective_from     TEXT,
+      reactable                 INTEGER NOT NULL DEFAULT 1,
+      reaction_mode             TEXT NOT NULL DEFAULT 'both', -- 'none'|'emoji'|'custom'|'both'
+      reactions_effective_from  TEXT,
+      receipts_enabled          INTEGER NOT NULL DEFAULT 1,
+      updated_at                TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    INSERT OR IGNORE INTO dm_settings
+      (conversation_id, allow_delete, delete_window_sec, reactable, reaction_mode, receipts_enabled)
+    SELECT
+      id,
+      COALESCE(message_delete_enabled, 0),
+      message_delete_window_sec,
+      COALESCE(reactions_enabled, 1),
+      COALESCE(reactions_mode, 'both'),
+      1
+    FROM dm_conversations;
+
+    DROP VIEW IF EXISTS dm_message_reaction_counts;
+    CREATE VIEW dm_message_reaction_counts AS
+      SELECT
+        message_id,
+        reaction_key,
+        MIN(kind)           AS kind,
+        MAX(unicode)        AS unicode,
+        MAX(custom_emoji_id)AS custom_emoji_id,
+        COUNT(*)            AS count,
+        MAX(created_at)     AS last_used_at
+      FROM dm_message_reactions
+      GROUP BY message_id, reaction_key;
   `);
 
-    // safety columns
+    /* safety columns for existing installs */
     addColumnIfMissing('dm_conversations', `owner_id INTEGER`);
     addColumnIfMissing('dm_conversations', `deleted_at TEXT`);
     addColumnIfMissing('dm_conversations', `color TEXT`);
+    addColumnIfMissing('dm_conversations', `message_delete_enabled INTEGER NOT NULL DEFAULT 1`);
+    addColumnIfMissing('dm_conversations', `message_delete_window_sec INTEGER`);
+    addColumnIfMissing('dm_conversations', `reactions_enabled INTEGER NOT NULL DEFAULT 1`);
+    addColumnIfMissing('dm_conversations', `reactions_mode TEXT NOT NULL DEFAULT 'both'`);
+
     addColumnIfMissing('dm_attachments', `duration_ms INTEGER`);
 
-    // backfill owner for old groups
+    addColumnIfMissing('dm_messages', `deleted_at TEXT`);
+    addColumnIfMissing('dm_messages', `deletable INTEGER NOT NULL DEFAULT 0`);
+    addColumnIfMissing('dm_messages', `delete_deadline_at TEXT`);
+    addColumnIfMissing('dm_messages', `reactable INTEGER NOT NULL DEFAULT 0`);
+    addColumnIfMissing('dm_messages', `reaction_mode_at_send TEXT`);
+
+    try {
+        const cols = colNames('dm_messages');
+        if (cols.includes('deleted_at')) {
+            db.exec(`CREATE INDEX IF NOT EXISTS idx_dm_messages_deleted
+             ON dm_messages(conversation_id, deleted_at)`);
+        }
+    } catch { /* ignore */ }
+    /* backfill owner for old groups */
     try {
         db.exec(`
       UPDATE dm_conversations

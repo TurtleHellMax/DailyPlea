@@ -15,10 +15,13 @@ const { requireAuth } = require('./routes-auth');
 const dm = require('./routes-dm');
 
 const WEB_ROOT = path.join(__dirname, '..'); // repo root
+const UPLOADS_ROOT = path.join(__dirname, 'uploads');
+const EMOJI_DIR = path.join(UPLOADS_ROOT, 'custom-emojis');
+try { fs.mkdirSync(EMOJI_DIR, { recursive: true }); } catch { }
+
 migrate();
 
 const app = express();
-
 app.set('trust proxy', true);
 
 /* ---------------- helpers ---------------- */
@@ -38,12 +41,13 @@ function listRoutes(app) {
     return out;
 }
 
-/* ---------------- middleware ---------------- */
+/* ---------------- dev helpers ---------------- */
 if (process.env.NODE_ENV !== 'production') {
     app.get('/api/_routes', (req, res) => res.json(listRoutes(app)));
     try { app.use('/api/dev', require('./routes-dev').router); } catch { }
 }
 
+/* ---------------- static (site root) ---------------- */
 app.use(express.static(WEB_ROOT, {
     setHeaders(res, filePath) {
         if (filePath.endsWith('.js')) res.type('application/javascript; charset=utf-8');
@@ -51,21 +55,25 @@ app.use(express.static(WEB_ROOT, {
     }
 }));
 
+/* ---------------- security headers ---------------- */
 app.use(helmet({
     contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
-    crossOriginEmbedderPolicy: false,
+    crossOriginEmbedderPolicy: false, // we set COEP/COOP manually below
 }));
 
+/* ---------------- parsers ---------------- */
 app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+/* ---------------- CORS ---------------- */
 app.use(cors({
     origin: ['http://localhost:5500', 'http://127.0.0.1:5500'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-User-Id', 'Range'],
-    exposedHeaders: ['X-Audio-Duration-Ms', 'Accept-Ranges', 'Content-Range']
+    exposedHeaders: ['X-Audio-Duration-Ms', 'Accept-Ranges', 'Content-Range'],
 }));
 
 /* ---------------- base info ---------------- */
@@ -94,21 +102,27 @@ app.get('/api', (req, res) => {
     });
 });
 
-/* ---------------- DM router BEFORE CSRF (multipart form doesn’t send CSRF) ---------------- */
+/* ---------------- DM router BEFORE CSRF (multipart forms) ---------------- */
 app.use('/api', dm.router);
 
-/* ---------------- CSRF ---------------- */
+/* ---------------- CSRF (double-submit cookie) ---------------- */
 app.use((req, res, next) => {
+    // Set COOP/COEP here; keep COEP strict, since we serve our own assets
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
-    next();
-});
-// keep CSRF check as a separate middleware *after* that:
-app.use((req, res, next) => {
+
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
     const cookieToken = req.cookies.csrf;
     const headerToken = req.get('x-csrf-token');
-    if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+    const ok = cookieToken && headerToken && cookieToken === headerToken;
+    if (!ok) {
+        console.warn('[csrf] BLOCKED', {
+            path: req.path,
+            method: req.method,
+            hasCookie: !!cookieToken,
+            hasHeader: !!headerToken,
+            match: (cookieToken && headerToken) ? (cookieToken === headerToken) : false
+        });
         return res.status(403).json({ error: 'csrf' });
     }
     next();
@@ -117,15 +131,14 @@ app.use((req, res, next) => {
 app.get('/api/csrf', (req, res) => {
     const t = issueCsrfToken();
     res.cookie('csrf', t, {
-        httpOnly: false,          // double-submit requires readable cookie
-        sameSite: 'strict',       // or 'lax' if you must
-        secure: true              // set true in HTTPS prod
+        httpOnly: false,   // readable by client for double-submit
+        sameSite: 'strict',
+        secure: true       // set true in HTTPS prod
     });
     res.json({ token: t });
 });
 
-/* ---------------- rate limit ---------------- */
-app.set('trust proxy', true);
+/* ---------------- rate limit (auth endpoints) ---------------- */
 const authLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
     max: 100,
@@ -153,69 +166,40 @@ app.use('/api', require('./routes-users').router);
 app.use('/api', require('./routes-friends').router);
 app.use('/api/admin', require('./routes-admin').router);
 
+/* Serve custom emojis at the path emitted by publicEmojiURL('/media/custom-emojis/...') */
+app.use('/media/custom-emojis', express.static(EMOJI_DIR, {
+    setHeaders: (res, p) => {
+        const mt = mimeTypes.lookup(p) || 'application/octet-stream';
+        res.setHeader('Content-Type', mt);
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+}));
+
 /* ---------------- pretty routes for web shells ---------------- */
 app.get('/pleas/:id', (req, res, next) => {
     const f = path.join(WEB_ROOT, 'pleas', `${req.params.id}.html`);
     res.sendFile(f, err => err ? next() : undefined);
 });
-
 app.get('/user/:slug/friends', (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     const f = path.join(WEB_ROOT, 'web', 'user-friends.html');
     res.sendFile(f, err => err ? next() : undefined);
 });
-
 app.get('/user/:slug/edit', (req, res, next) => {
     const f = path.join(WEB_ROOT, 'web', 'user.html');
     res.sendFile(f, err => err ? next() : undefined);
 });
-
 app.get('/user/:slug/messages', (req, res, next) => {
     const f = path.join(WEB_ROOT, 'web', 'messages.html');
     res.sendFile(f, err => err ? next() : undefined);
 });
-
 app.get('/user/:slug', (req, res, next) => {
     const f = path.join(WEB_ROOT, 'web', 'user-view.html');
     res.sendFile(f, err => err ? next() : undefined);
 });
 
-app.get('/api/dm/attachments/:id/download', (req, res) => {
-    const row = db.prepare(
-        'SELECT filepath AS path, filename, mime_type FROM attachments WHERE id=? LIMIT 1'
-    ).get(req.params.id);
-    if (!row) return res.sendStatus(404);
-
-    const filePath = path.resolve(row.path);
-    const stat = fs.statSync(filePath);
-    const range = req.headers.range;
-    const mime = row.mime_type || mimeTypes.lookup(row.filename) || 'application/octet-stream';
-
-    if (range) {
-        const [s, e] = range.replace(/bytes=/, '').split('-');
-        const start = parseInt(s, 10);
-        const end = e ? parseInt(e, 10) : stat.size - 1;
-        res.status(206).set({
-            'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-            'Accept-Ranges': 'bytes',
-            'Content-Length': (end - start + 1),
-            'Content-Type': mime
-        });
-        fs.createReadStream(filePath, { start, end }).pipe(res);
-    } else {
-        res.set({
-            'Accept-Ranges': 'bytes',
-            'Content-Length': stat.size,
-            'Content-Type': mime
-        });
-        fs.createReadStream(filePath).pipe(res);
-    }
-});
-
-
 /* ---------------- helper to create or reuse a 1:1 DM ----------------
-   This proxies to POST /api/dm/conversations so keys get created the same way.
-   NOTE: routes-dm already exposes POST /api/dm/with/:slug; this remains for compatibility. */
+   Proxies to POST /api/dm/conversations so keys get created the same way. */
 app.post('/api/dm/with/:slug', requireAuth, (req, res, next) => {
     const slug = String(req.params.slug || '');
     const other = db.prepare(
@@ -224,7 +208,7 @@ app.post('/api/dm/with/:slug', requireAuth, (req, res, next) => {
     if (!other) return res.status(404).json({ error: 'user_not_found' });
     if (other.id === req.userId) return res.status(400).json({ error: 'self' });
 
-    // Reuse the DM router’s /dm/conversations handler so conv key is created
+    // Reuse the DM router’s handler
     req.body = { user_ids: [req.userId, other.id] };
     req.url = '/dm/conversations';
     req.method = 'POST';
@@ -232,7 +216,6 @@ app.post('/api/dm/with/:slug', requireAuth, (req, res, next) => {
 });
 
 /* ---------------- background maintenance ---------------- */
-/** Purge disbanded groups after 30 days. Safe to run frequently. */
 function sweepDeletedGroups() {
     try {
         const r = db.prepare(
@@ -243,7 +226,6 @@ function sweepDeletedGroups() {
         console.warn('[dm] sweepDeletedGroups error:', e?.message || e);
     }
 }
-// Run once on boot and then every 6 hours
 sweepDeletedGroups();
 setInterval(sweepDeletedGroups, 6 * 60 * 60 * 1000);
 
