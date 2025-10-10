@@ -347,7 +347,117 @@
 
     // Message row bubble menu (downloads)
     function closeAllBubbleMenus() {
-        document.querySelectorAll('.bubble-menu').forEach(el => el.style.display = 'none');
+        document.querySelectorAll('.bubble-menu').forEach(el => {
+            el.dataset.open = '0';           // <-- mark closed
+            el.style.display = 'none';
+            el._detachReposition?.();
+            portalClose(el, 'bubble-menu--portal');
+        });
+        const rx = document.getElementById('rx-fallback-pop');
+        if (rx) {
+            rx._detachReposition?.();
+            portalClose(rx, 'rx-pop--portal');
+            rx.remove();
+        }
+        document.querySelectorAll('.msg.menu-open').forEach(el => el.classList.remove('menu-open'));
+        document.querySelectorAll('.msg.rx-open').forEach(el => el.classList.remove('rx-open'));
+    }
+
+    function portalOpen(el, portalClass) {
+        if (el._portaled) return;
+        el._portaled = { parent: el.parentNode || null, next: el.nextSibling || null };
+        document.body.appendChild(el);
+        if (portalClass) el.classList.add(portalClass);
+    }
+
+    function portalClose(el, portalClass) {
+        const p = el && el._portaled;
+        if (!p) return;
+        try {
+            if (p.parent && p.parent.isConnected) {
+                if (p.next && p.next.parentNode === p.parent) p.parent.insertBefore(el, p.next);
+                else p.parent.appendChild(el);
+            } else {
+                // original parent gone (virtualization / rerender) — just remove safely
+                if (el.parentNode) el.parentNode.removeChild(el);
+            }
+        } finally {
+            el._portaled = null;
+            if (portalClass) el.classList.remove(portalClass);
+        }
+    }
+
+    /* Hard guard: never overlap the left column */
+    function leftPanelGuard() {
+        const left = document.querySelector('.left');
+        if (!left) return 8;
+        const r = left.getBoundingClientRect();
+        return Math.max(8, Math.round(r.right) + 8);
+    }
+
+    /* Soft guard: keep inside the messages viewport (no covering header/composer) */
+    function msgsGuardRect() {
+        const msgs = document.getElementById('msgs');
+        const vw = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
+        const vh = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
+
+        if (!msgs) {
+            const minL = leftPanelGuard();
+            return { top: 8, left: minL, right: vw - 8, bottom: vh - 8 };
+        }
+
+        const r = msgs.getBoundingClientRect();
+        const minL = Math.max(leftPanelGuard(), r.left + 8);
+        return {
+            top: Math.max(8, r.top + 8),
+            bottom: Math.min(vh - 8, r.bottom - 8),
+            left: minL,
+            right: Math.min(vw - 8, r.right - 8)
+        };
+    }
+
+    function positionUnderAnchor(anchorBtn, popEl) {
+        if (popEl.dataset.open !== '1') return; // <-- hard stop if not open
+
+        // make measurable (safe to set because we know it's open)
+        const prevDisp = popEl.style.display;
+        const prevVis = popEl.style.visibility;
+        popEl.style.position = 'fixed';
+        popEl.style.display = 'block';
+        popEl.style.visibility = 'hidden';
+
+        const a = anchorBtn.getBoundingClientRect();
+        const g = msgsGuardRect();
+        const mw = popEl.offsetWidth || 220;
+        const mh = popEl.offsetHeight || 120;
+
+        let top = a.bottom + 8;
+        if (top + mh > g.bottom) top = Math.max(g.top, g.bottom - mh);
+
+        let left = a.right - mw;      // prefer below-left
+        if (left < g.left) left = a.left; // flip to below-right if needed
+        left = Math.max(g.left, Math.min(g.right - mw, left));
+
+        popEl.style.left = Math.round(left) + 'px';
+        popEl.style.top = Math.round(top) + 'px';
+        popEl.style.visibility = 'visible';
+    }
+
+    function bindReposition(popEl, anchorBtn) {
+        const fn = () => {
+            if (popEl.dataset.open !== '1') return;  // <-- ignore when closed
+            positionUnderAnchor(anchorBtn, popEl);
+        };
+        const msgs = document.getElementById('msgs');
+        window.addEventListener('resize', fn, { passive: true });
+        window.addEventListener('scroll', fn, { passive: true, capture: true });
+        msgs && msgs.addEventListener('scroll', fn, { passive: true });
+        popEl._detachReposition = () => {
+            window.removeEventListener('resize', fn, { passive: true });
+            window.removeEventListener('scroll', fn, { passive: true, capture: true });
+            msgs && msgs.removeEventListener('scroll', fn, { passive: true });
+            popEl._detachReposition = null;
+        };
     }
 
     function _coalesce() { for (let i = 0; i < arguments.length; i++) { const v = arguments[i]; if (v !== undefined && v !== null) return v; } return undefined; }
@@ -376,12 +486,11 @@
         let { reactionsEnabled, deletionEnabled, windowSec } = getPolicyForCurrentConv();
         const policyUnknown = (deletionEnabled == null);
 
-        // default reactions to true if policy is not yet known
         if (reactionsEnabled == null) reactionsEnabled = true;
 
-        // Convo meta + message timestamp for “effective from” checks
         const meta = state.convMeta.get(state.convId) || {};
         const tsSec = root.dataset.ts ? (+root.dataset.ts || null) : null;
+
         let rxEnabled = (typeof message.reactable === 'boolean') ? message.reactable
             : (reactionsEnabled == null ? true : !!reactionsEnabled);
         if (rxEnabled && meta.reactions_effective_from_ts && tsSec) {
@@ -405,15 +514,33 @@
         if (effFromTs && message.created_at) {
             effectiveOk = new Date(message.created_at).getTime() >= effFromTs;
         }
+
         const deletable = (policyUnknown
             ? (baseDeletable && deadlineOk)             // optimistic until settings arrive
             : (deletionEnabled && baseDeletable && deadlineOk && effectiveOk));
 
-        // hover pad
+        // --- FULL-WIDTH HOVER PAD (keeps hover active along the whole row) ---
         let pad = root.querySelector(':scope > .hover-pad');
-        if (!pad) { pad = document.createElement('div'); pad.className = 'hover-pad'; root.appendChild(pad); }
+        if (!pad) {
+            pad = document.createElement('div');
+            pad.className = 'hover-pad';
+            Object.assign(pad.style, {
+                position: 'absolute',
+                top: '0', bottom: '0',
+                left: '-100vw', right: '-100vw',
+                background: 'transparent',
+                pointerEvents: 'auto',   // <— ensure vertical/row hover works
+                zIndex: '0'
+            });
+            root.appendChild(pad);
+        } else {
+            // force the vertical hover behavior even if global CSS conflicts
+            pad.style.pointerEvents = 'auto';
+            pad.style.left = '-100vw';
+            pad.style.right = '-100vw';
+        }
 
-        // vertical rail
+        // --- vertical rail ---
         let actions = root.querySelector(':scope > .msg-actions');
         if (!actions) {
             actions = document.createElement('div');
@@ -424,36 +551,28 @@
             actions.innerHTML = '';
         }
 
-        const hasMenuItems = !!(atts.length || deletable);
+        const hasMenuItems = (atts.length > 0) || deletable;
 
-        // show ⋮ only when there are items
-        const dotsBtn = document.createElement('button');
-        dotsBtn.type = 'button';
-        dotsBtn.className = 'bubble-menu-btn';
-        dotsBtn.textContent = '⋮';
-        actions.appendChild(dotsBtn);
-        if (!hasMenuItems) { dotsBtn.style.opacity = '.55'; dotsBtn.title = 'No actions'; }
-
-        // 🙂 under ⋮
-        if (canReact) {
-            const rbtn = document.createElement('button');
-            rbtn.type = 'button';
-            rbtn.className = 'react-btn';
-            rbtn.setAttribute('aria-label', 'React');
-            rbtn.textContent = '🙂';
-            rbtn.onclick = (e) => {
-                e.stopPropagation();
-                const wrap = rbtn.closest('.msg');
-                wrap && wrap.classList.add('rx-open');   // hide ⋮ while picker open
-                window.MessagesApp.reactions?.openPicker?.(rbtn, message);
-            };
-            actions.appendChild(rbtn);
+        // Nothing to show at all? Remove the rail and bail.
+        if (!canReact && !hasMenuItems) {
+            actions.remove();
+            return;
         }
 
-        // dropdown (only download/delete)
-        const menu = document.createElement('div');
-        menu.className = 'bubble-menu';
+        // ===== ORDER: ⋮ ON TOP, 🙂 UNDERNEATH =====
+
+        // 1) ⋮ only when there’s something to do
+        let menu = null;
         if (hasMenuItems) {
+            const dotsBtn = document.createElement('button');
+            dotsBtn.type = 'button';
+            dotsBtn.className = 'bubble-menu-btn';
+            dotsBtn.textContent = '⋮';
+            actions.appendChild(dotsBtn); // <— appended FIRST so it's above the reaction button
+
+            menu = document.createElement('div');
+            menu.className = 'bubble-menu';
+
             const parts = [];
             if (atts.length) {
                 parts.push(...atts.map(a => {
@@ -466,52 +585,82 @@
                 parts.push(`<div class="item"><a href="#" class="msg-del-link">Delete message</a></div>`);
             }
             menu.innerHTML = parts.join('');
-        }
-        actions.appendChild(menu);
+            actions.appendChild(menu);
 
-        // click ⋮ → only toggle if there are items
-        dotsBtn.addEventListener('click', e => {
-            e.stopPropagation();
-            if (!hasMenuItems) return;           // clickable, but no-op without items
-            const open = menu.style.display === 'block';
-            closeAllBubbleMenus();
-            menu.style.display = open ? 'none' : 'block';
-            root.classList.toggle('menu-open', !open); // hide 🙂 while menu open
-        });
+            // Toggle menu
+            dotsBtn.addEventListener('click', e => {
+                e.stopPropagation();
+                if (!hasMenuItems) return;
 
-        // downloads fixer
-        menu.querySelectorAll('a[download]').forEach(a => {
-            const href = a.getAttribute('href') || '';
-            const name = a.getAttribute('download') || 'attachment';
-            window.MessagesApp.attachments?.fixDownloadLink?.(a, href, name, undefined);
-        });
+                const isOpen = menu.style.display === 'block';
+                closeAllBubbleMenus();
 
-        // delete
-        const delLink = menu.querySelector('.msg-del-link');
-        if (delLink) {
-            delLink.addEventListener('click', async (e) => {
-                e.preventDefault(); e.stopPropagation();
-                menu.style.display = 'none';
-                root.classList.remove('menu-open');
-                try {
-                    await window.MessagesApp.api.api(`/dm/messages/${message.id}`, { method: 'DELETE' });
-                    const meta = root.querySelector(':scope > .meta');
-                    root.classList.add('deleted');
-                    root.innerHTML = `<div class="sysmsg-inner">Message deleted</div>`;
-                    if (meta) root.appendChild(meta);
-                } catch (err) {
-                    alert(window.MessagesApp.utils.errMsg(err));
+                if (isOpen) {
+                    menu.dataset.open = '0';
+                    menu.style.display = 'none';
+                    root.classList.remove('menu-open');
+                    menu._detachReposition && menu._detachReposition();
+                    portalClose(menu, 'bubble-menu--portal');
+                    return;
                 }
+
+                portalOpen(menu, 'bubble-menu--portal');
+                menu.dataset.open = '1';
+                menu.style.display = 'block';
+                root.classList.add('menu-open');
+                positionUnderAnchor(dotsBtn, menu);
+                bindReposition(menu, dotsBtn);
             });
+
+            // Fix downloads
+            menu.querySelectorAll('a[download]').forEach(a => {
+                const href = a.getAttribute('href') || '';
+                const name = a.getAttribute('download') || 'attachment';
+                window.MessagesApp.attachments?.fixDownloadLink?.(a, href, name, undefined);
+            });
+
+            // Delete handler
+            const delLink = menu.querySelector('.msg-del-link');
+            if (delLink) {
+                delLink.addEventListener('click', async (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    menu.style.display = 'none';
+                    root.classList.remove('menu-open');
+                    try {
+                        await window.MessagesApp.api.api(`/dm/messages/${message.id}`, { method: 'DELETE' });
+                        const metaEl = root.querySelector(':scope > .meta');
+                        root.classList.add('deleted');
+                        root.innerHTML = `<div class="sysmsg-inner">Message deleted</div>`;
+                        if (metaEl) root.appendChild(metaEl);
+                    } catch (err) {
+                        alert(window.MessagesApp.utils.errMsg(err));
+                    }
+                });
+            }
+        }
+
+        // 2) 🙂 reaction button (only when allowed)
+        if (canReact) {
+            const rbtn = document.createElement('button');
+            rbtn.type = 'button';
+            rbtn.className = 'react-btn';
+            rbtn.setAttribute('aria-label', 'React');
+            rbtn.textContent = '🙂';
+            rbtn.onclick = (e) => {
+                e.stopPropagation();
+                root.classList.add('rx-open');   // hides ⋮ via CSS while picker open
+                window.MessagesApp.reactions?.openPicker?.(rbtn, message);
+            };
+            actions.appendChild(rbtn); // <— appended SECOND so it sits below the dots
         }
     }
 
     // Close bubble menus on outside click
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.bubble-menu') && !e.target.closest('.bubble-menu-btn')) {
-            document.querySelectorAll('.bubble-menu').forEach(el => el.style.display = 'none');
-            document.querySelectorAll('.msg.menu-open').forEach(el => el.classList.remove('menu-open'));
-        }
+        const inBubble = e.target.closest('.bubble-menu') || e.target.closest('.bubble-menu-btn');
+        const inRx = e.target.closest('#rx-fallback-pop') || e.target.closest('.react-btn');
+        if (inBubble || inRx) return;   // don't auto-close on react open or clicks inside picker
+        closeAllBubbleMenus();
     });
 
     (function installMsgHoverWiring() {
@@ -942,30 +1091,81 @@
         class SimpleReactionPickerUI {
             constructor(opts) { this.opts = opts || {}; }
             open(msgId, anchorEl) {
-                const old = document.getElementById('rx-fallback-pop'); if (old) old.remove();
-                const pop = document.createElement('div'); pop.id = 'rx-fallback-pop';
+                // nuke any existing popup cleanly
+                const old = document.getElementById('rx-fallback-pop');
+                if (old) {
+                    old._detachReposition?.();
+                    portalClose(old, 'rx-pop--portal');
+                    old.remove();
+                }
+
+                const pop = document.createElement('div');
+                pop.id = 'rx-fallback-pop';
+                pop.className = 'rx-pop--portal';
+
+                // grid content
+                pop.style.display = 'grid';
+                pop.style.gridTemplateColumns = 'repeat(6, 28px)';
+                pop.style.gap = '6px';
+                pop.style.padding = '6px';
+
+                // NEW: make it look/behave like the 3-dots menu and satisfy the position guards
+                pop.dataset.open = '1';
+                Object.assign(pop.style, {
+                    position: 'fixed',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--border)',
+                    boxShadow: '0 8px 18px rgba(0,0,0,.35)',
+                    borderRadius: '.4rem',
+                    zIndex: '3000',
+                });
+
                 const EMO = ['👍', '❤️', '😂', '😮', '😢', '😡', '🎉', '🙏', '🔥', '👏', '👌', '🤝'];
                 EMO.forEach(u => {
-                    const b = document.createElement('button'); b.type = 'button'; b.className = 'rx-emo'; b.textContent = u;
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'rx-emo';
+                    b.textContent = u;
+                    b.style.cssText = 'border:1px solid var(--border);background:var(--panel);width:28px;height:28px;border-radius:.35rem;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;';
                     b.onclick = async (e) => {
                         e.stopPropagation();
                         try {
                             await this.opts.toggleReaction?.(msgId, { kind: 'emoji', unicode: u });
                             this.onPicked && this.onPicked({ kind: 'emoji', unicode: u });
-                        } finally { pop.remove(); }
+                        } finally {
+                            cleanup();
+                        }
                     };
                     pop.appendChild(b);
                 });
-                // position near anchor
-                const rect = anchorEl?.getBoundingClientRect?.() || { left: 30, bottom: 30 };
-                pop.style.left = Math.max(6, Math.min(window.innerWidth - 200, rect.left)) + 'px';
-                pop.style.top = Math.min(window.innerHeight - 60, (rect.bottom + 6)) + 'px';
-                document.body.appendChild(pop);
-                // outside click to close
-                setTimeout(() => {
-                    const close = (ev) => { if (!pop.contains(ev.target)) { pop.remove(); this.onClosed && this.onClosed(); document.removeEventListener('click', close); } };
-                    document.addEventListener('click', close);
-                }, 0);
+
+                // portal + position like the 3-dots menu
+                portalOpen(pop, 'rx-pop--portal');
+                positionUnderAnchor(anchorEl || document.body, pop);
+                bindReposition(pop, anchorEl || document.body);
+
+                // keep reference to the row to clear .rx-open on close
+                const row = anchorEl?.closest?.('.msg') || null;
+
+                const onDocClick = (ev) => {
+                    if (!pop.contains(ev.target)) cleanup();
+                };
+                const onKey = (ev) => {
+                    if (ev.key === 'Escape') cleanup();
+                };
+
+                const cleanup = () => {
+                    document.removeEventListener('click', onDocClick, true);
+                    window.removeEventListener('keydown', onKey, true);
+                    pop.dataset.open = '0';                 // <-- mark closed
+                    pop._detachReposition?.();
+                    portalClose(pop, 'rx-pop--portal');
+                    pop.remove();
+                    row && row.classList.remove('rx-open');
+                };
+
+                setTimeout(() => document.addEventListener('click', onDocClick, true), 0);
+                window.addEventListener('keydown', onKey, true);
             }
         }
 
