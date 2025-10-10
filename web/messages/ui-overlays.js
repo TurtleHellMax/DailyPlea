@@ -1,4 +1,3 @@
-
 (function (global) {
     window.MessagesApp = window.MessagesApp || {};
     window.MessagesApp.useNativeMsgRail = true;
@@ -304,7 +303,7 @@
     }
 
     /* ===========================
-       Chat Menu (3-dots)
+       Chat Menu (3-dots) + old items merged
        =========================== */
     class ChatMenuUI {
         /**
@@ -324,8 +323,10 @@
         _wire() {
             if (!this.menu || !this.btn) return;
             on(this.btn, 'click', (e) => { e.stopPropagation(); this.toggle(); });
-            // OUTSIDE CLICK: robust contains() check (no class dependency)
-            on(document, 'click', (e) => { if (!this.menu.contains(e.target) && !this.btn.contains(e.target)) this.hide(); });
+            // OUTSIDE CLICK
+            on(document, 'click', (e) => {
+                if (!this.menu.contains(e.target) && !this.btn.contains(e.target)) this.hide();
+            });
         }
         hide() { if (this.menu) this.menu.style.display = 'none'; }
         toggle() {
@@ -338,8 +339,14 @@
             const { isGroup, isOwner } = this.getContext();
             const items = [];
             if (isGroup) {
-                if (isOwner) { items.push({ id: 'rename', label: 'Rename group' }); items.push({ id: 'manage', label: 'Manage members' }); }
-                else { items.push({ id: 'view-members', label: 'View members' }); }
+                if (isOwner) {
+                    items.push({ id: 'rename', label: 'Rename group' });
+                    items.push({ id: 'manage', label: 'Manage members' });
+                } else {
+                    items.push({ id: 'view-members', label: 'View members' });
+                }
+                items.push({ id: 'restyle', label: 'Restyle Group' });
+                items.push({ id: 'my-color', label: 'My Message Color' });
                 items.push({ id: 'chat-settings', label: 'Chat settings' });
                 items.push({ id: 'leave', label: 'Leave group' });
                 items.push({ id: 'block-group', label: 'Block this group' });
@@ -358,6 +365,8 @@
                         'rename': h.rename,
                         'manage': h.manage,
                         'view-members': h.viewMembers,
+                        'restyle': h.restyle,
+                        'my-color': h.myColor,
                         'chat-settings': h.chatSettings,
                         'leave': h.leave,
                         'block-group': h.blockGroup,
@@ -565,75 +574,75 @@
             const st = document.createElement('style');
             st.id = 'cs-ui-base-styles';
             st.textContent = `
-#chat-settings-overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.18);z-index:2000;align-items:center;justify-content:center}
-#chat-settings-overlay .sheet{background:var(--bg,#111);color:var(--fg,#eee);border:1px solid var(--border,#333);border-radius:.8rem;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:10px}
-.cs{padding:0}
-.cs-left{min-width:210px;border-right:1px solid var(--border,#333);padding:12px;display:flex;flex-direction:column;gap:8px}
-.cs-search{padding:.45rem .6rem;border:1px solid var(--border,#333);background:var(--bg-2,#181818);color:inherit;border-radius:.5rem}
-.cs-tabs{display:flex;flex-direction:column;gap:6px}
-.cs-tab{justify-content:flex-start}
-.cs-tab.active{outline:2px solid var(--accent,#6cf)}
-.cs-right{flex:1;min-width:0;padding:12px;display:flex;flex-direction:column;gap:10px}
-.cs-right-head{display:flex;align-items:center;justify-content:space-between}
-.cs-content{overflow:auto;display:flex;flex-direction:column;gap:12px;max-height:calc(92vh - 140px)} /* room for footer */
-.cs-footer{display:flex;gap:8px;justify-content:flex-end;padding:10px;border-top:1px solid var(--border,#333);position:sticky;bottom:0;background:var(--bg,#111)}
-.cs-group{border:1px solid var(--border,#333);border-radius:.6rem;padding:10px}
-.cs-group>.title{font-weight:700;margin-bottom:8px;opacity:.9}
-.cs-row{display:flex;gap:12px;align-items:flex-start;padding:8px;border:1px solid var(--border,#333);border-radius:.5rem;background:var(--bg-2,#181818)}
-.cs-row+.cs-row{margin-top:8px}
-.lbl{min-width:160px;max-width:220px}
-.lbl .name{font-weight:600}
-.lbl .desc{opacity:.8;font-size:.9em;margin-top:2px}
-.ctl{flex:1;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.btn{border:1px solid var(--border,#333);background:var(--bg-2,#181818);color:inherit;border-radius:.45rem;padding:.35rem .6rem;cursor:pointer}
-.btn.secondary{opacity:.9}
-.btn[disabled]{opacity:.5;cursor:not-allowed}
-.pill{border:1px solid var(--border,#333);background:var(--bg-2,#181818);border-radius:999px;padding:.25rem .6rem;cursor:pointer}
-.chip{border:1px solid var(--border,#333);background:var(--bg-2,#181818);border-radius:999px;padding:.25rem .6rem;cursor:pointer}
-.chip.active{outline:2px solid #fff}
-.select,.input{padding:.35rem .5rem;border:1px solid var(--border,#333);background:var(--bg-2,#181818);color:inherit;border-radius:.35rem;cursor:pointer}
-.thumb{width:64px;height:64px;border-radius:14px;border:3px solid var(--border,#333);background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.thumb img{max-width:100%;max-height:100%}
-.cs-hide{display:none!important}
+                                    #chat-settings-overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.18);z-index:2000;align-items:center;justify-content:center}
+                                    #chat-settings-overlay .sheet{background:var(--bg,#111);color:var(--fg,#eee);border:1px solid var(--border,#333);border-radius:.8rem;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:10px}
+                                    .cs{padding:0}
+                                    .cs-left{min - width:210px;border-right:1px solid var(--border,#333);padding:12px;display:flex;flex-direction:column;gap:8px}
+                                    .cs-search{padding:.45rem .6rem;border:1px solid var(--border,#333);background:var(--bg-2,#181818);color:inherit;border-radius:.5rem}
+                                    .cs-tabs{display:flex;flex-direction:column;gap:6px}
+                                    .cs-tab{justify - content:flex-start}
+                                    .cs-tab.active{outline:2px solid var(--accent,#6cf)}
+                                    .cs-right{flex:1;min-width:0;padding:12px;display:flex;flex-direction:column;gap:10px}
+                                    .cs-right-head{display:flex;align-items:center;justify-content:space-between}
+                                    .cs-content{overflow:auto;display:flex;flex-direction:column;gap:12px;max-height:calc(92vh - 140px)} /* room for footer */
+                                    .cs-footer{display:flex;gap:8px;justify-content:flex-end;padding:10px;border-top:1px solid var(--border,#333);position:sticky;bottom:0;background:var(--bg,#111)}
+                                    .cs-group{border:1px solid var(--border,#333);border-radius:.6rem;padding:10px}
+.cs-group>.title{font - weight:700;margin-bottom:8px;opacity:.9}
+                                    .cs-row{display:flex;gap:12px;align-items:flex-start;padding:8px;border:1px solid var(--border,#333);border-radius:.5rem;background:var(--bg-2,#181818)}
+                                    .cs-row+.cs-row{margin - top:8px}
+                                    .lbl{min - width:160px;max-width:220px}
+                                    .lbl .name{font - weight:600}
+                                    .lbl .desc{opacity:.8;font-size:.9em;margin-top:2px}
+                                    .ctl{flex:1;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+                                    .btn{border:1px solid var(--border,#333);background:var(--bg-2,#181818);color:inherit;border-radius:.45rem;padding:.35rem .6rem;cursor:pointer}
+                                    .btn.secondary{opacity:.9}
+                                    .btn[disabled]{opacity:.5;cursor:not-allowed}
+                                    .pill{border:1px solid var(--border,#333);background:var(--bg-2,#181818);border-radius:999px;padding:.25rem .6rem;cursor:pointer}
+                                    .chip{border:1px solid var(--border,#333);background:var(--bg-2,#181818);border-radius:999px;padding:.25rem .6rem;cursor:pointer}
+                                    .chip.active{outline:2px solid #fff}
+                                    .select,.input{padding:.35rem .5rem;border:1px solid var(--border,#333);background:var(--bg-2,#181818);color:inherit;border-radius:.35rem;cursor:pointer}
+                                    .thumb{width:64px;height:64px;border-radius:14px;border:3px solid var(--border,#333);background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}
+                                    .thumb img{max - width:100%;max-height:100%}
+                                    .cs-hide{display:none!important}
 
-/* inputs always clickable */
-#chat-settings-overlay input,
-#chat-settings-overlay select,
-#chat-settings-overlay button {
-  pointer-events: auto !important;
-  position: relative;
-  z-index: 1;
+                                    /* inputs always clickable */
+                                    #chat-settings-overlay input,
+                                    #chat-settings-overlay select,
+                                    #chat-settings-overlay button {
+                                        pointer - events: auto !important;
+                                    position: relative;
+                                    z-index: 1;
 }
 
-/* label hit area */
-#chat-settings-overlay label {
-  display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+                                    /* label hit area */
+                                    #chat-settings-overlay label {
+                                        display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
 }
 
-/* checkbox styling */
-#chat-settings-overlay input[type="checkbox"]{
-  -webkit-appearance: none; appearance: none; width: 20px; height: 20px;
-  border: 2px solid rgba(255,255,255,.95); border-radius: 4px; background: transparent;
-  display: inline-block; vertical-align: middle; cursor: pointer;
-  transition: background .12s ease, border-color .12s ease, box-shadow .12s ease; box-sizing: border-box;
+                                    /* checkbox styling */
+                                    #chat-settings-overlay input[type="checkbox"]{
+                                        -webkit - appearance: none; appearance: none; width: 20px; height: 20px;
+                                    border: 2px solid rgba(255,255,255,.95); border-radius: 4px; background: transparent;
+                                    display: inline-block; vertical-align: middle; cursor: pointer;
+                                    transition: background .12s ease, border-color .12s ease, box-shadow .12s ease; box-sizing: border-box;
 }
-#chat-settings-overlay input[type="checkbox"]:checked{ background:#fff; border-color:#fff; }
-#chat-settings-overlay input[type="checkbox"]:focus-visible{ outline:2px solid var(--accent,#6cf); outline-offset:2px; }
-#chat-settings-overlay input[type="checkbox"][disabled]{ opacity:.55; cursor:not-allowed; }
+                                    #chat-settings-overlay input[type="checkbox"]:checked{background:#fff; border-color:#fff; }
+                                    #chat-settings-overlay input[type="checkbox"]:focus-visible{outline:2px solid var(--accent,#6cf); outline-offset:2px; }
+                                    #chat-settings-overlay input[type="checkbox"][disabled]{opacity:.55; cursor:not-allowed; }
 
-/* radios keep native look */
-#chat-settings-overlay input[type="radio"]{ -webkit-appearance:auto; appearance:auto; width:18px; height:18px; cursor:pointer; }
+                                    /* radios keep native look */
+                                    #chat-settings-overlay input[type="radio"]{-webkit - appearance:auto; appearance:auto; width:18px; height:18px; cursor:pointer; }
 
-/* 🔽 visibly greyed out selects when disabled */
-#chat-settings-overlay select:disabled,
-#chat-settings-overlay .select:disabled {
-  opacity:.55; filter:grayscale(1);
-  pointer-events: none !important;
+                                    /* 🔽 visibly greyed out selects when disabled */
+                                    #chat-settings-overlay select:disabled,
+                                    #chat-settings-overlay .select:disabled {
+                                        opacity:.55; filter:grayscale(1);
+                                    pointer-events: none !important;
 }
 
-/* confirm dialog sizing */
-#cs-confirm .sheet { max-width: 520px; }
-    `;
+                                    /* confirm dialog sizing */
+                                    #cs-confirm .sheet {max - width: 520px; }
+                                    `;
             document.head.appendChild(st);
         }
 
@@ -644,26 +653,26 @@
             this.root.id = 'chat-settings-overlay';
             this.root.style.display = 'none';
             this.root.innerHTML = `
-      <div class="sheet cs" style="width:min(880px,96vw);max-height:92vh;display:flex;flex-direction:row">
-        <aside class="cs-left">
-          <input class="cs-search" type="text" placeholder="Search settings…" data-role="search" />
-          <div class="cs-tabs" data-role="tabs">
-            <button class="btn cs-tab" data-tab="style">Style</button>
-            <button class="btn cs-tab" data-tab="deletion">Deletion</button>
-            <button class="btn cs-tab" data-tab="reactions">Reactions</button>
-          </div>
-        </aside>
-        <main class="cs-right">
-          <div class="cs-right-head">
-            <h3>Chat settings</h3>
-          </div>
-          <div class="cs-content" data-role="content"></div>
-          <div class="cs-footer">
-            <button class="btn secondary" data-action="close" type="button">Close</button>
-            <button class="btn" data-action="save-all" type="button" disabled>Save</button>
-          </div>
-        </main>
-      </div>`;
+                                    <div class="sheet cs" style="width:min(880px,96vw);max-height:92vh;display:flex;flex-direction:row">
+                                        <aside class="cs-left">
+                                            <input class="cs-search" type="text" placeholder="Search settings…" data-role="search" />
+                                            <div class="cs-tabs" data-role="tabs">
+                                                <button class="btn cs-tab" data-tab="style">Style</button>
+                                                <button class="btn cs-tab" data-tab="deletion">Deletion</button>
+                                                <button class="btn cs-tab" data-tab="reactions">Reactions</button>
+                                            </div>
+                                        </aside>
+                                        <main class="cs-right">
+                                            <div class="cs-right-head">
+                                                <h3>Chat settings</h3>
+                                            </div>
+                                            <div class="cs-content" data-role="content"></div>
+                                            <div class="cs-footer">
+                                                <button class="btn secondary" data-action="close" type="button">Close</button>
+                                                <button class="btn" data-action="save-all" type="button" disabled>Save</button>
+                                            </div>
+                                        </main>
+                                    </div>`;
             document.body.appendChild(this.root);
 
             // confirm overlay (discard changes)
@@ -672,14 +681,14 @@
             this.confirm.className = 'overlay';
             this.confirm.style.display = 'none';
             this.confirm.innerHTML = `
-      <div class="sheet" style="width:min(460px,90vw)">
-        <h3>Discard changes?</h3>
-        <div class="muted" style="margin-top:6px">You have unsaved changes.</div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-          <button class="btn secondary" data-confirm="cancel" type="button">Cancel</button>
-          <button class="btn" data-confirm="discard" type="button">Discard</button>
-        </div>
-      </div>`;
+                                    <div class="sheet" style="width:min(460px,90vw)">
+                                        <h3>Discard changes?</h3>
+                                        <div class="muted" style="margin-top:6px">You have unsaved changes.</div>
+                                        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+                                            <button class="btn secondary" data-confirm="cancel" type="button">Cancel</button>
+                                            <button class="btn" data-confirm="discard" type="button">Discard</button>
+                                        </div>
+                                    </div>`;
             document.body.appendChild(this.confirm);
 
             this.q = this.root.querySelector('[data-role="search"]');
@@ -969,11 +978,11 @@
             const rowC = document.createElement('div');
             rowC.className = 'cs-row'; rowC.setAttribute('data-keywords', 'style color theme');
             rowC.innerHTML = `
-      <div class="lbl">
-        <div class="name">Group color</div>
-        <div class="desc">Accent used for the avatar ring and theming.</div>
-      </div>
-      <div class="ctl" data-ref="color-chips"></div>`;
+                                    <div class="lbl">
+                                        <div class="name">Group color</div>
+                                        <div class="desc">Accent used for the avatar ring and theming.</div>
+                                    </div>
+                                    <div class="ctl" data-ref="color-chips"></div>`;
             const chips = rowC.querySelector('[data-ref="color-chips"]');
             const palette = this.cfg.GROUP_COLORS.length ? this.cfg.GROUP_COLORS
                 : [{ key: 'A', val: '#6cf' }, { key: 'B', val: '#f66' }, { key: 'C', val: '#9f6' }, { key: 'D', val: '#fc6' }, { key: 'E', val: '#a9f' }];
@@ -990,17 +999,17 @@
             const rowI = document.createElement('div');
             rowI.className = 'cs-row'; rowI.setAttribute('data-keywords', 'icon avatar image upload picture');
             rowI.innerHTML = `
-      <div class="lbl">
-        <div class="name">Group icon</div>
-        <div class="desc">Upload a PNG/JPG/WebP (optional).</div>
-      </div>
-      <div class="ctl">
-        <div class="thumb" data-ref="style-thumb"><img data-ref="style-img" alt=""></div>
-        <label class="pill">
-          <span>Choose image</span>
-          <input data-setting="style-file" type="file" accept="image/png,image/jpeg,image/webp" style="display:none">
+                                    <div class="lbl">
+                                        <div class="name">Group icon</div>
+                                        <div class="desc">Upload a PNG/JPG/WebP (optional).</div>
+                                    </div>
+                                    <div class="ctl">
+                                        <div class="thumb" data-ref="style-thumb"><img data-ref="style-img" alt=""></div>
+                                            <label class="pill">
+                                                <span>Choose image</span>
+                                                <input data-setting="style-file" type="file" accept="image/png,image/jpeg,image/webp" style="display:none">
         </label>
-        <button class="btn" data-action="style-use-default" type="button">Use default</button>
+                                                <button class="btn" data-action="style-use-default" type="button">Use default</button>
       </div>`;
             const ring = rowI.querySelector('[data-ref="style-thumb"]');
             const img = rowI.querySelector('[data-ref="style-img"]');
@@ -1027,24 +1036,24 @@
             const mode = (rawMode === 'none') ? 'both' : rawMode; // display default when disabled
 
             row.innerHTML = `
-      <div class="lbl">
-        <div class="name">Reactions</div>
-        <div class="desc">Enable reactions and choose what kinds are allowed.</div>
-      </div>
-      <div class="ctl">
-        <label data-toggle="rx-enabled">
-          <input data-setting="rx-enabled" type="checkbox" ${enabled ? 'checked' : ''}>
-          Enable
+                                            <div class="lbl">
+                                                <div class="name">Reactions</div>
+                                                <div class="desc">Enable reactions and choose what kinds are allowed.</div>
+                                            </div>
+                                            <div class="ctl">
+                                                <label data-toggle="rx-enabled">
+                                                    <input data-setting="rx-enabled" type="checkbox" ${enabled ? 'checked' : ''}>
+                                                        Enable
         </label>
 
-        <label style="display:flex;align-items:center;gap:8px;">
-          Type
-          <select class="select" data-setting="rx-mode" ${enabled ? '' : 'disabled'}>
-            <option value="both"  ${mode === 'both' ? 'selected' : ''}>Emoji + Custom</option>
-            <option value="emoji" ${mode === 'emoji' ? 'selected' : ''}>Emoji only</option>
-            <option value="custom" ${mode === 'custom' ? 'selected' : ''}>Custom only</option>
-          </select>
-        </label>
+                                                    <label style="display:flex;align-items:center;gap:8px;">
+                                                        Type
+                                                        <select class="select" data-setting="rx-mode" ${enabled ? '' : 'disabled'}>
+                                                            <option value="both" ${mode === 'both' ? 'selected' : ''}>Emoji + Custom</option>
+                                                            <option value="emoji" ${mode === 'emoji' ? 'selected' : ''}>Emoji only</option>
+                                                            <option value="custom" ${mode === 'custom' ? 'selected' : ''}>Custom only</option>
+                                                        </select>
+                                                    </label>
       </div>`;
             g.appendChild(row);
             return g;
@@ -1063,23 +1072,23 @@
                         : 'custom';
 
             row.innerHTML = `
-      <div class="lbl">
-        <div class="name">Message deletion</div>
-        <div class="desc">Allow members to delete sent messages for a limited time.</div>
-      </div>
-      <div class="ctl">
-        <label data-toggle="del-enabled"><input data-setting="del-enabled" type="checkbox" ${en ? 'checked' : ''}> Allow deletion</label>
-        <select data-setting="del-window" class="select" ${en ? '' : 'disabled'}>
-          <option value="30" ${value === '30' ? 'selected' : ''}>30 seconds</option>
-          <option value="60" ${value === '60' ? 'selected' : ''}>1 minute</option>
-          <option value="300" ${value === '300' ? 'selected' : ''}>5 minutes</option>
-          <option value="3600" ${value === '3600' ? 'selected' : ''}>1 hour</option>
-          <option value="86400" ${value === '86400' ? 'selected' : ''}>24 hours</option>
-          <option value="custom" ${value === 'custom' ? 'selected' : ''}>Custom…</option>
-          <option value="null" ${value === 'null' ? 'selected' : ''}>No limit</option>
-        </select>
-        <label ${en && value === 'custom' ? '' : 'class="cs-hide"'} data-ref="del-custom-wrap">
-          Seconds: <input data-setting="del-custom" class="input" type="number" min="1" step="1" value="${(Number.isFinite(ws) ? ws : 120)}">
+                                                <div class="lbl">
+                                                    <div class="name">Message deletion</div>
+                                                    <div class="desc">Allow members to delete sent messages for a limited time.</div>
+                                                </div>
+                                                <div class="ctl">
+                                                    <label data-toggle="del-enabled"><input data-setting="del-enabled" type="checkbox" ${en ? 'checked' : ''}> Allow deletion</label>
+                                                        <select data-setting="del-window" class="select" ${en ? '' : 'disabled'}>
+                                                            <option value="30" ${value === '30' ? 'selected' : ''}>30 seconds</option>
+                                                            <option value="60" ${value === '60' ? 'selected' : ''}>1 minute</option>
+                                                            <option value="300" ${value === '300' ? 'selected' : ''}>5 minutes</option>
+                                                            <option value="3600" ${value === '3600' ? 'selected' : ''}>1 hour</option>
+                                                            <option value="86400" ${value === '86400' ? 'selected' : ''}>24 hours</option>
+                                                            <option value="custom" ${value === 'custom' ? 'selected' : ''}>Custom…</option>
+                                                            <option value="null" ${value === 'null' ? 'selected' : ''}>No limit</option>
+                                                        </select>
+                                                        <label ${en && value === 'custom' ? '' : 'class="cs-hide"'} data-ref="del-custom-wrap">
+                                                            Seconds: <input data-setting="del-custom" class="input" type="number" min="1" step="1" value="${(Number.isFinite(ws) ? ws : 120)}">
         </label>
       </div>`;
             if (!en) row.querySelector('[data-ref="del-custom-wrap"]').classList.add('cs-hide');
@@ -1117,20 +1126,26 @@
         }
     }
 
-    /* ========== Export & bootstrap ========== */
+    /* ========== Export classes ========== */
     const api = { FriendPickerUI, MyColorOverlayUI, ChatMenuUI, RestyleGroupUI, ChatSettingsUI, wireBasicChatControls };
     if (typeof module === 'object' && module.exports) module.exports = api;
     global.UIOverlays = Object.assign({}, global.UIOverlays || {}, api);
 
+    /* ========== Bootstrap: instantiate overlays + wire handlers (MERGE POINT) ========== */
     (function bootstrap() {
         const MA = (global.MessagesApp ||= {});
         function init() {
             const MenuCls = global.UIOverlays && global.UIOverlays.ChatMenuUI;
             const SettingsCls = global.UIOverlays && global.UIOverlays.ChatSettingsUI;
+            const FriendCls = global.UIOverlays && global.UIOverlays.FriendPickerUI;
+            const RestyleCls = global.UIOverlays && global.UIOverlays.RestyleGroupUI;
+            const MyColorCls = global.UIOverlays && global.UIOverlays.MyColorOverlayUI;
+
             const menuEl = document.getElementById('chat-menu');
             const btnEl = document.getElementById('chat-menu-btn');
             if (!MenuCls || !SettingsCls || !menuEl || !btnEl) return;
 
+            // === Chat menu UI
             if (!MA._chatMenuUI) {
                 MA._chatMenuUI = new MenuCls({
                     menuEl, buttonEl: btnEl,
@@ -1149,209 +1164,167 @@
                 });
             }
 
-            if (!MA.chatSettingsOverlay) {
-                const GROUP_COLORS = MA.GROUP_COLORS || [];
-                const DEFAULT_PFP_GROUP = MA.DEFAULT_PFP_GROUP || '/web/default-groupavatar.png';
-                const apiCall = MA.api && MA.api.api;
+            // === Wrap MA.api.api for JSON + custom lib single-flight
+            const GROUP_COLORS = MA.GROUP_COLORS || [];
+            const DEFAULT_PFP_GROUP = MA.DEFAULT_PFP_GROUP || '/web/default-groupavatar.png';
+            const DEFAULT_PFP_DM = MA.DEFAULT_PFP_DM || '/web/default-avatar.png';
+            const apiCall = MA.api && MA.api.api;
 
-                // inside bootstrap() after:  const apiCall = MA.api && MA.api.api;
-                if (apiCall && !MA._apiWrapped) {
-                    const orig = apiCall;
+            if (apiCall && !MA._apiWrapped) {
+                const orig = apiCall;
 
-                    // simple cache/dedupe with exponential backoff for the library endpoint
-                    let _libCache = null;
-                    let _libInflight = null;
-                    let _libLastFailAt = 0;
-                    let _libBackoffMs = 0;
+                let _libCache = null;
+                let _libInflight = null;
+                let _libLastFailAt = 0;
+                let _libBackoffMs = 0;
 
-                    async function getCustomLibrary(opts = {}) {
-                        // if we already have data, return it
-                        if (_libCache) return _libCache;
+                async function getCustomLibrary(opts = {}) {
+                    if (_libCache) return _libCache;
+                    if (_libInflight) return _libInflight;
 
-                        // if a request is already running, piggyback
-                        if (_libInflight) return _libInflight;
+                    const now = Date.now();
+                    const since = now - _libLastFailAt;
+                    if (_libLastFailAt && since < _libBackoffMs) return _libCache || [];
 
-                        // backoff if we recently failed
-                        const now = Date.now();
-                        const since = now - _libLastFailAt;
-                        if (_libLastFailAt && since < _libBackoffMs) {
-                            // during backoff, do not hammer the server; return whatever we have (maybe null)
-                            return _libCache || [];
-                        }
-
-                        _libInflight = (async () => {
-                            try {
-                                const resp = await orig('/dm/reactions/custom/library', { method: 'GET' });
-                                const items = Array.isArray(resp?.items) ? resp.items : (resp?.items || []);
-                                _libCache = items;
-                                _libLastFailAt = 0;
-                                _libBackoffMs = 0;
-                                return _libCache;
-                            } catch (e) {
-                                console.warn('[rx-lib] fetch failed', e?.message || e);
-                                _libLastFailAt = Date.now();
-                                _libBackoffMs = Math.min(300000, _libBackoffMs ? _libBackoffMs * 2 : 5000); // cap at 5 min
-                                return _libCache || []; // degrade to empty
-                            } finally {
-                                _libInflight = null;
-                            }
-                        })();
-
-                        return _libInflight;
-                    }
-
-                    MA.api.api = async (url, opts = {}) => {
-                        const method = (opts.method || 'GET').toUpperCase();
-                        let showBody = opts.body;
-                        try { if (showBody instanceof FormData) showBody = Array.from(showBody.entries()); } catch { }
-
-                        if (opts.body && !(opts.body instanceof FormData)) {
-                            if (typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
-                            opts.headers = Object.assign({}, opts.headers, {
-                                'Content-Type': 'application/json; charset=UTF-8',
-                                'Accept': 'application/json'
-                            });
-                        }
-
-                        const isRx = /\/dm\/messages\/\d+\/reactions\/toggle$/.test(String(url));
-                        console.debug('[api->]', method, url, {
-                            headers: opts.headers,
-                            body: showBody
-                        });
-
+                    _libInflight = (async () => {
                         try {
-                            // library dedupe preserved
-                            if (String(url).endsWith('/dm/reactions/custom/library')) {
-                                const data = await getCustomLibrary(opts);
-                                console.debug('[api<-]', method, url, { items: (data || []).length });
-                                return { ok: true, items: data };
-                            }
-
-                            const resp = await orig(url, opts);
-
-                            // log type + a small preview if it's a string
-                            const logObj = (typeof resp === 'string')
-                                ? { type: 'string', preview: resp.slice(0, 400) }
-                                : { type: typeof resp, keys: resp && typeof resp === 'object' ? Object.keys(resp) : null };
-
-                            if (isRx) console.debug('[api<-][rx]', method, url, logObj);
-                            else console.debug('[api<-]', method, url, logObj);
-
-                            return resp;
+                            const resp = await orig('/dm/reactions/custom/library', { method: 'GET' });
+                            const items = Array.isArray(resp?.items) ? resp.items : (resp?.items || []);
+                            _libCache = items;
+                            _libLastFailAt = 0;
+                            _libBackoffMs = 0;
+                            return _libCache;
                         } catch (e) {
-                            // try to surface as much as possible
-                            const info = {
-                                message: e?.message,
-                                name: e?.name,
-                                detail: e?.detail,
-                                stack: e?.stack ? String(e.stack).split('\n').slice(0, 3).join(' | ') : undefined
-                            };
-                            console.error('[api x]', method, url, info);
-                            throw e;
+                            console.warn('[rx-lib] fetch failed', e?.message || e);
+                            _libLastFailAt = Date.now();
+                            _libBackoffMs = Math.min(300000, _libBackoffMs ? _libBackoffMs * 2 : 5000);
+                            return _libCache || [];
+                        } finally {
+                            _libInflight = null;
                         }
-                    };
+                    })();
 
-                    // Expose a way to refresh after uploads/bookmarks, without thundering herds
-                    MA.refreshCustomReactionsLibrary = async () => {
-                        _libCache = null;
-                        _libLastFailAt = 0;
-                        _libBackoffMs = 0;
-                        try { await getCustomLibrary(); } catch { }
-                    };
-
-                    MA._apiWrapped = true;
+                    return _libInflight;
                 }
 
-                // Put this once near your other helpers:
-                function unwrapSettings(resp) {
-                    // Some routes return { ok, settings:{...} }, others return settings directly.
-                    if (resp && typeof resp === 'object' && resp.settings && typeof resp.settings === 'object') {
-                        return resp.settings;
-                    }
-                    return resp || {};
-                }
+                MA.api.api = async (url, opts = {}) => {
+                    const method = (opts.method || 'GET').toUpperCase();
+                    let showBody = opts.body;
+                    try { if (showBody instanceof FormData) showBody = Array.from(showBody.entries()); } catch { }
 
-                // Pull from server and cache into s.convMeta in the shape ChatSettingsUI expects
-                // 🔁 replace the current MA.syncConvSettings with this version
-                MA.syncConvSettings = async (cid) => {
-                    const apiCall = MA.api && MA.api.api;
-                    try {
-                        console.debug('[ui][sync settings][start]', { cid });
-                        const raw = await apiCall(`/dm/conversations/${cid}/settings`, { method: 'GET' });
-
-                        // unwrap { ok, settings } variants
-                        const sdata = (raw && raw.settings && typeof raw.settings === 'object') ? raw.settings : (raw || {});
-
-                        const asBoolOrNull = (v) => {
-                            if (v === undefined || v === null || v === 'undefined' || v === 'null') return null;
-                            return (v === true || v === 1 || String(v).toLowerCase() === '1' || String(v).toLowerCase() === 'true');
-                        };
-                        const asIntOrNull = v => (v == null || v === 'null' || v === '') ? null : (Number(v) | 0);
-                        const toTs = v => { if (!v) return null; const t = new Date(v).getTime(); return Number.isFinite(t) ? t : null; };
-
-                        console.debug('[ui][sync settings][raw-response]', { cid, raw });
-                        console.debug('[ui][sync settings][normalized-sdata]', { cid, sdata });
-
-                        const meta = {};
-
-                        // reactions
-                        const rxEnabledRaw = (sdata.reactable ?? sdata.reactions_enabled);
-                        const rxModeRaw = (sdata.reaction_mode ?? sdata.reactions_mode);
-                        const rxEffRaw = (sdata.reactions_effective_from ?? sdata.reactions_effective_from_ts);
-
-                        meta.reactions_enabled = asBoolOrNull(rxEnabledRaw);                  // null when unknown
-                        meta.reactions_mode = (rxModeRaw || 'both');                       // UI default
-                        meta.reactions_effective_from_ts = toTs(rxEffRaw);
-
-                        // deletion
-                        const delEnabledRaw = (sdata.allow_delete ?? sdata.message_delete_enabled);
-                        const delWinRaw = (sdata.delete_window_sec ?? sdata.message_delete_window_sec);
-                        const delEffRaw = (sdata.delete_effective_from ?? sdata.delete_effective_from_ts);
-
-                        meta.message_delete_enabled = asBoolOrNull(delEnabledRaw);                 // null when unknown
-                        meta.message_delete_window_sec = (meta.message_delete_enabled === true) ? asIntOrNull(delWinRaw) : null;
-                        meta.delete_effective_from_ts = toTs(delEffRaw);
-
-                        if (!meta.delete_effective_from_ts && meta.message_delete_enabled) {
-                            console.warn('[ui][sync settings] delete enabled BUT missing delete_effective_from → UI will deny deletes', { cid, sdata, meta });
-                        }
-                        if (!meta.reactions_effective_from_ts && meta.reactions_enabled) {
-                            console.warn('[ui][sync settings] reactions enabled BUT missing reactions_effective_from', { cid, sdata, meta });
-                        }
-
-                        const s = (MA.state ||= {});
-                        const prev = s.convMeta?.get?.(cid) || {};
-                        const next = { ...prev, ...meta };
-
-                        if (MA.chat?.setConvMeta) {
-                            MA.chat.setConvMeta(cid, next);
-                        } else {
-                            (s.convMeta ||= new Map()).set(cid, next);
-                        }
-
-                        if ((s.convId | 0) === (cid | 0) && s.currentConvDetail) {
-                            s.currentConvDetail.reactions_enabled = meta.reactions_enabled;
-                            s.currentConvDetail.message_delete_enabled = meta.message_delete_enabled;
-                            s.currentConvDetail.message_delete_window_sec = meta.message_delete_window_sec;
-                            s.currentConvDetail.reactable = meta.reactions_enabled;
-                            s.currentConvDetail.allow_delete = meta.message_delete_enabled;
-                            s.currentConvDetail.delete_window_sec = meta.message_delete_window_sec;
-                        }
-
-                        MA.refreshMessageActions?.();
-
-                        console.debug('[ui][sync settings][ok]', {
-                            cid,
-                            stored_meta_prev: prev,
-                            stored_meta_next: next
+                    if (opts.body && !(opts.body instanceof FormData)) {
+                        if (typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
+                        opts.headers = Object.assign({}, opts.headers, {
+                            'Content-Type': 'application/json; charset=UTF-8',
+                            'Accept': 'application/json'
                         });
+                    }
+
+                    const isRx = /\/dm\/messages\/\d+\/reactions\/toggle$/.test(String(url));
+                    console.debug('[api->]', method, url, {
+                        headers: opts.headers,
+                        body: showBody
+                    });
+
+                    try {
+                        if (String(url).endsWith('/dm/reactions/custom/library')) {
+                            const data = await getCustomLibrary(opts);
+                            console.debug('[api<-]', method, url, { items: (data || []).length });
+                            return { ok: true, items: data };
+                        }
+
+                        const resp = await orig(url, opts);
+
+                        const logObj = (typeof resp === 'string')
+                            ? { type: 'string', preview: resp.slice(0, 400) }
+                            : { type: typeof resp, keys: resp && typeof resp === 'object' ? Object.keys(resp) : null };
+
+                        if (isRx) console.debug('[api<-][rx]', method, url, logObj);
+                        else console.debug('[api<-]', method, url, logObj);
+
+                        return resp;
                     } catch (e) {
-                        console.warn('[ui][sync settings][error]', { cid, error: e?.message || e, stack: e?.stack });
-                    } finally {
-                        MA.refreshMessageActions?.();
+                        const info = {
+                            message: e?.message,
+                            name: e?.name,
+                            detail: e?.detail,
+                            stack: e?.stack ? String(e.stack).split('\n').slice(0, 3).join(' | ') : undefined
+                        };
+                        console.error('[api x]', method, url, info);
+                        throw e;
                     }
                 };
 
+                MA.refreshCustomReactionsLibrary = async () => {
+                    _libCache = null; _libLastFailAt = 0; _libBackoffMs = 0;
+                    try { await getCustomLibrary(); } catch { }
+                };
+
+                MA._apiWrapped = true;
+            }
+
+            // Settings sync (merged)
+            MA.syncConvSettings = async (cid) => {
+                const apiCall = MA.api && MA.api.api;
+                try {
+                    console.debug('[ui][sync settings][start]', { cid });
+                    const raw = await apiCall(`/dm/conversations/${cid}/settings`, { method: 'GET' });
+                    const sdata = (raw && raw.settings && typeof raw.settings === 'object') ? raw.settings : (raw || {});
+                    const asBoolOrNull = (v) => {
+                        if (v == null || v === 'undefined' || v === 'null') return null;
+                        return (v === true || v === 1 || String(v).toLowerCase() === '1' || String(v).toLowerCase() === 'true');
+                    };
+                    const asIntOrNull = v => (v == null || v === 'null' || v === '') ? null : (Number(v) | 0);
+                    const toTs = v => { if (!v) return null; const t = new Date(v).getTime(); return Number.isFinite(t) ? t : null; };
+
+                    const meta = {};
+                    // reactions
+                    const rxEnabledRaw = (sdata.reactable ?? sdata.reactions_enabled);
+                    const rxModeRaw = (sdata.reaction_mode ?? sdata.reactions_mode);
+                    const rxEffRaw = (sdata.reactions_effective_from ?? sdata.reactions_effective_from_ts);
+                    meta.reactions_enabled = asBoolOrNull(rxEnabledRaw);
+                    meta.reactions_mode = (rxModeRaw || 'both');
+                    meta.reactions_effective_from_ts = toTs(rxEffRaw);
+
+                    // deletion
+                    const delEnabledRaw = (sdata.allow_delete ?? sdata.message_delete_enabled);
+                    const delWinRaw = (sdata.delete_window_sec ?? sdata.message_delete_window_sec);
+                    const delEffRaw = (sdata.delete_effective_from ?? sdata.delete_effective_from_ts);
+                    meta.message_delete_enabled = asBoolOrNull(delEnabledRaw);
+                    meta.message_delete_window_sec = (meta.message_delete_enabled === true) ? asIntOrNull(delWinRaw) : null;
+                    meta.delete_effective_from_ts = toTs(delEffRaw);
+
+                    const s = (MA.state ||= {});
+                    const prev = s.convMeta?.get?.(cid) || {};
+                    const next = { ...prev, ...meta };
+
+                    if (MA.chat?.setConvMeta) {
+                        MA.chat.setConvMeta(cid, next);
+                    } else {
+                        (s.convMeta ||= new Map()).set(cid, next);
+                    }
+
+                    if ((s.convId | 0) === (cid | 0) && s.currentConvDetail) {
+                        s.currentConvDetail.reactions_enabled = meta.reactions_enabled;
+                        s.currentConvDetail.message_delete_enabled = meta.message_delete_enabled;
+                        s.currentConvDetail.message_delete_window_sec = meta.message_delete_window_sec;
+                        s.currentConvDetail.reactable = meta.reactions_enabled;
+                        s.currentConvDetail.allow_delete = meta.message_delete_enabled;
+                        s.currentConvDetail.delete_window_sec = meta.message_delete_window_sec;
+                    }
+
+                    MA.refreshMessageActions?.();
+
+                    console.debug('[ui][sync settings][ok]', { cid, stored_meta_prev: prev, stored_meta_next: next });
+                } catch (e) {
+                    console.warn('[ui][sync settings][error]', { cid, error: e?.message || e, stack: e?.stack });
+                } finally {
+                    MA.refreshMessageActions?.();
+                }
+            };
+
+            // === Chat settings overlay
+            if (!MA.chatSettingsOverlay) {
                 MA.chatSettingsOverlay = new SettingsCls({
                     GROUP_COLORS, DEFAULT_PFP_GROUP,
                     getContext: () => {
@@ -1368,7 +1341,7 @@
                         if (useDefaultIcon) fd.append('use_default_icon', '1');
 
                         try {
-                            await apiCall(`/dm/conversations/${cid}/appearance`, {
+                            await MA.api.api(`/dm/conversations/${cid}/appearance`, {
                                 method: 'PATCH',
                                 body: fd
                             });
@@ -1388,7 +1361,7 @@
                         try {
                             await MA.api.api(`/dm/conversations/${cid}/settings`, { method: 'PATCH', body });
                             console.debug('[ui][save reactions][ok]');
-                            await MA.syncConvSettings(cid); // pull back the stamped effective_from, etc.
+                            await MA.syncConvSettings(cid);
                         } catch (e) {
                             console.error('[ui][save reactions][error]', e);
                         }
@@ -1401,7 +1374,7 @@
                         if (enabled) body.delete_window_sec = (windowSec == null ? 'null' : (windowSec | 0));
                         console.debug('[ui][save deletion]', { cid, body });
                         try {
-                            await apiCall(`/dm/conversations/${cid}/settings`, { method: 'PATCH', body });
+                            await MA.api.api(`/dm/conversations/${cid}/settings`, { method: 'PATCH', body });
                             console.debug('[ui][save deletion][ok]');
                             await MA.syncConvSettings(cid);
                         } catch (e) { console.error('[ui][save deletion][error]', e); }
@@ -1410,14 +1383,158 @@
                 });
             }
 
-            // handlers + helpers
+            // === Friend picker overlay
+            if (!MA.friendPicker) {
+                MA.friendPicker = new FriendCls({
+                    DEFAULT_PFP_DM,
+                    fetchFriends: MA.chat?.fetchFriends || (async () => {
+                        try {
+                            const j1 = await MA.api.api(`/users/me/friends`);
+                            const arr = j1.items || j1.friends || [];
+                            return (arr || []).map(u => {
+                                const nu = u.user || u;
+                                const id = nu.id ?? nu.user_id ?? nu.friend_id ?? null;
+                                const username = nu.username ?? nu.first_username ?? null;
+                                const first_username = nu.first_username ?? nu.username ?? null;
+                                const profile_photo = nu.profile_photo ?? null;
+                                const bio = nu.bio ?? nu.bio_html ?? '';
+                                return { id, username, first_username, profile_photo, bio };
+                            }).filter(x => x.id);
+                        } catch { return []; }
+                    }),
+                    onStartDm: MA.chat?.startDmWith || (() => { }),
+                    onCreateGroup: async (ids) => {
+                        // Prefer app-level helper if present
+                        if (typeof MA.createGroupFromIds === 'function') return MA.createGroupFromIds(ids);
+                        // Fallback endpoint guess; adjust in host as needed
+                        try {
+                            const resp = await MA.api.api(`/dm/conversations`, { method: 'POST', body: { member_ids: ids } });
+                            if (resp?.conversation_id || resp?.id) {
+                                const cid = resp.conversation_id || resp.id;
+                                // Load/open via app if available
+                                MA.chat?.loadConversations?.({ blockingMeta: true });
+                                MA.chat?.openConversation?.(cid);
+                            }
+                        } catch (e) { alert('Create group failed: ' + (e?.message || e)); }
+                    },
+                    onEditGroup: async ({ add, remove }) => {
+                        const cid = (MA.state?.convId) | 0;
+                        if (!cid) return;
+                        if (typeof MA.editGroupMembers === 'function') return MA.editGroupMembers({ add, remove });
+                        try {
+                            await MA.api.api(`/dm/conversations/${cid}/members`, { method: 'PATCH', body: { add, remove } });
+                            await MA.chat?.loadConversations?.({ blockingMeta: true });
+                            await MA.syncConvSettings(cid);
+                        } catch (e) { alert('Save members failed: ' + (e?.message || e)); }
+                    },
+                    getConvContext: () => {
+                        const s = MA.state || {};
+                        const det = s.currentConvDetail || {};
+                        return { isGroup: !!det.is_group, meId: s.meId | 0 };
+                    },
+                    usernameFor: (id) => (MA.usernameFor ? MA.usernameFor(id) : `user-${id}`)
+                });
+
+                MA.openFriendPicker = (mode, opts) => MA.friendPicker.open(mode, opts || {});
+                MA.closeFriendPicker = () => MA.friendPicker.close();
+            }
+
+            // === Restyle group overlay
+            if (!MA.restyleOverlay) {
+                MA.restyleOverlay = new RestyleCls({
+                    GROUP_COLORS, DEFAULT_PFP_GROUP,
+                    getMeta: () => {
+                        const s = MA.state || {};
+                        const meta = (s.convMeta && s.convMeta.get?.(s.convId)) || {};
+                        const det = s.currentConvDetail || {};
+                        const photo = det.photo || meta.photo || '';
+                        const color = meta.color || det.color || '#ffffff';
+                        return { isGroup: !!det.is_group, color, photo };
+                    },
+                    onSave: async (payload) => {
+                        // Reuse settings saver for a single spot of truth
+                        await MA.chatSettingsOverlay?.cfg?.onSaveStyle?.(payload);
+                        const cid = (MA.state?.convId) | 0;
+                        await MA.syncConvSettings(cid);
+                    }
+                });
+            }
+
+            // === My Message Color overlay
+            if (!MA.myColorOverlay) {
+                MA.myColorOverlay = new MyColorCls({
+                    DEFAULT_PFP_DM,
+                    syncColors: async () => {
+                        // host should implement; try best-effort:
+                        const cid = (MA.state?.convId) | 0;
+                        try { await MA.chat?.syncMsgColors?.(cid, { retry: 1 }); } catch { }
+                    },
+                    getColorMap: () => (MA.api?.getColorMap ? MA.api.getColorMap(MA.state?.convId) : (MA._colorMapCache || {})),
+                    setMyColor: async (hexOrNull) => {
+                        const cid = (MA.state?.convId) | 0;
+                        try {
+                            if (typeof MA.setMyColorInConv === 'function') {
+                                await MA.setMyColorInConv(cid, hexOrNull);
+                            } else {
+                                await MA.api.api(`/dm/conversations/${cid}/my_color`, {
+                                    method: 'PATCH',
+                                    body: { color: hexOrNull }
+                                });
+                            }
+                            // refresh borders in UI
+                            await MA.chat?.syncMsgColors?.(cid, { retry: 1 });
+                            MA.chat?.updateAllMessageBorders?.();
+                        } catch (e) {
+                            alert('Save color failed: ' + (e?.message || e));
+                        }
+                    },
+                    getContext: () => {
+                        const s = MA.state || {};
+                        const me = { meId: s.meId | 0, meName: s.meName || s.meUsername || 'Me', mePhoto: s.mePhoto || MA.DEFAULT_PFP_DM, isGroup: !!(s.currentConvDetail?.is_group) };
+                        return me;
+                    }
+                });
+            }
+
+            // === Chat menu handlers (merged old actions)
             MA._chatMenuHandlers = Object.assign({}, MA._chatMenuHandlers, {
+                rename: () => MA.renameGroup?.(),
+                manage: () => {
+                    const ids = (MA.state?.currentConvDetail?.members || []).map(m => m.id);
+                    MA.openFriendPicker?.('group-edit', { preselectIds: ids });
+                },
+                viewMembers: () => {
+                    const ids = (MA.state?.currentConvDetail?.members || []).map(m => m.id);
+                    MA.openFriendPicker?.('view', { preselectIds: ids });
+                },
+                restyle: () => MA.restyleOverlay?.show?.(),
+                myColor: () => MA.myColorOverlay?.show?.(),
                 chatSettings: async () => {
                     const cid = (MA.state?.convId) | 0;
                     await MA.syncConvSettings(cid);
                     MA.chatSettingsOverlay?.show?.('style');
-                }
+                },
+                leave: () => MA.leaveGroup?.(),
+                blockGroup: () => MA.blockGroup?.(),
+                deleteChat: async () => {
+                    const cid = (MA.state?.convId) | 0; if (!cid) return;
+                    if (!confirm('Delete this chat for you? This won’t remove it for others.')) return;
+                    try {
+                        await MA.api.api(`/dm/conversations/${cid}/hide`, { method: 'POST' });
+                        await MA.chat?.loadConversations?.();
+                        const next = (MA.state?.allConvs || []).find(c => (c.id | 0) !== (cid | 0));
+                        if (next) await MA.chat?.openConversation?.(next.id);
+                        else {
+                            const msgs = document.getElementById('msgs');
+                            if (msgs) msgs.innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
+                            if (MA.state) MA.state.convId = 0;
+                            const t = document.getElementById('chat-title'); if (t) t.textContent = 'Direct Message';
+                        }
+                    } catch (e) { alert('Delete failed: ' + (e?.message || e)); }
+                },
+                blockUser: () => MA.blockUser?.(),
             });
+
             MA.setChatMenuHandlers = (h) => { MA._chatMenuUI.cfg.handlers = h || {}; MA._chatMenuUI.render(); };
             MA.renderChatMenu = () => MA._chatMenuUI.render();
             MA.setChatMenuHandlers(MA._chatMenuHandlers);
@@ -1428,6 +1545,7 @@
         else init();
     })();
 
+    /* ===== Delete-for-all handler (merged) ===== */
     (function ensureDeleteHandler() {
         const MA = (window.MessagesApp ||= {});
         if (typeof MA.onDeleteForAll === 'function') return;
@@ -1439,7 +1557,6 @@
 
             console.debug('[del] attempt', { id });
 
-            // Try a few common endpoints; log each attempt
             const endpoints = [
                 { method: 'POST', url: `/dm/messages/${id}/delete` },
                 { method: 'POST', url: `/dm/messages/${id}/delete_for_all` },
@@ -1466,12 +1583,10 @@
                 return;
             }
 
-            // Visually tombstone the message
             try {
                 msgEl.classList.add('deleted');
                 const bubble = msgEl.querySelector('.bubble') || msgEl;
                 bubble.innerHTML = `<div class="deleted-note">You deleted this message</div>`;
-                // Prevent showing the menu again for a tombstoned one
                 const menu = msgEl.querySelector('.bubble-menu'); if (menu) menu.remove();
                 const dots = msgEl.querySelector('.bubble-menu-btn'); if (dots) dots.remove();
             } catch { }
@@ -1479,7 +1594,6 @@
     })();
 
     window.MessagesApp = window.MessagesApp || {};
-    // Advertise native support so ui-overlays skips the fallback rail entirely.
     window.MessagesApp.nativeRailSupportsDelete = () => true;
 
     // ===== Message actions rail (⋮ + 🙂) =====
@@ -1487,7 +1601,6 @@
         const MA = (window.MessagesApp ||= {});
         const log = (...a) => console.debug('[rail]', ...a);
 
-        // Prefer the global extractor (set earlier), fall back to a local impl.
         const extractMsgMeta =
             (window.MessagesApp && window.MessagesApp.extractMsgMeta) ||
             function (msgEl) {
@@ -1521,8 +1634,6 @@
                 return { id, senderId, tsSec };
             };
 
-        // Only skip if the native rail explicitly confirms it supports delete-for-all.
-        // Otherwise, install the fallback rail so the policy logic actually runs.
         const wantsNative = !!MA.useNativeMsgRail;
         const nativeOk = (typeof MA.nativeRailSupportsDelete === 'function') && MA.nativeRailSupportsDelete() === true;
 
@@ -1534,7 +1645,6 @@
             console.warn('[rail] native rail requested but no delete support advertised → installing fallback rail');
         }
 
-        // ---- settings/meta helpers
         function getConvId() { return (MA.state?.convId) | 0; }
         function getConvMeta() {
             const s = MA.state || {};
@@ -1552,19 +1662,15 @@
             }
         }
 
-        // ---- server-aligned delete predicate (author-only + allow + effective_from + window)
         function canDeleteForAll(msgEl) {
             const { meta: conv, meId } = getConvMeta();
             const ds = msgEl?.dataset || {};
 
-            // --- per-message snapshot takes absolute precedence ---
-            // data-deletable="1|0"; data-delete-deadline="ISO/epoch(ms)/epoch(s)"
             if (ds.deletable === '0') {
                 log('delete: per-msg says NOT deletable → deny', { ds });
                 return false;
             }
             if (ds.deletable === '1') {
-                // If we have a deadline, enforce it; otherwise allow.
                 const ddlRaw = ds.deleteDeadline || ds.delete_deadline;
                 if (ddlRaw) {
                     const ddlMs = /^\d+$/.test(ddlRaw)
@@ -1578,7 +1684,6 @@
                 return true;
             }
 
-            // --- fall back to conversation policy ---
             if (!conv || !conv.message_delete_enabled) {
                 log('delete: disabled at convo', { conv });
                 return false;
@@ -1623,11 +1728,9 @@
             return ok;
         }
 
-        // ---- menu item builder (no "copy" option)
         function computeMenuItems(msgEl) {
             const items = [];
 
-            // 1) download (if any attachment element is inside)
             const media = msgEl.querySelector('img.att, video.att, audio.att, [data-download]');
             if (media) {
                 items.push({
@@ -1643,7 +1746,6 @@
                 });
             }
 
-            // 2) delete for everyone (server-aligned)
             if (canDeleteForAll(msgEl)) {
                 items.push({
                     id: 'delete',
@@ -1652,7 +1754,6 @@
                 });
             }
 
-            // 3) optional local delete (only if app provides a handler)
             if (typeof window.MessagesApp?.onDeleteForMe === 'function') {
                 items.push({
                     id: 'delete-me',
@@ -1665,10 +1766,9 @@
             return items;
         }
 
-        // ---- ensure the rail for one message
         function ensureRail(msgEl) {
             if (!(msgEl instanceof HTMLElement)) return;
-            if (msgEl.classList.contains('sysmsg')) return; // never on system messages
+            if (msgEl.classList.contains('sysmsg')) return;
 
             let rail = msgEl.querySelector('.msg-actions');
             if (!rail) {
@@ -1677,7 +1777,6 @@
                 msgEl.appendChild(rail);
             }
 
-            // dots button
             let dots = rail.querySelector('.bubble-menu-btn');
             if (!dots) {
                 dots = document.createElement('button');
@@ -1688,7 +1787,6 @@
                 rail.appendChild(dots);
             }
 
-            // menu container
             let menu = rail.querySelector('.bubble-menu');
             if (!menu) {
                 menu = document.createElement('div');
@@ -1696,9 +1794,8 @@
                 rail.appendChild(menu);
             }
 
-            // react button — show as soon as we *think* it’s allowed; if settings unknown, default show
             let reactBtn = rail.querySelector('.react-btn');
-            // decide per-message
+
             const { meta: conv } = getConvMeta();
             const ds = msgEl.dataset || {};
             const perMsg = ds.reactable == null ? null : ds.reactable === '1';
@@ -1706,7 +1803,7 @@
 
             let rxEnabled;
             if (perMsg !== null) {
-                rxEnabled = perMsg; // server snapshot wins
+                rxEnabled = perMsg;
             } else if (conv?.reactions_enabled != null) {
                 if (conv.reactions_enabled && conv.reactions_effective_from_ts && tsSec) {
                     rxEnabled = (tsSec * 1000) >= conv.reactions_effective_from_ts;
@@ -1714,11 +1811,11 @@
                     rxEnabled = !!conv.reactions_enabled;
                 }
             } else {
-                rxEnabled = true; // optimistic until settings arrive
+                rxEnabled = true;
             }
             const rxMode = (function () {
                 const perMsg = ds.rxMode || ds.reactionMode || ds.reaction_mode || null;
-                if (perMsg) return perMsg;  // snapshot on the message wins
+                if (perMsg) return perMsg;
                 return conv?.reactions_mode || 'both';
             })();
 
@@ -1734,13 +1831,11 @@
                         e.stopPropagation();
                         msgEl.classList.add('rx-open');
 
-                        // If an app-level overlay exists, let it decide. Otherwise, default palette:
                         if (typeof MA.onReactClick === 'function') {
-                            MA.onReactClick(msgEl, { mode: rxMode });   // pass mode hint
+                            MA.onReactClick(msgEl, { mode: rxMode });
                         } else {
                             const ov = document.getElementById('rx-picker');
                             if (ov) { ov.style.display = 'flex'; }
-                            else { /* inline palette already installed below */ }
                         }
                     });
                 }
@@ -1751,7 +1846,6 @@
                 log('react: hidden (reactions disabled)', { conv });
             }
 
-            // compute actions and show/hide dots appropriately
             const items = computeMenuItems(msgEl);
             if (!items.length) {
                 dots.style.display = 'none';
@@ -1774,12 +1868,25 @@
                     dots._wired = true;
                     dots.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        // close others
                         document.querySelectorAll('.msg.menu-open .bubble-menu').forEach(m => {
                             m.style.display = 'none';
                             m.closest('.msg')?.classList.remove('menu-open');
                         });
                         const open = menu.style.display === 'block';
+
+                        // Optional: portal support if host provides it
+                        if (!open && typeof window.portalOpen === 'function') {
+                            window.portalOpen(menu, 'bubble-menu--portal');
+                            if (typeof window.positionUnderAnchor === 'function') {
+                                window.positionUnderAnchor(dots, menu);
+                            }
+                            if (typeof window.bindReposition === 'function') {
+                                window.bindReposition(menu, dots);
+                            }
+                        } else if (open && typeof window.portalClose === 'function') {
+                            window.portalClose(menu, 'bubble-menu--portal');
+                        }
+
                         menu.style.display = open ? 'none' : 'block';
                         msgEl.classList.toggle('menu-open', !open);
                     });
@@ -1787,13 +1894,11 @@
             }
         }
 
-        // ---- full refresh pass
         async function refreshAll() {
-            await ensureSettingsLoaded(); // fetch once if missing
+            await ensureSettingsLoaded();
             document.querySelectorAll('.msg').forEach(ensureRail);
         }
 
-        // expose for manual poke + give per-message debugger
         MA.refreshMessageActions = refreshAll;
         MA.debugMsgActions = (msgElOrSelector) => {
             const el = (typeof msgElOrSelector === 'string') ? document.querySelector(msgElOrSelector) : msgElOrSelector;
@@ -1803,7 +1908,6 @@
             return canDel;
         };
 
-        // initial run + observe
         refreshAll();
         const mo = new MutationObserver(muts => {
             for (const m of muts) {
@@ -1816,8 +1920,9 @@
         });
         mo.observe(document.body, { childList: true, subtree: true });
 
-        // global click → close menus
-        document.addEventListener('click', () => {
+        // global click → close menus (ignore overlay clicks)
+        document.addEventListener('click', (ev) => {
+            if (ev.target && (ev.target.closest && ev.target.closest('.overlay'))) return;
             document.querySelectorAll('.msg.menu-open .bubble-menu').forEach(m => {
                 m.style.display = 'none';
                 m.closest('.msg')?.classList.remove('menu-open');
@@ -1827,6 +1932,7 @@
         log('installed');
     })();
 
+    /* ===== Minimal default reaction picker (falls back if host doesn’t provide one) ===== */
     (function ensureDefaultReactionPicker() {
         const MA = (window.MessagesApp ||= {});
         if (typeof MA.onReactClick === 'function') return;
@@ -1838,7 +1944,7 @@
             if (typeof v === 'object') return v;
             if (typeof v !== 'string') return null;
             try { return JSON.parse(v); } catch { }
-            if (v.startsWith('"') && v.endsWith('"')) { // double-encoded JSON
+            if (v.startsWith('"') && v.endsWith('"')) {
                 try { return JSON.parse(JSON.parse(v)); } catch { }
             }
             return null;
@@ -1855,7 +1961,6 @@
                 const resp = await api(url, { method: 'POST', body });
                 console.debug('[rx][call<-]', resp);
             } catch (e) {
-                // Try to pull out any JSON-ish info to avoid the "Unexpected token" path elsewhere
                 const raw = (e && (e.detail || e.body || e.responseText || e.message)) || e;
                 const parsed = parseLooseJSON(String(raw));
                 console.error('[rx][call x]', { raw, parsed });
@@ -1863,7 +1968,6 @@
             }
         }
 
-        // very small inline palette
         function openPalette(atEl, msgId) {
             closePalette();
             const p = document.createElement('div');
