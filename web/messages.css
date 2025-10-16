@@ -1152,23 +1152,6 @@ body {
     pointer-events: none; /* not clickable */
 }
 
-/* Options menu: visual only (JS sets fixed x/y) */
-.msg .msg-actions .bubble-menu {
-    position: fixed; /* anchored to viewport via JS */
-    display: none;
-    background: var(--bg);
-    color: inherit;
-    border: 1px solid var(--border);
-    border-radius: .4rem;
-    padding: 6px;
-    z-index: 3000;
-    min-width: 200px;
-    max-width: min(420px, 90vw);
-    overflow-y: auto;
-    overflow-x: hidden;
-    box-shadow: 0 8px 18px rgba(0,0,0,.35);
-}
-
 /* when portaled to <body>, force viewport anchoring */
 .bubble-menu--portal {
     position: fixed !important;
@@ -1229,7 +1212,7 @@ body {
 }
 
 /* Force reactions popup to a tidy grid */
-#rx-fallback-pop.rx-pop--portal {
+#rx-fallback-pop.rx-simple.rx-pop--portal {
     display: grid !important;
     grid-template-columns: repeat(6, 28px) !important;
     gap: 6px !important;
@@ -1247,4 +1230,199 @@ body {
     border-radius: .35rem;
     font-size: 18px;
     line-height: 1;
+}
+
+.bubble-menu--portal,
+.rx-pop--portal {
+    transform: none !important;
+    margin: 0 !important;
+}
+
+#rx-fallback-pop .rx-tile,
+#rx-fallback-pop .rx-emo {
+    border-radius: .35rem !important;
+}
+
+/* hard override so rich picker layout isn't flattened by legacy simple rules */
+#rx-fallback-pop.rx-rich {
+    display: block !important;
+}
+
+    #rx-fallback-pop.rx-rich .rx-head {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+        align-items: center !important;
+    }
+
+    #rx-fallback-pop.rx-rich .rx-sections {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+    }
+
+    #rx-fallback-pop.rx-rich .rx-grid {
+        display: grid !important;
+        grid-template-columns: repeat(10,36px) !important;
+        gap: 6px !important;
+        max-height: 220px !important;
+        overflow: auto !important;
+        padding: 2px !important;
+    }
+
+@media (max-width:720px) {
+    #rx-fallback-pop.rx-rich .rx-grid {
+        grid-template-columns: repeat(8,36px) !important;
+    }
+}
+
+#rx-fallback-pop.rx-rich .rx-tile {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 36px !important;
+    height: 36px !important;
+    border: 1px solid var(--border,#e6e6e6) !important;
+    background: var(--panel,#0e1116) !important;
+    border-radius: .35rem !important;
+}
+
+/* portaled popovers: kill leftover transforms/margins */
+.bubble-menu--portal,
+.rx-pop--portal {
+    position: fixed !important;
+    transform: none !important;
+    margin: 0 !important;
+}
+
+/* bubble menu base stays the same, just ensure no double transforms apply */
+.msg .msg-actions .bubble-menu {
+    transform: translateY(-50%) !important;
+}
+/* for inline only */
+/* ==== PATCH: rail buttons — restore old react hover, keep ⋮ naked ==== */
+.react-btn{
+  box-sizing:border-box; width:100%; height:28px; padding:0 8px;
+  border:var(--bw,2px) solid var(--border,#e6e6e6);
+  background:#0e1116; color:#fff; font-weight:700; line-height:1; cursor:pointer;
+  border-radius:0 !important; box-shadow:0 1px 0 var(--soft,rgba(255,255,255,.12)) inset;
+}
+.react-btn:hover,
+.react-btn:focus{
+  background:#fff !important; color:#000 !important; border-color:#fff !important;
+}
+
+/* keep 3-dot naked (no highlight) */
+.bubble-menu-btn{
+  background:transparent !important; border:none !important; box-shadow:none !important;
+}
+.bubble-menu-btn:hover,
+.bubble-menu-btn:focus{ background:transparent !important; }
+
+/* ==== PATCH: reaction chips — stronger active, clickable ==== */
+.reactions{ position:relative; z-index:200; } /* guarantee above hover-pad */
+.rx-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:.15rem .4rem; font-size:13px; line-height:1; cursor:pointer; user-select:none;
+  border:2px solid var(--border,#e6e6e6); border-radius:0 !important;
+  background:#0e1116; color:var(--text,#fff);
+  box-shadow:0 1px 0 var(--soft,rgba(255,255,255,.12)) inset;
+}
+.rx-chip:hover{ background:#fff !important; color:#000 !important; border-color:#fff !important; }
+.rx-chip.active{
+  background:#fff !important; color:#000 !important;
+  border-color:#fff !important; border-width:2px !important;
+}
+
+/* ==== PATCH: fallback picker — wrap to overlay width, no H-scroll ==== */
+#rx-fallback-pop.rx-rich{
+  width:min(520px,92vw);
+  max-height:min(70vh,520px);
+  padding:8px;
+  overflow-y:auto !important;
+  overflow-x:hidden !important;
+  box-sizing:border-box;
+}
+#rx-fallback-pop .rx-sections{ display:flex; flex-direction:column; gap:8px; overflow:visible !important; }
+
+/* grid wraps; overlay width defines columns */
+#rx-fallback-pop .rx-grid{
+  display:grid !important;
+  grid-template-columns:repeat(auto-fill,36px) !important;
+  gap:6px !important;
+  width:100% !important;
+  min-width:0 !important;
+  overflow:visible !important;
+  padding:2px !important;
+  justify-content:start !important;
+}
+
+/* ==== PATCH: emoji tiles — perfect squares, square corners, border only on hover ==== */
+#rx-fallback-pop .rx-tile,
+#rx-fallback-pop .rx-emo{
+  width:36px !important; height:36px !important; aspect-ratio:1/1 !important;
+  display:flex !important; align-items:center !important; justify-content:center !important;
+  background:var(--panel,#0e1116) !important;
+  border:2px solid transparent !important;            /* keep layout, hide by default */
+  border-radius:0 !important;                          /* square corners */
+  cursor:pointer !important; user-select:none !important;
+}
+#rx-fallback-pop .rx-tile:hover,
+#rx-fallback-pop .rx-emo:hover{
+  border-color:#fff !important;                        /* white ring only on hover */
+}
+#rx-fallback-pop .rx-tile img,
+#rx-fallback-pop .rx-emo img{
+  max-width:24px !important; max-height:24px !important;
+  image-rendering:-webkit-optimize-contrast; border-radius:0 !important;
+}
+
+/* nuke any earlier rounding that slipped in */
+#rx-fallback-pop .rx-tile,
+#rx-fallback-pop .rx-emo,
+#rx-fallback-pop .rx-tile *,
+#rx-fallback-pop .rx-emo *{ border-radius:0 !important; }
+
+/* ==== PATCH: simple picker grid too (consistency) ==== */
+#rx-fallback-pop.rx-simple.rx-pop--portal{
+  display:grid !important; grid-template-columns:repeat(6,28px) !important;
+  gap:6px !important; padding:6px !important;
+}
+#rx-fallback-pop.rx-simple .rx-emo{
+  width:28px !important; height:28px !important; aspect-ratio:1/1 !important;
+  background:var(--panel,#0e1116) !important;
+  border:2px solid transparent !important;
+  border-radius:0 !important;
+}
+#rx-fallback-pop.rx-simple .rx-emo:hover{ border-color:#fff !important; }
+
+/* ==== PATCH: messages.css picker (if that codepath is used) ==== */
+.rx-grid{ grid-template-columns:repeat(auto-fill,minmax(34px,1fr)); } /* keep responsive */
+.rx-item{
+  aspect-ratio:1/1; display:grid; place-items:center;
+  background:#0e1116; border:2px solid transparent; border-radius:0 !important;
+  cursor:pointer; transition:border-color .12s ease, background-color .12s ease;
+}
+.rx-item:hover{ border-color:#fff; background:#151921; }
+
+/* ——— Kill the per-message ⋮ hover tint everywhere ——— */
+.msg .msg-actions .bubble-menu-btn,
+.msg .msg-actions .bubble-menu-btn:hover,
+.msg .msg-actions .bubble-menu-btn:active,
+.msg .msg-actions .bubble-menu-btn:focus,
+.msg .msg-actions .bubble-menu-btn:focus-visible {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+    outline: 0 !important;
+    -webkit-tap-highlight-color: transparent !important;
+}
+
+/* If the 3-dot happens to reuse generic button/icon styles, neutralize those too */
+.msg .msg-actions .btn:hover,
+.msg .msg-actions .iconbtn:hover,
+.msg .msg-actions button:hover {
+    background: transparent !important;
+    box-shadow: none !important;
 }

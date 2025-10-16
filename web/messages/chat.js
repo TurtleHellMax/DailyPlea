@@ -12,93 +12,453 @@
 
     // Helpers used across
     (function ensureMsgActionStyles() {
-        if (document.getElementById('dm-msg-actions-styles')) return;
-        const st = document.createElement('style');
-        st.id = 'dm-msg-actions-styles';
+        // Always (re)write the stylesheet so hot-reloads pick up changes.
+        let st = document.getElementById('dm-msg-actions-styles');
+        if (!st) {
+            st = document.createElement('style');
+            st.id = 'dm-msg-actions-styles';
+            document.head.appendChild(st);
+        }
         st.textContent = `
-  #msgs{ overflow-x: hidden; }
+/* ===== DM actions & picker — FINAL OVERRIDES (merged) ===== */
 
-  .msg{ position: relative; overflow: visible; max-width:100%; }
+/* Rail buttons: never change on hover/focus */
+.react-btn,
+.bubble-menu-btn{
+  box-sizing:border-box; width:100%; height:28px; padding:0 8px;
+  border:2px solid var(--border,#e6e6e6); background:#0e1116; color:#fff;
+  font-weight:700; line-height:1; cursor:pointer; border-radius:0 !important;
+  box-shadow:0 1px 0 rgba(255,255,255,.12) inset;
+}
+.react-btn:hover,.react-btn:active,.react-btn:focus,
+.bubble-menu-btn:hover,.bubble-menu-btn:active,.bubble-menu-btn:focus{
+  background:#0e1116 !important; color:#fff !important; border-color:var(--border,#e6e6e6) !important;
+  box-shadow:0 1px 0 rgba(255,255,255,.12) inset !important; outline:none !important; filter:none !important; transition:none !important;
+}
 
-  /* Full-width vertical hover pad (same height as the message). This keeps hover active
-     anywhere on the row, regardless of horizontal position. */
-  .msg .hover-pad{
-    position:absolute; top:0; bottom:0; left:-100vw; right:-100vw;
-    pointer-events:auto; z-index:0; /* sits below chips */
-    background: transparent;
-  }
+/* Picker shell */
+#rx-fallback-pop{ position:fixed; z-index:3000; }
+#rx-fallback-pop.rx-rich{
+  width:min(640px,96vw) !important;          /* wider overlay */
+  max-width:96vw !important;
+  max-height:min(70vh,560px) !important;
+  padding:8px !important;
+  overflow-y:auto !important;
+  overflow-x:hidden !important;
+  background:var(--bg);
+  border:1px solid var(--border);
+  box-shadow:0 8px 18px rgba(0,0,0,.35);
+  border-radius:.4rem;
+}
 
-  /* Hover rail: centered vertically; shown on :hover, .hover, or when menu is open */
-  .msg .msg-actions{
-    position:absolute; top:50%;
-    display:flex; flex-direction:column; gap:6px; align-items:center;
-    opacity:0; pointer-events:none; transition:opacity .12s ease;
-    z-index: 50; /* above hover-pad */
-  }
-  /* others -> rail to the right of bubble */
-  .msg:not(.me) .msg-actions{ right:0; transform: translateX(calc(100% + 8px)) translateY(-50%); }
-  /* me -> rail to the left of bubble */
-  .msg.me .msg-actions{ left:0; transform: translateX(calc(-100% - 8px)) translateY(-50%); }
+/* Subtree reset */
+#rx-fallback-pop, #rx-fallback-pop *{
+  box-sizing:border-box !important;
+  min-width:0 !important;
+}
 
-  .msg:hover .msg-actions,
-  .msg.hover .msg-actions,           /* JS-driven hover */
-  .msg.menu-open .msg-actions,       /* keep visible while menu open */
-  .msg .msg-actions:hover{
-    opacity:1; pointer-events:auto;
-  }
+/* Header: search (fills) + upload (fixed 36px) — stays on one row */
+#rx-fallback-pop .rx-head{
+  display:grid !important;
+  grid-template-columns: minmax(0,1fr) 36px !important; /* search | icon */
+  grid-template-areas: "search upload" !important;
+  gap:8px !important;
+  align-items:center !important;
+  margin-bottom:8px !important;
+}
+#rx-fallback-pop .rx-head > *{ min-width:0 !important; }
+#rx-fallback-pop .rx-head input[type="search"]{
+  grid-area:search !important;
+  height:34px !important; width:100% !important;
+  padding:0 10px !important;
+  border:2px solid var(--border,#e6e6e6) !important;
+  background:#0e1116 !important; color:var(--text,#fff) !important;
+  border-radius:0 !important;
+}
+#rx-fallback-pop .rx-head .rx-upload-btn{
+  grid-area:upload !important;
+  justify-self:end !important;
+  width:36px !important; height:34px !important; padding:0 !important;
+  display:grid !important; place-items:center !important;
+  border:2px solid var(--border,#e6e6e6) !important;
+  background:#0e1116 !important; color:var(--text,#fff) !important;
+  border-radius:0 !important; line-height:1 !important;
+}
+#rx-fallback-pop .rx-head .rx-upload-btn svg{ display:block; }
 
-  .react-btn, .bubble-menu-btn{
-    border:1px solid var(--border,#333);
-    background:var(--bg-2,#181818);
-    color:inherit; border-radius:.35rem; padding:.2rem .45rem; cursor:pointer;
-    line-height:1; font-size:14px;
-  }
-  .bubble-menu-btn[disabled]{ opacity:.45; cursor:default; }
+/* Sections (no inner scrollbars) */
+#rx-fallback-pop .rx-sections{
+  display:flex !important; flex-direction:column !important;
+  gap:8px !important; width:100% !important; overflow:visible !important;
+}
 
-  /* Menus open outward from the rail and are vertically centered with it */
-  .msg:not(.me) .msg-actions .bubble-menu{  /* others -> open to the right */
-    position:absolute; left:100%; top:50%; transform: translateY(-50%);
-    margin-left:8px; display:none;
-    background:var(--bg,#111); color:inherit;
-    border:1px solid var(--border,#333); border-radius:.4rem; padding:6px; z-index:3000;
-    min-width:160px; max-width:60vw; overflow:auto;
-  }
-  .msg.me .msg-actions .bubble-menu{        /* me -> open to the left */
-    position:absolute; right:100%; top:50%; transform: translateY(-50%);
-    margin-right:8px; display:none;
-    background:var(--bg,#111); color:inherit;
-    border:1px solid var(--border,#333); border-radius:.4rem; padding:6px; z-index:3000;
-    min-width:160px; max-width:60vw; overflow:auto;
-  }
-  .bubble-menu .item{ padding:6px 8px; cursor:pointer; white-space:nowrap; }
-  .bubble-menu .item:hover{ background:var(--bg-2,#181818); }
-  .bubble-menu a{ color:inherit; text-decoration:none; }
+/* Headings */
+#rx-fallback-pop .rx-h1{ color:#fff !important; font-size:13px !important; font-weight:700 !important; margin:6px 2px 4px !important; }
+#rx-fallback-pop .rx-h2{ color:rgba(255,255,255,.72) !important; font-size:11.5px !important; font-weight:600 !important; margin:6px 2px 2px !important; }
 
-  /* reaction chips row under message; hide when empty */
-  .reactions{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:4px; }
-  .reactions:empty{ display:none; }
-  .msg .reactions{ position:relative; z-index:200; }  /* be above hover-pad */
-  .rx-chip{
-    border:1px solid var(--border,#333);
-    background:var(--bg-2,#181818);
-    border-radius:.35rem; padding:.15rem .4rem; line-height:1; cursor:pointer; font-size:13px;
-  }
-  .rx-chip{ position:relative; z-index:201; pointer-events:auto; } /* ensure clickable */
-  .rx-chip.active{ outline:2px solid var(--accent,#6cf); }
+/* Emoji grids: fill overlay width (no ragged right edge) */
+#rx-fallback-pop .rx-grid{
+  display:grid !important;
+  grid-auto-flow:row !important;
+  /* columns expand to share leftover space while keeping square tiles */
+  grid-template-columns: repeat(auto-fit, minmax(36px, 1fr)) !important;
+  justify-items:stretch !important;
+  align-items:stretch !important;
+  gap:6px !important;
+  width:100% !important;
+  padding:2px !important;
+  overflow:visible !important;
+  max-height:none !important;
+}
 
-  /* tiny fallback picker */
-  #rx-fallback-pop{
-    position:fixed; z-index:3001; background:var(--bg,#111); border:1px solid var(--border,#333);
-    border-radius:.45rem; padding:6px; display:grid; grid-template-columns:repeat(6,28px); gap:6px;
-    box-shadow:0 10px 30px rgba(0,0,0,.4);
-  }
-  #rx-fallback-pop .rx-emo{
-    border:1px solid var(--border,#333); background:var(--bg-2,#181818);
-    width:28px; height:28px; border-radius:.35rem; cursor:pointer; font-size:18px; line-height:1;
-    display:flex; align-items:center; justify-content:center;
-  }
-  `;
-        document.head.appendChild(st);
+/* Tiles: perfect squares, no border until hover */
+#rx-fallback-pop .rx-grid > .rx-tile,
+#rx-fallback-pop .rx-grid > .rx-emo{
+  aspect-ratio:1/1 !important; width:100% !important; height:auto !important;
+  display:flex !important; align-items:center !important; justify-content:center !important;
+  background:var(--panel,#0e1116) !important;
+  border: var(--bw,2px) solid transparent !important;   /* even thickness; invisible at rest */
+  border-radius:0 !important;
+  -webkit-mask-image:none !important; mask-image:none !important; clip-path: inset(0 round 0) !important;
+  cursor:pointer !important; user-select:none !important;
+}
+#rx-fallback-pop .rx-grid > .rx-tile:hover,
+#rx-fallback-pop .rx-grid > .rx-emo:hover{
+  border-color:#fff !important;                          /* white border on hover */
+}
+
+/* Emoji content sizing */
+#rx-fallback-pop .rx-grid > .rx-tile img,
+#rx-fallback-pop .rx-grid > .rx-emo img{
+  width:72% !important; height:72% !important; max-width:none !important; max-height:none !important;
+  object-fit:contain !important; border-radius:0 !important; image-rendering:-webkit-optimize-contrast;
+}
+#rx-fallback-pop .rx-grid > .rx-tile,
+#rx-fallback-pop .rx-grid > .rx-emo{
+  font-size:28px !important; line-height:1 !important;  /* for unicode emoji */
+}
+
+/* Kill legacy overrides that forced inner scrollbars/borders */
+#rx-fallback-pop.rx-rich .rx-grid{ overflow:visible !important; max-height:none !important; }
+#rx-fallback-pop.rx-rich .rx-tile{ border-color:transparent !important; }
+#rx-fallback-pop.rx-rich .rx-emo{  border-color:transparent !important; }
+
+/* Reaction chips always clickable and above content */
+.msg .reactions{ position:relative !important; z-index:200 !important; }
+.reactions .rx-chip{
+  position:relative !important; z-index:201 !important; pointer-events:auto !important;
+}
+.reactions .rx-chip *{ pointer-events:none !important; }
+.msg .hover-pad{ z-index:0 !important; }
+
+/* Consistent reaction borders + "mine" state */
+.rx-chip,.rx-pill{
+  border-width:var(--bw,2px) !important; border-style:solid !important; border-color:var(--border,#e6e6e6) !important;
+  box-shadow:0 1px 0 var(--soft,rgba(255,255,255,.12)) inset !important;
+}
+.reactions .rx-chip.active,
+.reactions .rx-pill.active,
+.reactions .rx-chip.is-mine,
+.reactions .rx-pill.is-mine{
+  background:#383838 !important; color:#fff !important; border-color:var(--border,#e6e6e6) !important;
+}
+
+/* Keep picker chrome borders uniform */
+#rx-fallback-pop,
+#rx-fallback-pop .rx-head input[type="search"],
+#rx-fallback-pop .rx-head button{
+  border-width:var(--bw,2px) !important;
+}
+/* FORCE: search (fills) + upload (fixed) on one row, upload on the RIGHT */
+#rx-fallback-pop .rx-head{
+  display:flex !important;
+  align-items:center !important;
+  gap:8px !important;
+  flex-wrap:nowrap !important;        /* never drop to next line */
+}
+
+#rx-fallback-pop .rx-head input[type="search"]{
+  flex:1 1 auto !important;           /* takes remaining space */
+  min-width:0 !important;             /* allows shrinking so button fits */
+  width:auto !important;              /* defeat any 100% that could push wrap */
+}
+
+#rx-fallback-pop .rx-head .rx-upload-btn{
+  flex:0 0 36px !important;           /* fixed width */
+  width:36px !important;
+  height:34px !important;
+  margin:0 !important;
+  align-self:stretch !important;      /* aligns nicely with the input */
+  justify-self:end !important;        /* in case grid rules leak in */
+}
+/* ===== FIX: make ALL emoji sections full-width + wrap later (no giant tiles) ===== */
+
+/* Ensure every section & category block uses the full overlay width */
+#rx-fallback-pop .rx-sections,
+#rx-fallback-pop .rx-sections > *,
+#rx-fallback-pop #rx-grid-recent,
+#rx-fallback-pop #rx-grid-custom,
+#rx-fallback-pop .rx-h2 + .rx-grid{
+  inline-size:100% !important;
+  max-inline-size:none !important;
+  padding-inline:0 !important;
+  margin-inline:0 !important;
+}
+
+/* Apply to ALL emoji grids, including category grids following headers */
+#rx-fallback-pop .rx-grid,
+#rx-fallback-pop .rx-h2 + .rx-grid{
+  display:grid !important;
+  /* Keep 36px tiles; allow one more column by tightening column gap */
+  grid-template-columns: repeat(auto-fill, 36px) !important;
+  grid-auto-rows: 36px !important;
+  column-gap:4px !important;    /* was 6px — helps fit an extra column */
+  row-gap:6px !important;
+  justify-content:start !important;
+  justify-items:stretch !important;
+  padding:0 !important;         /* remove inner padding that stole a column */
+  width:100% !important;
+  max-width:none !important;
+}
+
+/* Lock tiles to 36×36 — cancel any responsive 1fr stretching */
+#rx-fallback-pop .rx-grid > .rx-tile,
+#rx-fallback-pop .rx-grid > .rx-emo{
+  width:36px !important;
+  height:36px !important;
+  aspect-ratio:auto !important; /* cancels earlier aspect-ratio:1/1 responsive rule */
+  border: var(--bw,2px) solid transparent !important;
+  border-radius:0 !important;
+  background: var(--panel,#0e1116) !important;
+  cursor:pointer !important;
+  user-select:none !important;
+}
+
+/* Hover border without layout shift */
+#rx-fallback-pop .rx-grid > .rx-tile:hover,
+#rx-fallback-pop .rx-grid > .rx-emo:hover{
+  border-color:#fff !important;
+}
+
+/* Emoji images scale to the plate */
+#rx-fallback-pop .rx-grid > .rx-tile img,
+#rx-fallback-pop .rx-grid > .rx-emo img{
+  width: calc(100% - (var(--bw,2px) * 2)) !important;
+  height: calc(100% - (var(--bw,2px) * 2)) !important;
+  max-width:none !important;
+  max-height:none !important;
+  object-fit:contain !important;
+}
+
+/* Safety: keep everything border-box */
+#rx-fallback-pop, #rx-fallback-pop *{
+  box-sizing:border-box !important;
+  min-width:0 !important;
+}
+/* ==== Custom Reaction Uploader (inline sheet inside #rx-fallback-pop) ==== */
+#rx-fallback-pop .rx-upload-sheet{
+  position: absolute; inset: 8px;
+  background: var(--bg, #0e1116);
+  border: 1px solid var(--border,#e6e6e6);
+  box-shadow: 0 10px 22px rgba(0,0,0,.45);
+  border-radius: .4rem;
+  display: grid; grid-template-rows: auto 1fr auto;
+  z-index: 5;
+}
+#rx-fallback-pop .rx-upload-head{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 12px; border-bottom:1px solid var(--border,#e6e6e6);
+}
+#rx-fallback-pop .rx-upload-title{ font-weight:700; color:#fff; }
+#rx-fallback-pop .rx-upload-close{
+  background:#0e1116; color:#fff; border:2px solid var(--border,#e6e6e6);
+  line-height:1; padding:2px 8px; cursor:pointer; border-radius:0;
+}
+
+#rx-fallback-pop .rx-upload-body{
+  display:grid; gap:12px;
+  grid-template-columns: minmax(280px, 1fr) minmax(220px, 280px);
+  padding:12px;
+}
+#rx-fallback-pop .rx-stage-wrap{
+  display:grid; grid-template-rows:auto 1fr; gap:8px; min-height:0;
+}
+#rx-fallback-pop .rx-canvas-wrap{
+  position:relative; width:100%; aspect-ratio:1/1; border:1px solid var(--border,#e6e6e6);
+  background:#000; display:grid; place-items:center; overflow:hidden;
+}
+#rx-fallback-pop canvas.rx-stage{ width:100%; height:100%; display:block; }
+#rx-fallback-pop .rx-drop-hint{
+  position:absolute; inset:0; display:grid; place-items:center;
+  color:rgba(255,255,255,.66); pointer-events:none; font-size:12px;
+}
+#rx-fallback-pop .rx-stage-ctl{
+  display:grid; gap:8px;
+}
+#rx-fallback-pop .rx-ctl-row{ display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:center; }
+#rx-fallback-pop .rx-ctl-row label{ color:#fff; font-size:12px; opacity:.85; }
+#rx-fallback-pop .rx-ctl-row input[type="range"]{ width:100%; }
+
+#rx-fallback-pop .rx-side{
+  display:grid; align-content:start; gap:10px;
+}
+#rx-fallback-pop .rx-name-row label{ color:#fff; font-size:12px; opacity:.85; display:block; margin-bottom:4px; }
+#rx-fallback-pop .rx-name-row input{
+  width:100%; height:34px; padding:0 10px;
+  border:2px solid var(--border,#e6e6e6); background:#0e1116; color:#fff; border-radius:0;
+}
+#rx-fallback-pop .rx-msg{ font-size:12px; min-height:16px; }
+#rx-fallback-pop .rx-msg.err{ color:#ff8989; }
+#rx-fallback-pop .rx-msg.ok{ color:#7bffb9; }
+
+#rx-fallback-pop .rx-upload-foot{
+  display:flex; justify-content:flex-end; gap:8px; padding:10px 12px;
+  border-top:1px solid var(--border,#e6e6e6);
+}
+#rx-fallback-pop .rx-btn{
+  background:#0e1116; color:#fff; border:2px solid var(--border,#e6e6e6);
+  height:34px; padding:0 12px; border-radius:0; cursor:pointer; font-weight:700;
+}
+#rx-fallback-pop .rx-btn[disabled]{ opacity:.5; cursor:not-allowed; }
+#rx-fallback-pop .rx-canvas-wrap.has-image .rx-drop-hint{ display:none; }
+/* Hint overlays the canvas and is clickable when visible */
+#rx-fallback-pop .rx-canvas-wrap{ position:relative; }
+#rx-fallback-pop .rx-drop-hint{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  border:2px dashed var(--border,#e6e6e6); color:var(--text,#fff);
+  background:rgba(255,255,255,.02);
+  cursor:pointer; user-select:none; text-align:center; padding:8px;
+}
+#rx-fallback-pop .rx-canvas-wrap.has-image .rx-drop-hint{ display:none; }
+/* Range: square thumbs, flat track */
+#rx-fallback-pop .rx-stage-ctl input[type="range"]{
+  -webkit-appearance:none; appearance:none;
+  width:100%; height:8px; background:#0e1116; border:2px solid var(--border,#e6e6e6);
+  border-radius:0; outline:none;
+}
+#rx-fallback-pop .rx-stage-ctl input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none;
+  width:14px; height:14px; background:#fff; border:2px solid var(--border,#e6e6e6);
+  border-radius:0; cursor:pointer; margin-top:-3px;
+}
+#rx-fallback-pop .rx-stage-ctl input[type="range"]::-moz-range-thumb{
+  width:14px; height:14px; background:#fff; border:2px solid var(--border,#e6e6e6);
+  border-radius:0; cursor:pointer;
+}
+#rx-fallback-pop .rx-stage-ctl input[type="range"]::-moz-range-track{
+  height:8px; background:#0e1116; border:2px solid var(--border,#e6e6e6); border-radius:0;
+}
+
+/* Buttons: base + invert on hover */
+#rx-fallback-pop .rx-upload-sheet .rx-btn{
+  border:2px solid var(--border,#e6e6e6);
+  background:#0e1116; color:#fff; border-radius:0; line-height:1; height:34px; padding:0 12px;
+}
+#rx-fallback-pop .rx-upload-sheet .rx-btn:hover,
+#rx-fallback-pop .rx-upload-sheet .rx-btn:focus{
+  background:#fff; color:#0e1116;
+}
+#rx-fallback-pop .rx-upload-sheet .rx-btn:disabled{
+  opacity:.5; cursor:not-allowed; filter:none;
+}
+/* keep invert for all buttons EXCEPT the Clear button */
+#rx-fallback-pop .rx-upload-sheet .rx-btn:not(.rx-clear):hover,
+#rx-fallback-pop .rx-upload-sheet .rx-btn:not(.rx-clear):focus{
+  background:#fff; color:#0e1116;
+}
+
+/* Clear: invert on hover ONLY; stay normal on focus/active */
+#rx-fallback-pop .rx-upload-sheet .rx-btn.rx-clear:hover{
+  background:#fff; color:#0e1116;
+}
+#rx-fallback-pop .rx-upload-sheet .rx-btn.rx-clear:focus,
+#rx-fallback-pop .rx-upload-sheet .rx-btn.rx-clear:active{
+  background:#0e1116; color:#fff;
+}
+/* Full-width hover pad sits behind the rail but above message content.
+   It captures hover across the whole row, but we'll press-through on interaction. */
+.msg .hover-pad{
+  position:absolute; inset:0; left:-100vw; right:-100vw;
+  background:transparent; pointer-events:auto !important; z-index:0 !important;
+}
+
+/* Keep the rail visible whenever the row is hovered, picker/menu is open, or content is focused. */
+.msg.hover .msg-actions,
+.msg.menu-open .msg-actions,
+.msg.rx-open .msg-actions,
+.msg:focus-within .msg-actions { display:flex !important; }
+.audp .audp-btn { cursor: pointer; }
+
+/* ——— show the rail on row hover/focus (no overlay needed) ——— */
+.msg .msg-actions{
+  position:absolute; top:50%; right:8px; transform:translateY(-50%);
+  display:none; z-index:210; gap:6px; pointer-events:auto;
+}
+.msg:hover .msg-actions,
+.msg.hover .msg-actions,       /* your existing JS wiring still works */
+.msg.menu-open .msg-actions,
+.msg.rx-open .msg-actions,
+.msg:focus-within .msg-actions{ display:flex !important; }
+/* Expand the message's hover hit-area horizontally so ⋮ doesn't disappear */
+.msg { position: relative; }
+
+/* Full-width invisible hover net that keeps the row “hovered” */
+.msg > .hover-pad{
+  position:absolute;
+  /* tiny top/bottom tolerance so small vertical wobbles don't drop hover */
+  top:-6px; bottom:-6px;
+
+  /* extend well past the bubble left/right */
+  left:-100vw; right:-100vw;
+
+  background:transparent;
+  pointer-events:auto;        /* becomes the event target in the gutters */
+  z-index:0;                  /* sits behind all real content */
+}
+
+/* Ensure real content sits above the pad and stays clickable */
+.msg > :not(.hover-pad):not(.msg-actions){
+  position:relative;
+  z-index:1;
+}
+
+/* Belt-and-suspenders: keep the rail shown if you hover the rail itself */
+.msg .msg-actions:hover{ display:flex !important; }
+
+/* === FINAL: Wide invisible hover field behind each message === */
+.msg { position: relative; }
+
+/* The hover pad: same height as the message, extends far left/right, sits behind content */
+.msg > .hover-pad{
+  display:block !important;
+  position:absolute;
+  top:-6px;                 /* small tolerance makes aiming forgiving */
+  bottom:-6px;
+  left:-100vw;              /* extend well beyond bubble */
+  right:-100vw;
+  background:transparent;
+  pointer-events:auto !important;  /* catches hover in the gutters */
+  z-index:0 !important;            /* behind all real content */
+}
+
+/* Ensure real content remains on top and clickable */
+.msg > :not(.hover-pad):not(.msg-actions){
+  position:relative;
+  z-index:1;
+}
+
+/* Actions rail: shown whenever the row is hovered/focused or menus are open */
+.msg .msg-actions{
+  position:absolute; top:50%; right:8px; transform:translateY(-50%);
+  display:none; z-index:210; gap:6px; pointer-events:auto;
+}
+.msg:hover .msg-actions,
+.msg.hover .msg-actions,       /* JS wiring also sets .hover */
+.msg.menu-open .msg-actions,
+.msg.rx-open .msg-actions,
+.msg:focus-within .msg-actions{ display:flex !important; }
+
+`;
         DBG('styles injected: dm-msg-actions-styles');
     })();
     function isGroupChat() { return !!(state.currentConvDetail?.is_group); }
@@ -441,6 +801,8 @@
 
         popEl.style.left = Math.round(left) + 'px';
         popEl.style.top = Math.round(top) + 'px';
+        popEl.style.transform = 'none';   // <<< NEW: kill stray transforms
+        popEl.style.margin = '0';         // <<< NEW: kill stray margins
         popEl.style.visibility = 'visible';
     }
 
@@ -520,27 +882,6 @@
             ? (baseDeletable && deadlineOk)             // optimistic until settings arrive
             : (deletionEnabled && baseDeletable && deadlineOk && effectiveOk));
 
-        // --- FULL-WIDTH HOVER PAD (keeps hover active along the whole row) ---
-        let pad = root.querySelector(':scope > .hover-pad');
-        if (!pad) {
-            pad = document.createElement('div');
-            pad.className = 'hover-pad';
-            Object.assign(pad.style, {
-                position: 'absolute',
-                top: '0', bottom: '0',
-                left: '-100vw', right: '-100vw',
-                background: 'transparent',
-                pointerEvents: 'auto',   // <— ensure vertical/row hover works
-                zIndex: '0'
-            });
-            root.appendChild(pad);
-        } else {
-            // force the vertical hover behavior even if global CSS conflicts
-            pad.style.pointerEvents = 'auto';
-            pad.style.left = '-100vw';
-            pad.style.right = '-100vw';
-        }
-
         // --- vertical rail ---
         let actions = root.querySelector(':scope > .msg-actions');
         if (!actions) {
@@ -606,6 +947,15 @@
                 }
 
                 portalOpen(menu, 'bubble-menu--portal');
+
+                // >>> NEW: adopt theme so borders/font match app
+                inheritTheme(dotsBtn.closest('.msg') || dotsBtn, menu);
+
+                // <<< NEW: ensure fixed positioning & no transforms
+                menu.style.position = 'fixed';
+                menu.style.transform = 'none';
+                menu.style.margin = '0';
+
                 menu.dataset.open = '1';
                 menu.style.display = 'block';
                 root.classList.add('menu-open');
@@ -709,6 +1059,14 @@
 
         if (!isSystem && isGroupChat() && showFrom) {
             const label = document.createElement('div'); label.className = 'from'; label.textContent = usernameFor(m.sender_id); wrap.appendChild(label);
+        }
+
+        // install a full-row hover pad so ⋮ never collapses while aiming
+        if (!isSystem && !wrap.querySelector(':scope > .hover-pad')) {
+            const hp = document.createElement('div');
+            hp.className = 'hover-pad';
+            hp.setAttribute('aria-hidden', 'true');
+            wrap.insertBefore(hp, wrap.firstChild);
         }
 
         if (m.text) wrap.insertAdjacentHTML('beforeend', '<div>' + esc(m.text) + '</div>');
@@ -1055,6 +1413,34 @@
         }
     }
 
+    function inheritTheme(fromEl, toEl) {
+        try {
+            const src = (fromEl && fromEl.nodeType === 1)
+                ? fromEl
+                : document.querySelector('#msgs') || document.documentElement;
+
+            const cs = getComputedStyle(src);
+
+            // Copy ALL custom properties (e.g., --bg, --bg-2, --border, --accent, etc.)
+            for (let i = 0; i < cs.length; i++) {
+                const name = cs[i];
+                if (name.startsWith('--')) {
+                    const val = cs.getPropertyValue(name);
+                    if (val) toEl.style.setProperty(name, val);
+                }
+            }
+
+            // Typography and foreground color so inputs/buttons match your app
+            toEl.style.font = cs.font || `${cs.fontSize} ${cs.fontFamily}`;
+            toEl.style.color = cs.color || 'inherit';
+            toEl.style.setProperty('-webkit-font-smoothing',
+                cs.getPropertyValue('-webkit-font-smoothing') || 'antialiased');
+            toEl.style.setProperty('text-rendering',
+                cs.getPropertyValue('text-rendering') || 'optimizeLegibility');
+            toEl.style.boxSizing = 'border-box';
+        } catch { }
+    }
+
     /* ==========================
        Reactions controller (with fallback)
        ========================== */
@@ -1091,28 +1477,211 @@
             // no "Add reaction" button here; picker is opened by the hover rail's 🙂 button
         }
 
-        class SimpleReactionPickerUI {
-            constructor(opts) { this.opts = opts || {}; }
-            open(msgId, anchorEl) {
-                // nuke any existing popup cleanly
-                const old = document.getElementById('rx-fallback-pop');
-                if (old) {
-                    old._detachReposition?.();
-                    portalClose(old, 'rx-pop--portal');
-                    old.remove();
+        class RichReactionPickerUI {
+            constructor(opts) {
+                this.opts = opts || {};
+                this.recentKey = 'rx.recent.v1';
+                this.recent = this._loadRecent();
+                // Emoji source: allow host to inject a full list; fallback to a curated set.
+                this.EMOJI = (window.MessagesApp && window.MessagesApp.EMOJI_FULL) || DEFAULT_EMOJI; // defined below
+                this.cats = [...new Set(this.EMOJI.map(e => e.cat))];
+            }
+
+            _loadRecent() {
+                try { return JSON.parse(localStorage.getItem(this.recentKey) || '[]').slice(0, 24); } catch { return []; }
+            }
+            _pushRecent(key) {
+                try {
+                    const arr = this._loadRecent().filter(k => k !== key);
+                    arr.unshift(key);
+                    localStorage.setItem(this.recentKey, JSON.stringify(arr.slice(0, 24)));
+                    this.recent = arr.slice(0, 24);
+                } catch { }
+            }
+
+            async _toggleBookmark(id, want) {
+                // Prefer host overlay if it knows how to bookmark
+                if (window.UIOverlays?.CustomEmoji?.toggleBookmark) {
+                    await window.UIOverlays.CustomEmoji.toggleBookmark(id, want);
+                    return;
                 }
+                // Fallback REST: try a few common shapes; ignore failure quietly
+                const tries = [
+                    () => apiPost('/dm/reactions/custom/bookmark', { emoji_id: +id, save: !!want }),
+                    () => apiPost('/dm/reactions/custom/bookmarks/toggle', { id: +id, save: !!want }),
+                    () => apiPost('/dm/reactions/custom/library', { id: +id, bookmarked: !!want }), // PATCH-y API sometimes aliased as POST
+                ];
+                for (const t of tries) { try { await t(); return; } catch { } }
+            }
+
+            async _openUploader() {
+                // Prefer host overlay
+                if (window.UIOverlays?.CustomEmojiUploadUI?.open) {
+                    await window.UIOverlays.CustomEmojiUploadUI.open();
+                    return;
+                }
+                // Fallback tiny uploader
+                return new Promise((resolve) => {
+                    const inp = document.createElement('input');
+                    inp.type = 'file';
+                    inp.accept = 'image/*';
+                    inp.multiple = false;
+                    inp.style.display = 'none';
+                    document.body.appendChild(inp);
+                    inp.onchange = async () => {
+                        const f = inp.files && inp.files[0];
+                        document.body.removeChild(inp);
+                        if (!f) return resolve();
+                        const fd = new FormData();
+                        fd.append('file', f, f.name || 'custom-emoji');
+                        try {
+                            await window.MessagesApp.api.api('/dm/reactions/custom/upload', { method: 'POST', body: fd });
+                        } catch (e) {
+                            // Silently ignore (keep UI responsive)
+                        }
+                        resolve();
+                    };
+                    inp.click();
+                });
+            }
+
+            _makeTile(payload, { saved, title, imgUrl, text }) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'rx-tile';
+                btn.title = title || '';
+                if (imgUrl) {
+                    const img = document.createElement('img');
+                    img.src = imgUrl;
+                    img.alt = title || 'custom';
+                    btn.appendChild(img);
+                } else if (text) {
+                    btn.textContent = text;
+                    btn.style.fontSize = '20px';
+                    btn.style.lineHeight = '1';
+                }
+                // Bookmark nub (only on custom; appears on hover)
+                if (payload.kind === 'custom') {
+                    const bm = document.createElement('div');
+                    bm.className = 'rx-bm' + (saved ? ' saved' : '');
+                    bm.title = saved ? 'Remove from favorites' : 'Save to favorites';
+                    bm.textContent = saved ? '★' : '☆';
+                    bm.addEventListener('click', async (e) => {
+                        e.stopPropagation(); e.preventDefault();
+                        const want = !saved;
+                        try { await this._toggleBookmark(payload.custom_emoji_id, want); }
+                        finally {
+                            // reflect immediately; library refresh happens outside
+                            saved = want;
+                            bm.classList.toggle('saved', saved);
+                            bm.textContent = saved ? '★' : '☆';
+                            bm.title = saved ? 'Remove from favorites' : 'Save to favorites';
+                        }
+                    });
+                    btn.appendChild(bm);
+                }
+                // Pick handler
+                btn.addEventListener('click', async (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    try {
+                        await this.opts.toggleReaction(this._msgId, payload);
+                        const key = payload.kind === 'emoji' ? `u:${payload.unicode}` : `c:${payload.custom_emoji_id}`;
+                        this._pushRecent(key);
+                        this.onPicked && this.onPicked(payload);
+                    } catch { }
+                    finally {
+                        this._cleanup && this._cleanup();
+                    }
+                });
+                return btn;
+            }
+
+            _renderCustom(grid, q, onlySaved) {
+                const lib = Array.from(LIB.values() || []); // [{id,url,name,saved}]
+                const items = lib.filter(e => {
+                    if (onlySaved && !e.saved) return false;
+                    if (!q) return true;
+                    const need = q.toLowerCase();
+                    return (e.name || '').toLowerCase().includes(need);
+                });
+                grid.innerHTML = '';
+                if (!items.length) {
+                    const empty = document.createElement('div'); empty.className = 'rx-empty';
+                    empty.textContent = onlySaved ? 'No saved custom reactions yet.' : 'No matches.';
+                    grid.appendChild(empty);
+                    return;
+                }
+                items.forEach(e => {
+                    const tile = this._makeTile({ kind: 'custom', custom_emoji_id: e.id }, {
+                        saved: !!e.saved,
+                        title: e.name || 'Custom',
+                        imgUrl: e.url
+                    });
+                    grid.appendChild(tile);
+                });
+            }
+
+            _renderEmoji(grid, q, cat) {
+                let arr = this.EMOJI;
+                if (cat && cat !== 'All') arr = arr.filter(e => e.cat === cat);
+                if (q) {
+                    const need = q.toLowerCase();
+                    arr = arr.filter(e => (e.n || '').toLowerCase().includes(need) || e.u.includes(q));
+                }
+                grid.innerHTML = '';
+                // Recent first (only when no query)
+                // Recent first (only when no query)
+                if (!q && this.recent.length) {
+                    // remove any previous recent block
+                    const prevWrap = grid.previousElementSibling;
+                    if (prevWrap && prevWrap.classList && prevWrap.classList.contains('rx-recent-wrap')) {
+                        prevWrap.remove();
+                    }
+                    const wrap = document.createElement('div'); wrap.className = 'rx-recent-wrap';
+                    const title = document.createElement('div'); title.className = 'rx-title'; title.textContent = 'Recent';
+                    const rGrid = document.createElement('div'); rGrid.className = 'rx-grid';
+                    this.recent.forEach(k => {
+                        const isCustom = k.startsWith('c:');
+                        if (isCustom) {
+                            const id = +k.slice(2); const meta = LIB.get(id);
+                            if (!meta) return;
+                            rGrid.appendChild(this._makeTile({ kind: 'custom', custom_emoji_id: id }, { saved: !!meta.saved, title: meta.name, imgUrl: meta.url }));
+                        } else {
+                            const uni = k.slice(2);
+                            const e = this.EMOJI.find(x => x.u === uni);
+                            if (e) rGrid.appendChild(this._makeTile({ kind: 'emoji', unicode: e.u }, { title: e.n, text: e.u }));
+                        }
+                    });
+                    wrap.append(title, rGrid);
+                    grid.parentNode.insertBefore(wrap, grid);
+                } else {
+                    // if there was a recent block and now we have a query, remove it
+                    const prevWrap = grid.previousElementSibling;
+                    if (prevWrap && prevWrap.classList && prevWrap.classList.contains('rx-recent-wrap')) {
+                        prevWrap.remove();
+                    }
+                }
+                if (!arr.length) {
+                    const empty = document.createElement('div'); empty.className = 'rx-empty'; empty.textContent = 'No matches.';
+                    grid.appendChild(empty);
+                    return;
+                }
+                arr.forEach(e => {
+                    const tile = this._makeTile({ kind: 'emoji', unicode: e.u }, { title: e.n, text: e.u });
+                    grid.appendChild(tile);
+                });
+            }
+
+            async open(msgId, anchorEl) {
+                // remove old
+                const old = document.getElementById('rx-fallback-pop');
+                if (old) { old._detachReposition?.(); portalClose(old, 'rx-pop--portal'); old.remove(); }
+
+                this._msgId = msgId;
 
                 const pop = document.createElement('div');
                 pop.id = 'rx-fallback-pop';
-                pop.className = 'rx-pop--portal';
-
-                // grid content
-                pop.style.display = 'grid';
-                pop.style.gridTemplateColumns = 'repeat(6, 28px)';
-                pop.style.gap = '6px';
-                pop.style.padding = '6px';
-
-                // NEW: make it look/behave like the 3-dots menu and satisfy the position guards
+                pop.className = 'rx-pop--portal rx-rich';
                 pop.dataset.open = '1';
                 Object.assign(pop.style, {
                     position: 'fixed',
@@ -1120,59 +1689,464 @@
                     border: '1px solid var(--border)',
                     boxShadow: '0 8px 18px rgba(0,0,0,.35)',
                     borderRadius: '.4rem',
-                    zIndex: '3000',
+                    zIndex: '3000'
                 });
 
-                const EMO = ['👍', '❤️', '😂', '😮', '😢', '😡', '🎉', '🙏', '🔥', '👏', '👌', '🤝'];
-                EMO.forEach(u => {
-                    const b = document.createElement('button');
-                    b.type = 'button';
-                    b.className = 'rx-emo';
-                    b.textContent = u;
-                    b.style.cssText = 'border:1px solid var(--border);background:var(--panel);width:28px;height:28px;border-radius:.35rem;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;';
-                    b.onclick = async (e) => {
-                        e.stopPropagation();
-                        try {
-                            await this.opts.toggleReaction?.(msgId, { kind: 'emoji', unicode: u });
-                            this.onPicked && this.onPicked({ kind: 'emoji', unicode: u });
-                        } finally {
-                            cleanup();
-                        }
+                inheritTheme(anchorEl?.closest?.('.msg') || anchorEl || document.querySelector('#msgs') || document.documentElement, pop);
+
+                // —— header: SEARCH + UPLOAD (no dropdowns)
+                const head = document.createElement('div'); head.className = 'rx-head';
+                const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Search emoji & custom…';
+                const uploadBtn = document.createElement('button');
+                uploadBtn.type = 'button';
+                uploadBtn.className = 'rx-upload-btn';
+                uploadBtn.setAttribute('aria-label', 'Upload custom emoji');
+                uploadBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3l4 4h-3v6h-2V7H8l4-4zm-7 14h14v2H5v-2z"/></svg>';
+                uploadBtn.addEventListener('click', (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    openUploaderSheet(); // ← inline editor, keeps picker open
+                });
+                head.append(search, uploadBtn);
+                function openUploaderSheet() {
+                    if (pop.querySelector('.rx-upload-sheet')) return;
+
+                    const PNG_MIME = 'image/png';
+                    const MAX_BYTES = 1 * 1024 * 1024;
+                    const OUT_SIZE = 512;
+                    const ZOOM_MIN_REL = 0.5;
+                    const ZOOM_MAX_REL = 14.0;
+
+                    const relFromNormalizedSlider = (t) => {
+                        t = Math.max(0, Math.min(1, Number(t)));
+                        if (t <= 0.5) { const u = t / 0.5; return ZOOM_MIN_REL * Math.pow(1 / ZOOM_MIN_REL, u); }
+                        const u = (t - 0.5) / 0.5; return Math.pow(ZOOM_MAX_REL, u);
                     };
-                    pop.appendChild(b);
-                });
 
-                // portal + position like the 3-dots menu
+                    const RE_NAME = /^[A-Za-z0-9_]{4,16}$/;
+                    const looksBanned = (raw) => {
+                        const s = String(raw || '').toLowerCase();
+                        try {
+                            if (window.DP?.isBanned) return !!window.DP.isBanned(s);
+                            if (window.USERNAME?.isBanned) return !!window.USERNAME.isBanned(s);
+                            if (window.MessagesApp?.utils?.isBannedWord) return !!window.MessagesApp.utils.isBannedWord(s);
+                            const list = window.USERNAME_BANNED || window.BANNED_WORDS || [];
+                            return list.some(w => s.includes(String(w).toLowerCase()));
+                        } catch { return false; }
+                    };
+
+                    const sheet = document.createElement('div');
+                    sheet.className = 'rx-upload-sheet';
+                    sheet.innerHTML = `
+    <div class="rx-upload-head">
+      <div class="rx-upload-title">New custom reaction</div>
+      <button type="button" class="rx-upload-close">×</button>
+    </div>
+    <div class="rx-upload-body">
+      <div class="rx-stage-wrap">
+        <div class="rx-canvas-wrap">
+          <canvas class="rx-stage" width="320" height="320"></canvas>
+          <div class="rx-drop-hint" role="button" tabindex="0">Drop image here or click to choose</div>
+        </div>
+        <div class="rx-stage-ctl">
+          <div class="rx-ctl-row">
+            <label for="rx-zoom">Zoom</label>
+            <input id="rx-zoom" type="range" min="0" max="1" step="0.001" value="0.5">
+          </div>
+          <div class="rx-ctl-row" style="display:flex;align-items:center;gap:8px">
+            <label for="rx-rot">Rotate</label>
+            <input id="rx-rot" type="range" min="-180" max="180" step="1" value="0" style="flex:1 1 auto">
+          </div>
+          <div class="rx-ctl-row" style="display:flex;align-items:center;gap:8px">
+            <label>Drag</label>
+            <span style="color:#aaa;font-size:12px">Click & drag the image</span>
+            <button type="button" class="rx-btn rx-clear" style="margin-left:auto">Clear</button>
+          </div>
+        </div>
+      </div>
+      <div class="rx-side">
+        <div class="rx-name-row">
+          <label for="rx-name">Reaction name (4–16, letters/numbers/_)</label>
+          <input id="rx-name" type="text" inputmode="latin" autocomplete="off" spellcheck="false" placeholder="e.g. party_parrot">
+        </div>
+        <div class="rx-msg" id="rx-msg"></div>
+      </div>
+    </div>
+    <div class="rx-upload-foot">
+      <button class="rx-btn rx-cancel" type="button">Cancel</button>
+      <button class="rx-btn rx-create" type="button" disabled>Create</button>
+    </div>`;
+                    pop.appendChild(sheet);
+
+                    const canvas = sheet.querySelector('canvas.rx-stage');
+                    const ctx = canvas.getContext('2d');
+                    const zoomCtl = sheet.querySelector('#rx-zoom');
+                    const rotCtl = sheet.querySelector('#rx-rot');
+                    const nameInp = sheet.querySelector('#rx-name');
+                    const msgEl = sheet.querySelector('#rx-msg');
+                    const btnCancel = sheet.querySelector('.rx-cancel');
+                    const btnClose = sheet.querySelector('.rx-upload-close');
+                    const btnCreate = sheet.querySelector('.rx-create');
+                    const btnClear = sheet.querySelector('.rx-clear');
+                    const wrap = sheet.querySelector('.rx-canvas-wrap');
+                    const hint = sheet.querySelector('.rx-drop-hint');
+
+                    // Hidden chooser lives INSIDE the sheet
+                    const file = document.createElement('input');
+                    file.type = 'file';
+                    file.accept = 'image/*';
+                    file.tabIndex = -1;
+                    file.style.display = 'none';
+                    sheet.appendChild(file);
+                    file.addEventListener('click', e => e.stopPropagation(), true);
+
+                    const state = { img: null, zoom: 1, rot: 0, panX: 0, panY: 0, dragging: false, dragStart: { x: 0, y: 0 }, panStart: { x: 0, y: 0 } };
+
+                    wrap.addEventListener('click', (e) => {
+                        if (state.img) return;                // only when empty
+                        e.preventDefault(); e.stopPropagation();
+                        file.click();
+                    });
+
+                    function setMsg(text, ok = false) { msgEl.textContent = text || ''; msgEl.className = 'rx-msg ' + (text ? (ok ? 'ok' : 'err') : ''); }
+                    function clearMsg() { setMsg(''); }
+
+                    function toggleHint() {
+                        wrap.classList.toggle('has-image', !!state.img);
+                    }
+
+                    function drawBlank() {
+                        ctx.setTransform(1, 0, 0, 1, 0, 0);
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.fillStyle = '#000';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        // guide
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(255,255,255,.18)';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+                        ctx.restore();
+                    }
+
+                    function draw() {
+                        drawBlank();
+                        if (!state.img) return;
+                        const cw = canvas.width, ch = canvas.height;
+                        ctx.save();
+                        ctx.translate(cw / 2 + state.panX, ch / 2 + state.panY);
+                        ctx.rotate(state.rot * Math.PI / 180);
+                        const base = Math.min(cw / state.img.width, ch / state.img.height);
+                        const s = base * state.zoom;
+                        ctx.scale(s, s);
+                        ctx.drawImage(state.img, -state.img.width / 2, -state.img.height / 2);
+                        ctx.restore();
+                    }
+
+                    function resetFrame() {
+                        state.img = null; state.zoom = 1; state.rot = 0; state.panX = 0; state.panY = 0;
+                        zoomCtl.value = '0.5'; rotCtl.value = '0';
+                        file.value = '';
+                        toggleHint();
+                        draw();
+                        syncCreateEnabled();
+                    }
+
+                    function loadFromFile(f) {
+                        if (!f) return;
+                        const url = URL.createObjectURL(f);
+                        const img = new Image();
+                        img.onload = () => {
+                            URL.revokeObjectURL(url);
+                            state.img = img; state.zoom = 1; state.rot = 0; state.panX = 0; state.panY = 0;
+                            zoomCtl.value = '0.5'; rotCtl.value = '0';
+                            toggleHint(); clearMsg(); draw(); syncCreateEnabled();
+                        };
+                        img.onerror = () => setMsg('Could not load image');
+                        img.src = url;
+                    }
+
+                    // Open chooser ONLY from the hint (when no image)
+                    function openChooser(e) {
+                        if (state.img) return;
+                        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+                        file.click();
+                    }
+                    hint.addEventListener('click', openChooser);
+                    hint.addEventListener('keydown', (e) => {
+                        if ((e.key === 'Enter' || e.key === ' ') && !state.img) openChooser(e);
+                    });
+
+                    file.addEventListener('change', (ev) => {
+                        loadFromFile(ev.target.files?.[0]);
+                        ev.target.value = '';
+                    });
+
+                    // Drag & drop still works over the whole wrap
+                    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
+                        wrap.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); });
+                    });
+                    wrap.addEventListener('drop', (e) => {
+                        const f = e.dataTransfer?.files?.[0];
+                        loadFromFile(f);
+                    });
+
+                    // Pan/zoom/rotate
+                    wrap.addEventListener('mousedown', (e) => {
+                        if (!state.img) return;            // with no image, hint handles chooser
+                        e.preventDefault();
+                        state.dragging = true;
+                        state.dragStart = { x: e.clientX, y: e.clientY };
+                        state.panStart = { x: state.panX, y: state.panY };
+                    });
+                    window.addEventListener('mousemove', (e) => {
+                        if (!state.dragging) return;
+                        state.panX = state.panStart.x + (e.clientX - state.dragStart.x);
+                        state.panY = state.panStart.y + (e.clientY - state.dragStart.y);
+                        draw();
+                    }, { passive: true });
+                    window.addEventListener('mouseup', () => { state.dragging = false; });
+
+                    zoomCtl.addEventListener('input', () => { state.zoom = relFromNormalizedSlider(zoomCtl.value); draw(); });
+                    rotCtl.addEventListener('input', () => { state.rot = parseFloat(rotCtl.value) || 0; draw(); });
+
+                    // Name input
+                    function sanitizeNameLive(v) { let s = String(v || '').replace(/[^A-Za-z0-9_]/g, ''); if (s.length > 16) s = s.slice(0, 16); return s; }
+                    function nameValidNow() {
+                        const n = nameInp.value.trim();
+                        if (!RE_NAME.test(n)) return { ok: false, why: '4–16 chars: letters, numbers, underscore' };
+                        if (looksBanned(n)) return { ok: false, why: 'That name is not allowed' };
+                        return { ok: true };
+                    }
+                    function syncCreateEnabled() { btnCreate.disabled = !(state.img && nameValidNow().ok); }
+
+                    nameInp.addEventListener('input', () => {
+                        const caret = nameInp.selectionStart;
+                        const cleaned = sanitizeNameLive(nameInp.value);
+                        if (cleaned !== nameInp.value) {
+                            nameInp.value = cleaned;
+                            const pos = Math.max(0, (caret || 0) - 1);
+                            nameInp.setSelectionRange(pos, pos);
+                        }
+                        const chk = nameValidNow();
+                        if (!chk.ok) setMsg(chk.why); else clearMsg();
+                        syncCreateEnabled();
+                    });
+
+                    // Clear button
+                    btnClear.addEventListener('click', (e) => {
+                        resetFrame();
+                        btnClear.blur();
+                    });
+
+                    // Create
+                    btnCreate.addEventListener('click', async () => {
+                        clearMsg();
+                        if (!state.img) { setMsg('Choose an image first.'); return; }
+                        const chk = nameValidNow(); if (!chk.ok) { setMsg(chk.why); return; }
+
+                        const out = document.createElement('canvas'); out.width = OUT_SIZE; out.height = OUT_SIZE;
+                        const ox = out.getContext('2d');
+                        ox.clearRect(0, 0, OUT_SIZE, OUT_SIZE);
+                        ox.save();
+                        ox.translate(OUT_SIZE / 2 + (state.panX * (OUT_SIZE / canvas.width)),
+                            OUT_SIZE / 2 + (state.panY * (OUT_SIZE / canvas.height)));
+                        ox.rotate(state.rot * Math.PI / 180);
+                        const base = Math.min(OUT_SIZE / state.img.width, OUT_SIZE / state.img.height);
+                        ox.scale(base * state.zoom, base * state.zoom);
+                        ox.drawImage(state.img, -state.img.width / 2, -state.img.height / 2);
+                        ox.restore();
+
+                        const blob = await new Promise(res => out.toBlob(res, PNG_MIME));
+                        if (!blob) { setMsg('Failed to encode PNG'); return; }
+                        if (blob.size > MAX_BYTES) { setMsg('Image too large (>1MB). Zoom/crop more or pick a smaller image.'); return; }
+
+                        try {
+                            const fd = new FormData();
+                            fd.append('file', blob, nameInp.value + '.png');
+                            fd.append('name', nameInp.value);
+                            await window.MessagesApp.api.api('/dm/reactions/custom/upload', { method: 'POST', body: fd });
+                            setMsg('Created!', true);
+
+                            try { await refreshLibrary(); } catch { }
+                            try { await loadLibraryOnce(); } catch { }
+                            refreshAll();
+
+                            closeSheet();
+                        } catch (err) {
+                            setMsg((err?.detail || err?.message || 'Upload failed.'));
+                        }
+                    });
+
+                    function closeSheet() {
+                        sheet.remove();
+                        file.remove();
+                    }
+
+                    // stop the click at capture so the document's capture listener can't see it
+                    function stopAndClose(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        closeSheet();
+                    }
+
+                    btnCancel.addEventListener('click', stopAndClose, true); // capture = true
+                    btnClose.addEventListener('click', stopAndClose, true); // capture = true
+
+                    // Start fresh
+                    toggleHint();
+                    draw();
+                }
+
+                // —— sections
+                const sections = document.createElement('div'); sections.className = 'rx-sections';
+
+                // RECENT
+                const recentH1 = document.createElement('div'); recentH1.className = 'rx-h1'; recentH1.textContent = 'Recent';
+                const recentGrid = document.createElement('div'); recentGrid.className = 'rx-grid'; recentGrid.id = 'rx-grid-recent';
+
+                // CUSTOM
+                const customH1 = document.createElement('div'); customH1.className = 'rx-h1'; customH1.textContent = 'Custom';
+                const customGrid = document.createElement('div'); customGrid.className = 'rx-grid'; customGrid.id = 'rx-grid-custom';
+
+                // EMOJI (by categories)
+                const emojiH1 = document.createElement('div'); emojiH1.className = 'rx-h1'; emojiH1.textContent = 'Emoji';
+                const emojiCatsWrap = document.createElement('div');
+
+                sections.append(recentH1, recentGrid, customH1, customGrid, emojiH1, emojiCatsWrap);
+                pop.append(head, sections);
+
+                // portal + position + listeners
                 portalOpen(pop, 'rx-pop--portal');
+                inheritTheme(anchorEl?.closest?.('.msg') || anchorEl || document.querySelector('#msgs') || document.documentElement, pop);
                 positionUnderAnchor(anchorEl || document.body, pop);
                 bindReposition(pop, anchorEl || document.body);
 
-                // keep reference to the row to clear .rx-open on close
                 const row = anchorEl?.closest?.('.msg') || null;
-
-                const onDocClick = (ev) => {
-                    if (!pop.contains(ev.target)) cleanup();
-                };
-                const onKey = (ev) => {
-                    if (ev.key === 'Escape') cleanup();
-                };
 
                 const cleanup = () => {
                     document.removeEventListener('click', onDocClick, true);
                     window.removeEventListener('keydown', onKey, true);
-                    pop.dataset.open = '0';                 // <-- mark closed
+                    pop.dataset.open = '0';
                     pop._detachReposition?.();
                     portalClose(pop, 'rx-pop--portal');
                     pop.remove();
                     row && row.classList.remove('rx-open');
+                    this.onClosed && this.onClosed();
                 };
-
+                const onDocClick = (ev) => { if (!pop.contains(ev.target)) cleanup(); };
+                const onKey = (ev) => { if (ev.key === 'Escape') cleanup(); };
                 setTimeout(() => document.addEventListener('click', onDocClick, true), 0);
                 window.addEventListener('keydown', onKey, true);
+                this._cleanup = cleanup;
+
+                // Filtering state
+                const state = { q: '' };
+                const qMatch = (txt) => {
+                    const q = state.q; if (!q) return true;
+                    return (txt || '').toLowerCase().includes(q.toLowerCase());
+                };
+
+                const renderRecent = () => {
+                    recentGrid.innerHTML = '';
+                    const list = (this.recent || []).slice(0, 24);
+                    if (!list.length) { recentH1.style.display = 'none'; recentGrid.style.display = 'none'; return; }
+
+                    const filtered = list.filter(k => {
+                        if (k.startsWith('c:')) {
+                            const meta = LIB.get(+k.slice(2));
+                            return meta ? qMatch(meta.name || '') : false;
+                        } else {
+                            const uni = k.slice(2);
+                            const e = this.EMOJI.find(x => x.u === uni);
+                            return e ? (qMatch(e.n) || uni.includes(state.q)) : false;
+                        }
+                    });
+
+                    if (!filtered.length) { recentH1.style.display = 'none'; recentGrid.style.display = 'none'; return; }
+                    recentH1.style.display = ''; recentGrid.style.display = '';
+                    filtered.forEach(k => {
+                        if (k.startsWith('c:')) {
+                            const id = +k.slice(2); const meta = LIB.get(id);
+                            if (meta) recentGrid.appendChild(this._makeTile({ kind: 'custom', custom_emoji_id: id }, { saved: !!meta.saved, title: meta.name, imgUrl: meta.url }));
+                        } else {
+                            const uni = k.slice(2);
+                            const e = this.EMOJI.find(x => x.u === uni);
+                            if (e) recentGrid.appendChild(this._makeTile({ kind: 'emoji', unicode: e.u }, { title: e.n, text: e.u }));
+                        }
+                    });
+                };
+
+                const renderCustom = () => {
+                    customGrid.innerHTML = '';
+                    const items = Array.from(LIB.values() || []).filter(e => qMatch(e.name || ''));
+                    if (!items.length) { customH1.style.display = 'none'; customGrid.style.display = 'none'; return; }
+                    customH1.style.display = ''; customGrid.style.display = '';
+                    items.forEach(e => {
+                        customGrid.appendChild(this._makeTile(
+                            { kind: 'custom', custom_emoji_id: e.id },
+                            { saved: !!e.saved, title: e.name || 'Custom', imgUrl: e.url }
+                        ));
+                    });
+                };
+
+                const buildEmojiCategories = () => {
+                    emojiCatsWrap.innerHTML = '';
+                    const cats = [...new Set(this.EMOJI.map(e => e.cat))]; // already provided by constructor
+                    cats.forEach(cat => {
+                        const arr = this.EMOJI.filter(e => e.cat === cat && (qMatch(e.n) || e.u.includes(state.q)));
+                        if (!arr.length) return;
+                        const h2 = document.createElement('div'); h2.className = 'rx-h2'; h2.textContent = cat;
+                        const grid = document.createElement('div'); grid.className = 'rx-grid';
+                        arr.forEach(e => grid.appendChild(this._makeTile({ kind: 'emoji', unicode: e.u }, { title: e.n, text: e.u })));
+                        emojiCatsWrap.append(h2, grid);
+                    });
+                    // hide the entire Emoji section if empty
+                    emojiH1.style.display = emojiCatsWrap.childElementCount ? '' : 'none';
+                };
+
+                const refreshAll = () => {
+                    renderRecent();
+                    renderCustom();
+                    buildEmojiCategories();
+                };
+
+                search.addEventListener('input', () => { state.q = search.value.trim(); refreshAll(); });
+
+                try { await loadLibraryOnce(); } catch { }
+                refreshAll();
             }
         }
 
-        const ReactionPickerUI = UI.ReactionPickerUI || SimpleReactionPickerUI;
+        // Minimal fallback emoji database (name + category). Provide your full list via window.MessagesApp.EMOJI_FULL.
+        const DEFAULT_EMOJI = [
+            { u: '👍', n: 'thumbs up', cat: 'Smileys' }, { u: '❤️', n: 'red heart', cat: 'Symbols' },
+            { u: '😂', n: 'face with tears of joy', cat: 'Smileys' }, { u: '😮', n: 'face with open mouth', cat: 'Smileys' },
+            { u: '😢', n: 'crying face', cat: 'Smileys' }, { u: '😡', n: 'pouting face', cat: 'Smileys' },
+            { u: '🎉', n: 'party popper', cat: 'Activities' }, { u: '🙏', n: 'folded hands', cat: 'People' },
+            { u: '🔥', n: 'fire', cat: 'Travel' }, { u: '👏', n: 'clapping hands', cat: 'People' },
+            { u: '👌', n: 'ok hand', cat: 'People' }, { u: '🤝', n: 'handshake', cat: 'People' },
+            // a few more popular ones
+            { u: '😀', n: 'grinning face', cat: 'Smileys' }, { u: '😁', n: 'beaming face', cat: 'Smileys' },
+            { u: '🤣', n: 'rolling on the floor laughing', cat: 'Smileys' }, { u: '😉', n: 'winking face', cat: 'Smileys' },
+            { u: '😊', n: 'smiling face with smiling eyes', cat: 'Smileys' }, { u: '😎', n: 'smiling face with sunglasses', cat: 'Smileys' },
+            { u: '🤔', n: 'thinking face', cat: 'Smileys' }, { u: '😴', n: 'sleeping face', cat: 'Smileys' },
+            { u: '🤯', n: 'exploding head', cat: 'Smileys' }, { u: '🤗', n: 'hugging face', cat: 'Smileys' },
+            { u: '💯', n: 'hundred points', cat: 'Symbols' }, { u: '✅', n: 'check mark button', cat: 'Symbols' },
+            { u: '❌', n: 'cross mark', cat: 'Symbols' }, { u: '⚠️', n: 'warning', cat: 'Symbols' },
+            { u: '✨', n: 'sparkles', cat: 'Symbols' }, { u: '🌟', n: 'glowing star', cat: 'Travel' },
+            { u: '🍀', n: 'four leaf clover', cat: 'Food' }, { u: '🌈', n: 'rainbow', cat: 'Travel' },
+            { u: '🐶', n: 'dog face', cat: 'Animals' }, { u: '🐱', n: 'cat face', cat: 'Animals' },
+            { u: '👏', n: 'clapping hands', cat: 'People' }, { u: '🫡', n: 'saluting face', cat: 'Smileys' },
+            { u: '🫶', n: 'heart hands', cat: 'People' }, { u: '🤌', n: 'pinched fingers', cat: 'People' },
+            { u: '🧡', n: 'orange heart', cat: 'Symbols' }, { u: '💙', n: 'blue heart', cat: 'Symbols' },
+            { u: '🙌', n: 'raising hands', cat: 'People' }, { u: '🤝', n: 'handshake', cat: 'People' },
+            { u: '🎂', n: 'birthday cake', cat: 'Food' }, { u: '🍕', n: 'pizza', cat: 'Food' },
+            { u: '☕', n: 'hot beverage', cat: 'Food' }, { u: '🏆', n: 'trophy', cat: 'Activities' },
+            { u: '📎', n: 'paperclip', cat: 'Objects' }, { u: '📌', n: 'pushpin', cat: 'Objects' },
+            { u: '📷', n: 'camera', cat: 'Objects' }, { u: '💡', n: 'light bulb', cat: 'Objects' },
+            { u: '🚀', n: 'rocket', cat: 'Travel' }, { u: '✈️', n: 'airplane', cat: 'Travel' },
+        ];
+
+        const ReactionPickerUI = UI.ReactionPickerUI || RichReactionPickerUI;
         const renderReactionBar = UI.renderReactionBar || simpleRenderReactionBar;
 
         const LIB = new Map();         // custom_emoji_id -> url
@@ -1213,7 +2187,11 @@
                 try {
                     const j = await apiGet('/dm/reactions/custom/library');
                     const items = Array.isArray(j?.items) ? j.items : (j?.items || []);
-                    items.forEach(e => { if (e?.id && e?.url) LIB.set(+e.id, e.url); });
+                    items.forEach(e => {
+                        if (e?.id && e?.url) {
+                            LIB.set(+e.id, { id: +e.id, url: e.url, name: e.name || '', saved: !!(e.saved ?? e.bookmarked ?? e.starred ?? e.is_saved) });
+                        }
+                    });
                     _libCache = items; _libLastFail = 0; _libBackoff = 0;
                     return _libCache;
                 } catch (e) {
@@ -1226,7 +2204,10 @@
             return _libInflight;
         }
 
-        function urlForCustom(id) { return LIB.get(+id) || null; }
+        function urlForCustom(id) {
+            const v = LIB.get(+id);
+            return v ? (v.url || null) : null;
+        }
         // Normalize many possible server shapes into { items: [...], reactable: bool }
         async function listForMessage(msgId) {
             const raw = await apiGet(`/dm/messages/${msgId}/reactions`).catch(() => ({}));
@@ -1439,9 +2420,10 @@
         }
 
         async function init() { await loadLibraryOnce(); }
+        async function refreshLibrary() { _libCache = null; await loadLibraryOnce(); }
 
         // expose
-        window.MessagesApp.reactions = { init, attachBar, openPicker, bindStream, toggle: toggleAndRefresh };
+        window.MessagesApp.reactions = { init, attachBar, openPicker, bindStream, toggle: toggleAndRefresh, refreshLibrary };
     })();
 
     // expose for wiring + safety

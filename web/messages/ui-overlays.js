@@ -488,20 +488,32 @@
         if (btnAttach && file) {
             btnAttach.addEventListener('click', () => file.click());
             file.addEventListener('change', (e) => {
-                try { onFilesChosen && onFilesChosen(e); } finally { try { file.value = ''; } catch { } }
+                try { onFilesChosen && onFilesChosen(e.target.files); }
+                finally { try { file.value = ''; } catch { } }
             });
-            document.addEventListener('dragover', (ev) => ev.preventDefault());
+            document.addEventListener('dragover', (ev) => {
+                ev.preventDefault();
+                if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
+            });
             document.addEventListener('drop', (ev) => {
                 if (!onFilesChosen) return;
-                if (!ev.dataTransfer || !ev.dataTransfer.files?.length) return;
+                const files = ev.dataTransfer && ev.dataTransfer.files;
+                if (!files || !files.length) return;
                 ev.preventDefault();
-                onFilesChosen({ target: { files: ev.dataTransfer.files } });
+                onFilesChosen(files);
             });
         }
 
         if (btnSend) btnSend.addEventListener('click', () => onSend && onSend());
 
         if (text) {
+            text.addEventListener('paste', (e) => {
+                const files = e.clipboardData?.files;
+                if (files && files.length && onFilesChosen) {
+                    e.preventDefault();
+                    onFilesChosen(files);
+                }
+            });
             text.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend && onSend(); }
             });
