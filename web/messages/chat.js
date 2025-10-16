@@ -24,9 +24,8 @@
      anywhere on the row, regardless of horizontal position. */
   .msg .hover-pad{
     position:absolute; top:0; bottom:0; left:-100vw; right:-100vw;
-    /* clipped by #msgs overflow-x:hidden; */
-    pointer-events:auto; z-index:1; /* sits under the rail/buttons */
-    background: transparent; /* invisible */
+    pointer-events:auto; z-index:0; /* sits below chips */
+    background: transparent;
   }
 
   /* Hover rail: centered vertically; shown on :hover, .hover, or when menu is open */
@@ -78,11 +77,13 @@
   /* reaction chips row under message; hide when empty */
   .reactions{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:4px; }
   .reactions:empty{ display:none; }
+  .msg .reactions{ position:relative; z-index:200; }  /* be above hover-pad */
   .rx-chip{
     border:1px solid var(--border,#333);
     background:var(--bg-2,#181818);
     border-radius:.35rem; padding:.15rem .4rem; line-height:1; cursor:pointer; font-size:13px;
   }
+  .rx-chip{ position:relative; z-index:201; pointer-events:auto; } /* ensure clickable */
   .rx-chip.active{ outline:2px solid var(--accent,#6cf); }
 
   /* tiny fallback picker */
@@ -1068,6 +1069,9 @@
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'rx-chip' + (it.reacted_by_me ? ' active' : '');
+                btn.dataset.rxKey = key || '';
+                btn.setAttribute('aria-pressed', it.reacted_by_me ? 'true' : 'false');
+
                 if (it.kind === 'custom' && it.custom_emoji_id) {
                     const url = customUrlFor ? (customUrlFor(it.custom_emoji_id) || '') : '';
                     if (url) {
@@ -1082,7 +1086,6 @@
                     const uni = it.unicode || it.emoji || '⭐';
                     btn.textContent = uni + ' ' + (it.count | 0);
                 }
-                btn.onclick = (e) => { e.stopPropagation(); if (key && onToggle) onToggle(key); };
                 el.appendChild(btn);
             });
             // no "Add reaction" button here; picker is opened by the hover rail's 🙂 button
@@ -1224,13 +1227,97 @@
         }
 
         function urlForCustom(id) { return LIB.get(+id) || null; }
+        // Normalize many possible server shapes into { items: [...], reactable: bool }
         async function listForMessage(msgId) {
-            return await apiGet(`/dm/messages/${msgId}/reactions`);
+            const raw = await apiGet(`/dm/messages/${msgId}/reactions`).catch(() => ({}));
+
+            // reactability flag (fallback true)
+            const reactable = !!(raw.reactable ?? raw.reactions_enabled ?? raw.reactable_for_me ?? true);
+
+            const items = [];
+            const push = (it) => {
+                // tolerate a bunch of field variants
+                const key =
+                    it.reaction_key || it.key ||
+                    (it.unicode ? `u:${it.unicode}` :
+                        (it.emoji ? `u:${it.emoji}` :
+                            (it.custom_emoji_id != null ? `c:${it.custom_emoji_id}` :
+                                (it.id != null ? `c:${it.id}` : null))));
+
+                const kind = it.kind ||
+                    (key && key.startsWith('c:') ? 'custom' : 'emoji');
+
+                const unicode = it.unicode ?? it.emoji ?? (kind === 'emoji' && key?.startsWith('u:') ? key.slice(2) : null);
+                const customId = it.custom_emoji_id ?? it.emoji_id ?? (kind === 'custom' && key?.startsWith('c:') ? +key.slice(2) : null);
+
+                items.push({
+                    reaction_key: key,           // canonical
+                    key,                         // legacy field some code reads
+                    kind,                        // 'emoji' | 'custom'
+                    unicode: unicode || null,    // for emoji
+                    custom_emoji_id: customId ?? null, // for custom
+                    count: (it.count ?? it.n ?? it.total ?? (Array.isArray(it.users) ? it.users.length : 0)) | 0,
+                    reacted_by_me: !!(it.reacted_by_me ?? it.me ?? it.mine ?? false),
+                    // url is resolved at render time via urlForCustom()
+                });
+            };
+
+            // Shape 1: { items: [...] }
+            if (Array.isArray(raw.items)) raw.items.forEach(push);
+
+            // Shape 2: { reactions: [...] }
+            if (!items.length && Array.isArray(raw.reactions)) raw.reactions.forEach(push);
+
+            // Shape 3: { counts: { "u:👍": {count, me} , "c:123": {count, me} } }
+            if (!items.length && raw.counts && typeof raw.counts === 'object') {
+                Object.entries(raw.counts).forEach(([k, v]) => {
+                    const kind = k.startsWith('c:') ? 'custom' : 'emoji';
+                    push({
+                        reaction_key: k,
+                        kind,
+                        unicode: kind === 'emoji' ? k.slice(2) : null,
+                        custom_emoji_id: kind === 'custom' ? +k.slice(2) : null,
+                        count: v?.count || 0,
+                        reacted_by_me: !!(v?.me || v?.mine || v?.reacted_by_me),
+                    });
+                });
+            }
+
+            // Shape 4: split arrays { unicode:[{unicode,count,me}], custom:[{id,count,me}] }
+            if (!items.length && (Array.isArray(raw.unicode) || Array.isArray(raw.custom))) {
+                (raw.unicode || []).forEach(u => push({
+                    unicode: u.unicode ?? u.emoji ?? u.char,
+                    count: u.count ?? u.n,
+                    reacted_by_me: !!(u.me ?? u.mine ?? u.reacted_by_me),
+                    kind: 'emoji'
+                }));
+                (raw.custom || []).forEach(c => push({
+                    custom_emoji_id: c.custom_emoji_id ?? c.id,
+                    count: c.count ?? c.n,
+                    reacted_by_me: !!(c.me ?? c.mine ?? c.reacted_by_me),
+                    kind: 'custom'
+                }));
+            }
+
+            // De-dupe by key (just in case multiple shapes overlapped)
+            const seen = new Map();
+            items.forEach(it => {
+                if (!it.key) return;
+                const prev = seen.get(it.key);
+                if (!prev || (it.count > prev.count)) seen.set(it.key, it);
+            });
+
+            return { items: [...seen.values()], reactable };
         }
 
         async function toggleByKey(msgId, reaction_key) {
             // send the exact shape the server expects
             return await apiPost(`/dm/messages/${msgId}/reactions/toggle`, { reaction_key });
+        }
+
+        async function toggleAndRefresh(msgId, reaction_key) {
+            await toggleByKey(msgId, reaction_key);
+            await renderBarFor(msgId);
         }
 
         function ensureBar(wrap) {
@@ -1252,7 +1339,18 @@
             let j = {};
             try { j = await listForMessage(msgId); } catch { j = {}; }
             const items = j.items || [];
-            const reactable = !!j.reactable;
+            const reactable = (j.reactable !== undefined) ? !!j.reactable : (function rowReactable(msgId) {
+                const row = document.querySelector(`.msg[data-msg-id="${msgId}"]`);
+                if (!row) return true;
+                const ds = row.dataset || {};
+                if (ds.reactable != null) return (ds.reactable === '1' || ds.reactable === 'true');
+                const meta = state.convMeta.get(state.convId) || {};
+                let on = !!(meta.reactions_enabled ?? meta.reactable ?? true);
+                if (on && meta.reactions_effective_from_ts && ds.ts) {
+                    on = (+ds.ts * 1000) >= meta.reactions_effective_from_ts;
+                }
+                return on;
+            })(msgId);
 
             barEl.innerHTML = '';
             renderReactionBar(barEl, items, {
@@ -1343,7 +1441,7 @@
         async function init() { await loadLibraryOnce(); }
 
         // expose
-        window.MessagesApp.reactions = { init, attachBar, openPicker, bindStream };
+        window.MessagesApp.reactions = { init, attachBar, openPicker, bindStream, toggle: toggleAndRefresh };
     })();
 
     // expose for wiring + safety
@@ -1354,6 +1452,30 @@
         },
         revoke: { revokeAudioURLsIn, revokeObjectURLsIn }
     });
+
+    // Universal click-to-toggle for reaction chips.
+    // Capture phase so it works even if other handlers stopPropagation.
+    document.addEventListener('click', async (ev) => {
+        const chip = ev.target && (ev.target.closest('[data-rx-key]') || ev.target.closest('.rx-chip'));
+        if (!chip) return;
+        const row = chip.closest('.msg');
+        const bar = chip.closest('.reactions');
+        if (!row || !bar) return; // must be inside a message row
+        const msgId = +(row.dataset.msgId || 0);
+        const key = chip.getAttribute('data-rx-key') || chip.dataset.rxKey || chip.dataset.key || null;
+        if (!msgId || !key) return;
+
+        ev.preventDefault();
+        // don’t let bubbling handlers (e.g. open picker) fire
+        ev.stopPropagation();
+
+        try {
+            chip.disabled = true;
+            await (window.MessagesApp.reactions && window.MessagesApp.reactions.toggle?.(msgId, key));
+        } finally {
+            chip.disabled = false;
+        }
+    }, true); // <-- capture phase
 
     // Boot (formerly your IIFE tail)
     async function boot() {

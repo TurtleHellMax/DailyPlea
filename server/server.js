@@ -11,18 +11,18 @@ const mimeTypes = require('mime-types');
 
 const { issueCsrfToken } = require('./security');
 const { db, migrate } = require('./db');
-const { requireAuth } = require('./routes-auth');
-const dm = require('./routes-dm');
+const dm = require('./routes-dm'); // { router, removeUserFromOwnerGroups }
 
 const WEB_ROOT = path.join(__dirname, '..'); // repo root
 const UPLOADS_ROOT = path.join(__dirname, 'uploads');
 const EMOJI_DIR = path.join(UPLOADS_ROOT, 'custom-emojis');
-try { fs.mkdirSync(EMOJI_DIR, { recursive: true }); } catch { }
+try { fs.mkdirSync(EMOJI_DIR, { recursive: true }); } catch { /* ignore */ }
 
 migrate();
 
 const app = express();
 app.set('trust proxy', true);
+app.disable('x-powered-by');
 
 /* ---------------- helpers ---------------- */
 function listRoutes(app) {
@@ -44,7 +44,7 @@ function listRoutes(app) {
 /* ---------------- dev helpers ---------------- */
 if (process.env.NODE_ENV !== 'production') {
     app.get('/api/_routes', (req, res) => res.json(listRoutes(app)));
-    try { app.use('/api/dev', require('./routes-dev').router); } catch { }
+    try { app.use('/api/dev', require('./routes-dev').router); } catch { /* optional */ }
 }
 
 /* ---------------- static (site root) ---------------- */
@@ -102,7 +102,7 @@ app.get('/api', (req, res) => {
     });
 });
 
-/* ---------------- DM router BEFORE CSRF (multipart forms) ---------------- */
+/* ---------------- DM router BEFORE CSRF (multipart forms, SSE, ranges) ---------------- */
 app.use('/api', dm.router);
 
 /* ---------------- CSRF (double-submit cookie) ---------------- */
@@ -131,9 +131,9 @@ app.use((req, res, next) => {
 app.get('/api/csrf', (req, res) => {
     const t = issueCsrfToken();
     res.cookie('csrf', t, {
-        httpOnly: false,   // readable by client for double-submit
+        httpOnly: false,  // readable by client for double-submit
         sameSite: 'strict',
-        secure: true       // set true in HTTPS prod
+        secure: process.env.NODE_ENV === 'production'
     });
     res.json({ token: t });
 });
@@ -197,37 +197,6 @@ app.get('/user/:slug', (req, res, next) => {
     const f = path.join(WEB_ROOT, 'web', 'user-view.html');
     res.sendFile(f, err => err ? next() : undefined);
 });
-
-/* ---------------- helper to create or reuse a 1:1 DM ----------------
-   Proxies to POST /api/dm/conversations so keys get created the same way. */
-app.post('/api/dm/with/:slug', requireAuth, (req, res, next) => {
-    const slug = String(req.params.slug || '');
-    const other = db.prepare(
-        `SELECT id FROM users WHERE lower(username)=lower(?) OR lower(first_username)=lower(?) LIMIT 1`
-    ).get(slug, slug);
-    if (!other) return res.status(404).json({ error: 'user_not_found' });
-    if (other.id === req.userId) return res.status(400).json({ error: 'self' });
-
-    // Reuse the DM router’s handler
-    req.body = { user_ids: [req.userId, other.id] };
-    req.url = '/dm/conversations';
-    req.method = 'POST';
-    return dm.router.handle(req, res, next);
-});
-
-/* ---------------- background maintenance ---------------- */
-function sweepDeletedGroups() {
-    try {
-        const r = db.prepare(
-            `DELETE FROM dm_deleted_groups WHERE datetime(deleted_at) < datetime('now', '-30 days')`
-        ).run();
-        if (r.changes) console.log(`[dm] Purged ${r.changes} expired deleted groups`);
-    } catch (e) {
-        console.warn('[dm] sweepDeletedGroups error:', e?.message || e);
-    }
-}
-sweepDeletedGroups();
-setInterval(sweepDeletedGroups, 6 * 60 * 60 * 1000);
 
 /* ---------------- error handler ---------------- */
 app.use((err, req, res, next) => {

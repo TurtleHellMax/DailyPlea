@@ -579,7 +579,7 @@ function ensureDMTables() {
       updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(conversation_id) REFERENCES dm_conversations(id) ON DELETE CASCADE
     );
-    CREATE INDEX IF NOT EXISTS idx_dm_group_icons_updated ON dm_group_icons(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_dm_group_icons_updated ON dm_group_icons(updated_at);
 
     CREATE TABLE IF NOT EXISTS dm_deleted_groups (
       conversation_id INTEGER PRIMARY KEY,
@@ -630,21 +630,33 @@ function ensureDMTables() {
       WHERE conversation_id = NEW.conversation_id AND user_id = NEW.user_id;
     END;
 
-    /* ---------- NEW: stacked reactions ---------- */
-    CREATE TABLE IF NOT EXISTS custom_emojis (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      name          TEXT,
-      slug          TEXT UNIQUE,
-      owner_user_id INTEGER,
-      mime_type     TEXT,
-      filepath      TEXT NOT NULL,  -- server path to sprite/image
-      width         INTEGER,
-      height        INTEGER,
-      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(owner_user_id) REFERENCES users(id) ON DELETE SET NULL
+    /* ---------- NEW: reactions tables (emoji tables created/migrated below) ---------- */
+    CREATE TABLE IF NOT EXISTS user_recent_reactions (
+      user_id      INTEGER NOT NULL,
+      reaction_key TEXT NOT NULL, -- 'u:<unicode>' or 'c:<custom_id>'
+      last_used_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id, reaction_key)
     );
-    CREATE INDEX IF NOT EXISTS idx_custom_emojis_owner ON custom_emojis(owner_user_id);
-    CREATE INDEX IF NOT EXISTS idx_custom_emojis_name  ON custom_emojis(name);
+    CREATE INDEX IF NOT EXISTS idx_user_recent_reactions_time
+      ON user_recent_reactions(user_id, last_used_at DESC);
+
+    CREATE TABLE IF NOT EXISTS dm_message_reactions (
+      message_id       INTEGER NOT NULL,
+      user_id          INTEGER NOT NULL,
+      kind             TEXT NOT NULL,          -- 'emoji' | 'custom'
+      reaction_key     TEXT NOT NULL,          -- 'u:<unicode>' or 'c:<id>'
+      unicode          TEXT,
+      custom_emoji_id  INTEGER,
+      created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (message_id, user_id, reaction_key),
+      FOREIGN KEY(message_id)      REFERENCES dm_messages(id)      ON DELETE CASCADE,
+      FOREIGN KEY(user_id)         REFERENCES users(id)            ON DELETE CASCADE,
+      FOREIGN KEY(custom_emoji_id) REFERENCES custom_emojis(id)    ON DELETE SET NULL,
+      CHECK (kind IN ('emoji','custom'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_reactions_msg_key ON dm_message_reactions(message_id, reaction_key);
+    CREATE INDEX IF NOT EXISTS idx_dm_reactions_msg     ON dm_message_reactions(message_id);
+    CREATE INDEX IF NOT EXISTS idx_dm_reactions_user    ON dm_message_reactions(user_id);
 
     CREATE TABLE IF NOT EXISTS user_custom_emojis (
       user_id   INTEGER NOT NULL,
@@ -737,6 +749,114 @@ function ensureDMTables() {
     addColumnIfMissing('dm_messages', `delete_deadline_at TEXT`);
     addColumnIfMissing('dm_messages', `reactable INTEGER NOT NULL DEFAULT 0`);
     addColumnIfMissing('dm_messages', `reaction_mode_at_send TEXT`);
+
+    addColumnIfMissing('dm_settings', `allow_delete_edit_level INTEGER NOT NULL DEFAULT 1`);
+    addColumnIfMissing('dm_settings', `delete_window_edit_level INTEGER NOT NULL DEFAULT 1`);
+    addColumnIfMissing('dm_settings', `reactable_edit_level INTEGER NOT NULL DEFAULT 1`);
+    addColumnIfMissing('dm_settings', `reaction_mode_edit_level INTEGER NOT NULL DEFAULT 1`);
+    addColumnIfMissing('dm_settings', `receipts_enabled_edit_level INTEGER NOT NULL DEFAULT 1`);
+
+    // Touch updated_at automatically if something forgets to set it
+    try {
+        db.exec(`
+        DROP TRIGGER IF EXISTS trg_dm_settings_updated_at;
+        CREATE TRIGGER trg_dm_settings_updated_at
+        AFTER UPDATE ON dm_settings
+        FOR EACH ROW BEGIN
+          UPDATE dm_settings
+          SET updated_at = CURRENT_TIMESTAMP
+          WHERE conversation_id = NEW.conversation_id;
+        END;
+      `);
+    } catch { }
+
+    // === NEW: Align emoji schema with routes-dm.js ===
+    try {
+        // custom_emojis -> ensure (sha256, filename, mime_type, uploader_id, created_at)
+        const ceCols = colNames('custom_emojis');
+        const ceOk = tableExists('custom_emojis') &&
+            ceCols.includes('sha256') &&
+            ceCols.includes('filename') &&
+            ceCols.includes('mime_type') &&
+            ceCols.includes('uploader_id');
+
+        if (!ceOk) {
+            const tx = db.transaction(() => {
+                db.exec(`PRAGMA foreign_keys=OFF;`);
+                db.exec(`
+            CREATE TABLE custom_emojis_new (
+              id           INTEGER PRIMARY KEY AUTOINCREMENT,
+              sha256       TEXT UNIQUE,
+              filename     TEXT NOT NULL,
+              mime_type    TEXT NOT NULL DEFAULT 'image/png',
+              uploader_id  INTEGER,
+              created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY(uploader_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+          `);
+
+                if (tableExists('custom_emojis')) {
+                    // Best-effort migrate from any old schema
+                    const hasFilepath = ceCols.includes('filepath');
+                    const hasOwner = ceCols.includes('owner_user_id');
+                    const hasCreated = ceCols.includes('created_at');
+                    const hasFilename = ceCols.includes('filename');
+
+                    db.exec(`
+              INSERT INTO custom_emojis_new (id, filename, mime_type, uploader_id, created_at)
+              SELECT
+                id,
+                ${hasFilepath ? 'filepath' : (hasFilename ? 'filename' : "'emoji.png'")},
+                COALESCE(mime_type,'image/png'),
+                ${hasOwner ? 'owner_user_id' : (ceCols.includes('uploader_id') ? 'uploader_id' : 'NULL')},
+                ${hasCreated ? 'created_at' : "CURRENT_TIMESTAMP"}
+              FROM custom_emojis;
+            `);
+                    db.exec(`DROP TABLE custom_emojis;`);
+                }
+
+                db.exec(`ALTER TABLE custom_emojis_new RENAME TO custom_emojis;`);
+                db.exec(`
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_custom_emojis_sha ON custom_emojis(sha256);
+            CREATE INDEX IF NOT EXISTS idx_custom_emojis_uploader ON custom_emojis(uploader_id);
+          `);
+                db.exec(`PRAGMA foreign_keys=ON;`);
+            });
+            tx();
+        } else {
+            // If schema already matches, ensure indexes
+            db.exec(`
+          CREATE UNIQUE INDEX IF NOT EXISTS uq_custom_emojis_sha ON custom_emojis(sha256);
+          CREATE INDEX IF NOT EXISTS idx_custom_emojis_uploader ON custom_emojis(uploader_id);
+        `);
+        }
+
+        // user_custom_emojis -> ensure created_at column name (routes uses created_at)
+        if (!tableExists('user_custom_emojis')) {
+            db.exec(`
+          CREATE TABLE user_custom_emojis (
+            user_id    INTEGER NOT NULL,
+            emoji_id   INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(user_id, emoji_id),
+            FOREIGN KEY(user_id)  REFERENCES users(id)         ON DELETE CASCADE,
+            FOREIGN KEY(emoji_id) REFERENCES custom_emojis(id) ON DELETE CASCADE
+          );
+          CREATE INDEX IF NOT EXISTS idx_user_custom_emojis_user ON user_custom_emojis(user_id);
+        `);
+        } else {
+            addColumnIfMissing('user_custom_emojis', `created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP`);
+            db.exec(`CREATE INDEX IF NOT EXISTS idx_user_custom_emojis_user ON user_custom_emojis(user_id);`);
+            // Backfill from older 'added_at' if present
+            try {
+                if (colNames('user_custom_emojis').includes('added_at')) {
+                    db.exec(`UPDATE user_custom_emojis SET created_at = COALESCE(created_at, added_at, CURRENT_TIMESTAMP);`);
+                }
+            } catch { }
+        }
+    } catch (e) {
+        console.warn('[db] emoji schema alignment failed:', e.message);
+    }
 
     try {
         const cols = colNames('dm_messages');

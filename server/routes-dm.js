@@ -79,7 +79,7 @@ function msgHasCols(...names) {
         return false;
     }
 }
-const HAS_MSG_DELETE_SNAPSHOT = msgHasCols('deletable_at_send', 'delete_window_sec_at_send');
+const HAS_MSG_DELETE_SNAPSHOT = msgHasCols('deletable', 'delete_deadline_at');
 const HAS_MSG_REACTION_SNAPSHOT = msgHasCols('reactable', 'reaction_mode_at_send');
 
 /* ====== audio helpers ====== */
@@ -428,14 +428,13 @@ function canDeleteMessageForUser(msgRow, userId) {
     if (!msgRow) return false;
     if ((msgRow.sender_id | 0) !== (userId | 0)) return false; // author-only
 
-    // Prefer per-message snapshot
+    // Prefer per-message snapshot (new schema)
     if (HAS_MSG_DELETE_SNAPSHOT) {
-        if (!msgRow.deletable_at_send) return false;
-        const win = msgRow.delete_window_sec_at_send;
-        if (win == null) return true; // infinite window
-        const msgTs = new Date(msgRow.created_at).getTime();
-        const ageSec = ((Date.now() - msgTs) / 1000) | 0;
-        return ageSec <= Math.max(0, win | 0);
+        if (!msgRow.deletable) return false;
+        if (!msgRow.delete_deadline_at) return true; // infinite window
+        const deadlineMs = new Date(msgRow.delete_deadline_at).getTime();
+        if (!Number.isFinite(deadlineMs)) return false;
+        return Date.now() <= deadlineMs;
     }
 
     // Fallback to conversation settings if snapshot cols don't exist
@@ -1001,48 +1000,36 @@ router.get('/dm/conversations/:id/messages', requireAuth, (req, res) => {
 
     let rows = [];
     const baseCols = `
-    id, sender_id, kind, body_cipher, body_nonce, created_at
-    ${HAS_MSG_REACTION_SNAPSHOT ? ', reactable AS reactable_at_send, reaction_mode_at_send' : ''}
-    ${HAS_MSG_DELETE_SNAPSHOT ? ', deletable_at_send, delete_window_sec_at_send' : ''}
-  `;
+        id, sender_id, kind, body_cipher, body_nonce, created_at
+        ${HAS_MSG_REACTION_SNAPSHOT ? ', reactable AS reactable_at_send, reaction_mode_at_send' : ''}
+        ${HAS_MSG_DELETE_SNAPSHOT ? ', deletable AS deletable_at_send, delete_deadline_at' : ''}
+    `;
 
     if (after > 0) {
-        rows = db
-            .prepare(
-                `
-      SELECT ${baseCols}
-      FROM dm_messages
-      WHERE conversation_id=? AND id > ?
-      ORDER BY id ASC
-      LIMIT ?
-    `
-            )
-            .all(convId, after, limit);
+        rows = db.prepare(`
+            SELECT ${baseCols}
+            FROM dm_messages
+            WHERE conversation_id=? AND id > ?
+            ORDER BY id ASC
+            LIMIT ?
+        `).all(convId, after, limit);
     } else if (before > 0) {
-        const r = db
-            .prepare(
-                `
-      SELECT ${baseCols}
-      FROM dm_messages
-      WHERE conversation_id=? AND id < ?
-      ORDER BY id DESC
-      LIMIT ?
-    `
-            )
-            .all(convId, before, limit);
+        const r = db.prepare(`
+            SELECT ${baseCols}
+            FROM dm_messages
+            WHERE conversation_id=? AND id < ?
+            ORDER BY id DESC
+            LIMIT ?
+        `).all(convId, before, limit);
         rows = r.reverse();
     } else {
-        const r = db
-            .prepare(
-                `
-      SELECT ${baseCols}
-      FROM dm_messages
-      WHERE conversation_id=?
-      ORDER BY id DESC
-      LIMIT ?
-    `
-            )
-            .all(convId, limit);
+        const r = db.prepare(`
+            SELECT ${baseCols}
+            FROM dm_messages
+            WHERE conversation_id=?
+            ORDER BY id DESC
+            LIMIT ?
+        `).all(convId, limit);
         rows = r.reverse();
     }
 
@@ -1051,8 +1038,9 @@ router.get('/dm/conversations/:id/messages', requireAuth, (req, res) => {
         ? `id, filename, mime_type, encoding, size_bytes, duration_ms`
         : `id, filename, mime_type, encoding, size_bytes, NULL AS duration_ms`;
 
-    // Get current settings for fallback snapshot computation if needed
-    const st = HAS_MSG_DELETE_SNAPSHOT && HAS_MSG_REACTION_SNAPSHOT ? null : ensureConvSettings(convId);
+    // Fallback settings only if needed
+    const needSt = !(HAS_MSG_DELETE_SNAPSHOT && HAS_MSG_REACTION_SNAPSHOT);
+    const st = needSt ? ensureConvSettings(convId) : null;
 
     const msgs = rows.map((r) => {
         let text = '';
@@ -1062,22 +1050,31 @@ router.get('/dm/conversations/:id/messages', requireAuth, (req, res) => {
                 text = obj?.text || '';
             }
         } catch { }
-        const atts = db
-            .prepare(
-                `
-      SELECT ${attCols}
-      FROM dm_attachments WHERE message_id=? ORDER BY id ASC
-    `
-            )
-            .all(r.id);
 
-        // Per-message policy fields (snapshots). If snapshot cols missing, synthesize from conv settings.
+        const atts = db.prepare(`
+            SELECT ${attCols}
+            FROM dm_attachments WHERE message_id=? ORDER BY id ASC
+        `).all(r.id);
+
         const reactable_at_send = HAS_MSG_REACTION_SNAPSHOT
             ? !!r.reactable_at_send
             : !!st.reactable && st.reaction_mode !== 'none';
-        const reaction_mode_at_send = HAS_MSG_REACTION_SNAPSHOT ? r.reaction_mode_at_send || 'both' : st.reaction_mode || 'both';
-        const deletable_at_send = HAS_MSG_DELETE_SNAPSHOT ? !!r.deletable_at_send : !!st.allow_delete;
-        const delete_window_sec_at_send = HAS_MSG_DELETE_SNAPSHOT ? r.delete_window_sec_at_send : st.delete_window_sec;
+
+        const reaction_mode_at_send = HAS_MSG_REACTION_SNAPSHOT
+            ? (r.reaction_mode_at_send || 'both')
+            : (st.reaction_mode || 'both');
+
+        const deletable_at_send = HAS_MSG_DELETE_SNAPSHOT
+            ? !!r.deletable_at_send
+            : !!st.allow_delete;
+
+        const delete_deadline_at = HAS_MSG_DELETE_SNAPSHOT
+            ? (r.delete_deadline_at || null)
+            : (
+                st.delete_window_sec == null
+                    ? null
+                    : new Date(new Date(r.created_at).getTime() + (Math.max(0, +st.delete_window_sec | 0)) * 1000).toISOString()
+            );
 
         return {
             id: r.id,
@@ -1089,47 +1086,9 @@ router.get('/dm/conversations/:id/messages', requireAuth, (req, res) => {
             reactable_at_send,
             reaction_mode_at_send,
             deletable_at_send,
-            delete_window_sec_at_send,
+            delete_deadline_at
         };
     });
-
-    // Optional reactions enrichment
-    if (String(req.query.with || '').includes('reactions')) {
-        const ids = msgs.map((m) => m.id);
-        if (ids.length) {
-            const all = db
-                .prepare(
-                    `
-        SELECT message_id, reaction_key, kind, unicode, custom_emoji_id, user_id
-        FROM dm_message_reactions
-        WHERE message_id IN (${ids.map(() => '?').join(',')})
-      `
-                )
-                .all(...ids);
-            const map = new Map();
-            for (const m of msgs) map.set(m.id, []);
-            for (const mid of ids) {
-                const rows = all.filter((r) => r.message_id === mid);
-                const keyed = new Map();
-                for (const r of rows) {
-                    const k = `${r.reaction_key}|${r.custom_emoji_id || 0}|${r.unicode || ''}`;
-                    if (!keyed.has(k)) {
-                        keyed.set(k, {
-                            reaction_key: r.reaction_key,
-                            kind: r.kind,
-                            unicode: r.unicode || null,
-                            custom_emoji_id: r.custom_emoji_id || null,
-                            user_ids: [],
-                        });
-                    }
-                    keyed.get(k).user_ids.push(r.user_id);
-                }
-                const stacks = Array.from(keyed.values()).map((s) => ({ ...s, count: s.user_ids.length }));
-                map.set(mid, stacks);
-            }
-            for (const m of msgs) m.reactions = map.get(m.id) || [];
-        }
-    }
 
     const next_before = msgs.length ? msgs[0].id : null;
     res.json({ ok: true, items: msgs, next_before });
@@ -1154,9 +1113,10 @@ router.post('/dm/conversations/:id/messages', requireAuth, upload.array('files',
     const snapReactable = !!st.reactable && st.reaction_mode !== 'none' ? 1 : 0;
     const snapMode = st.reaction_mode || 'both';
     const snapDeletable = !!st.allow_delete ? 1 : 0;
-    const snapDeleteWindow = st.delete_window_sec == null ? null : Math.max(0, +st.delete_window_sec | 0);
+    const winSec = st.delete_window_sec == null ? null : Math.max(0, +st.delete_window_sec | 0);
+    const delete_deadline_at = winSec == null ? null : new Date(Date.now() + winSec * 1000).toISOString();
 
-    // Precompute audio durations
+    // Precompute audio durations (best-effort)
     const preDurations = new Map();
     for (let i = 0; i < files.length; i++) {
         const f = files[i];
@@ -1175,57 +1135,41 @@ router.post('/dm/conversations/:id/messages', requireAuth, upload.array('files',
     }
 
     const useDur = hasDurationCol();
-    const insertWithDuration = useDur
-        ? db.prepare(
-            `
-    INSERT INTO dm_attachments(message_id, filename, mime_type, encoding, size_bytes, duration_ms, blob_cipher, blob_nonce)
-    VALUES(?,?,?,?,?,?,?,?)
-    `
-        )
-        : null;
-    const insertWithoutDuration = db.prepare(
-        `
-    INSERT INTO dm_attachments(message_id, filename, mime_type, encoding, size_bytes, blob_cipher, blob_nonce)
-    VALUES(?,?,?,?,?,?,?)
-    `
-    );
+    const insertWithDuration = useDur ? db.prepare(`
+        INSERT INTO dm_attachments(message_id, filename, mime_type, encoding, size_bytes, duration_ms, blob_cipher, blob_nonce)
+        VALUES(?,?,?,?,?,?,?,?)
+    `) : null;
+    const insertWithoutDuration = db.prepare(`
+        INSERT INTO dm_attachments(message_id, filename, mime_type, encoding, size_bytes, blob_cipher, blob_nonce)
+        VALUES(?,?,?,?,?,?,?)
+    `);
 
     const tx = db.transaction(() => {
-        const msgId = db
-            .prepare(
-                `
-      INSERT INTO dm_messages(conversation_id, sender_id, kind, body_cipher, body_nonce)
-      VALUES(?,?,?,?,?)
-    `
-            )
-            .run(convId, req.userId, kind, encBody.cipher, encBody.nonce).lastInsertRowid;
+        const msgId = db.prepare(`
+            INSERT INTO dm_messages(conversation_id, sender_id, kind, body_cipher, body_nonce)
+            VALUES(?,?,?,?,?)
+        `).run(convId, req.userId, kind, encBody.cipher, encBody.nonce).lastInsertRowid;
 
         // Snapshot per-message policy (only set cols that exist)
-        if (HAS_MSG_REACTION_SNAPSHOT && HAS_MSG_DELETE_SNAPSHOT) {
-            db.prepare(
-                `UPDATE dm_messages
-         SET reactable=?, reaction_mode_at_send=?, deletable_at_send=?, delete_window_sec_at_send=?
-         WHERE id=?`
-            ).run(snapReactable, snapMode, snapDeletable, snapDeleteWindow, msgId);
-        } else if (HAS_MSG_REACTION_SNAPSHOT) {
-            db.prepare(
-                `UPDATE dm_messages
-         SET reactable=?, reaction_mode_at_send=?
-         WHERE id=?`
-            ).run(snapReactable, snapMode, msgId);
-        } else if (HAS_MSG_DELETE_SNAPSHOT) {
-            db.prepare(
-                `UPDATE dm_messages
-         SET deletable_at_send=?, delete_window_sec_at_send=?
-         WHERE id=?`
-            ).run(snapDeletable, snapDeleteWindow, msgId);
+        if (HAS_MSG_REACTION_SNAPSHOT) {
+            db.prepare(`
+                UPDATE dm_messages
+                SET reactable=?, reaction_mode_at_send=?
+                WHERE id=?
+            `).run(snapReactable, snapMode, msgId);
+        }
+        if (HAS_MSG_DELETE_SNAPSHOT) {
+            db.prepare(`
+                UPDATE dm_messages
+                SET deletable=?, delete_deadline_at=?
+                WHERE id=?
+            `).run(snapDeletable, delete_deadline_at, msgId);
         }
 
         for (let i = 0; i < files.length; i++) {
             const f = files[i];
             const encoding =
-                (f?.encoding || req.body?.[`encoding_${f.originalname}`] || req.body?.encoding || '').toLowerCase() ===
-                    'gzip'
+                (f?.encoding || req.body?.[`encoding_${f.originalname}`] || req.body?.encoding || '').toLowerCase() === 'gzip'
                     ? 'gzip'
                     : null;
             const metaMime = f.mimetype || 'application/octet-stream';
@@ -1235,29 +1179,14 @@ router.post('/dm/conversations/:id/messages', requireAuth, upload.array('files',
 
             if (useDur) {
                 insertWithDuration.run(
-                    msgId,
-                    metaName,
-                    metaMime,
-                    encoding,
-                    f.size | 0,
-                    dur ?? null,
-                    enc.cipher,
-                    enc.nonce
+                    msgId, metaName, metaMime, encoding, f.size | 0, dur ?? null, enc.cipher, enc.nonce
                 );
             } else {
                 const attId = insertWithoutDuration.run(
-                    msgId,
-                    metaName,
-                    metaMime,
-                    encoding,
-                    f.size | 0,
-                    enc.cipher,
-                    enc.nonce
+                    msgId, metaName, metaMime, encoding, f.size | 0, enc.cipher, enc.nonce
                 ).lastInsertRowid;
                 if (dur != null) {
-                    try {
-                        db.prepare(`UPDATE dm_attachments SET duration_ms=? WHERE id=?`).run(dur, attId);
-                    } catch { }
+                    try { db.prepare(`UPDATE dm_attachments SET duration_ms=? WHERE id=?`).run(dur, attId); } catch { }
                 }
             }
         }
@@ -1273,15 +1202,11 @@ router.post('/dm/conversations/:id/messages', requireAuth, upload.array('files',
 // Delete a message (author-only, per-message snapshot policy)
 router.delete('/dm/messages/:id', requireAuth, (req, res) => {
     const msgId = +req.params.id;
-    const row = db
-        .prepare(
-            `
-    SELECT m.id, m.conversation_id, m.sender_id, m.created_at
-           ${HAS_MSG_DELETE_SNAPSHOT ? ', m.deletable_at_send, m.delete_window_sec_at_send' : ''}
-    FROM dm_messages m WHERE m.id=?
-  `
-        )
-        .get(msgId);
+    const row = db.prepare(`
+        SELECT m.id, m.conversation_id, m.sender_id, m.created_at
+               ${HAS_MSG_DELETE_SNAPSHOT ? ', m.deletable, m.delete_deadline_at' : ''}
+        FROM dm_messages m WHERE m.id=?
+    `).get(msgId);
 
     if (!row) return res.status(404).json({ error: 'not_found' });
     if (!isMember(row.conversation_id, req.userId)) return res.status(403).json({ error: 'forbidden' });
@@ -1585,6 +1510,70 @@ function reactionsAllowedFor(msg, settings, rxKind) {
 }
 
 // ====== Reactions: toggle ======
+// List reactions for a single message
+router.get('/dm/messages/:id/reactions', requireAuth, (req, res) => {
+    try {
+        const msgId = +req.params.id;
+
+        // Verify the requester can see this message (membership check)
+        const msg = db.prepare(`
+      SELECT m.id, m.conversation_id, m.created_at
+      FROM dm_messages m
+      JOIN dm_members mm
+        ON mm.conversation_id = m.conversation_id AND mm.user_id = ?
+      WHERE m.id = ?
+    `).get(req.userId, msgId);
+
+        if (!msg) return res.status(404).json({ error: 'not_found_or_forbidden' });
+
+        // Current conversation settings (for "reactable" flag)
+        const st = db.prepare(`
+      SELECT reactable, reaction_mode, reactions_effective_from
+      FROM dm_settings
+      WHERE conversation_id = ?
+    `).get(msg.conversation_id) || {};
+
+        let reactable = !!st.reactable && (st.reaction_mode || 'both') !== 'none';
+        if (reactable && st.reactions_effective_from) {
+            const msgMs = new Date(msg.created_at).getTime();
+            const effMs = new Date(st.reactions_effective_from).getTime();
+            if (Number.isFinite(msgMs) && Number.isFinite(effMs) && msgMs < effMs) {
+                reactable = false;
+            }
+        }
+
+        // Aggregate counts + whether I reacted
+        const rows = db.prepare(`
+      SELECT
+        reaction_key,
+        COUNT(*)               AS count,
+        MAX(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS reacted_by_me,
+        MIN(kind)              AS kind,
+        MIN(unicode)           AS unicode,
+        MIN(custom_emoji_id)   AS custom_emoji_id
+      FROM dm_message_reactions
+      WHERE message_id = ?
+      GROUP BY reaction_key
+      ORDER BY count DESC, reaction_key ASC
+    `).all(req.userId, msgId);
+
+        const items = rows.map(r => ({
+            reaction_key: r.reaction_key,
+            key: r.reaction_key,
+            kind: r.kind === 'custom' ? 'custom' : 'emoji',
+            unicode: r.reaction_key.startsWith('u:') ? (r.unicode || r.reaction_key.slice(2)) : null,
+            custom_emoji_id: r.reaction_key.startsWith('c:') ? (r.custom_emoji_id || +r.reaction_key.slice(2)) : null,
+            count: r.count | 0,
+            reacted_by_me: !!r.reacted_by_me,
+        }));
+
+        return res.json({ ok: true, reactable, items });
+    } catch (e) {
+        console.error('[rx][list] error', e);
+        return res.status(500).json({ error: 'server_error' });
+    }
+});
+
 router.post('/dm/messages/:id/reactions/toggle', requireAuth, (req, res) => {
     try {
         const msgId = +req.params.id;
@@ -1971,227 +1960,6 @@ function removeUserFromOwnerGroups(ownerId, removedUserId) {
     return { ok: true, count: groups.length };
 }
 
-/* ====== reactions (unified on dm_message_reactions) ====== */
-
-function rxDbg(tag, ctx = {}) {
-    // trim noisy headers/body for readability
-    const clean = (o) => {
-        try {
-            return JSON.parse(JSON.stringify(o, (k, v) => (
-                k === 'cookie' ? '[redacted]' :
-                    k === 'authorization' ? '[redacted]' :
-                        v
-            )));
-        } catch { return o; }
-    };
-    console.log(`[rx][${new Date().toISOString()}] ${tag}`, clean(ctx));
-}
-
-function safeUpsertRecentReaction(db, userId, reactionKey) {
-    // Works on old SQLite too (no UPSERT needed)
-    const upd = db.prepare(
-        `UPDATE user_recent_reactions SET last_used_at=CURRENT_TIMESTAMP
-     WHERE user_id=? AND reaction_key=?`
-    ).run(userId, reactionKey);
-    if (upd.changes === 0) {
-        db.prepare(
-            `INSERT OR IGNORE INTO user_recent_reactions(user_id, reaction_key, last_used_at)
-       VALUES(?,?,CURRENT_TIMESTAMP)`
-        ).run(userId, reactionKey);
-    }
-}
-
-router.get('/dm/messages/:id/reactions', requireAuth, (req, res) => {
-    const msgId = +req.params.id;
-    const pol = getMessagePolicy(msgId);
-    if (!pol) return res.status(404).json({ error: 'not_found' });
-    if (!isMember(pol.conversation_id, req.userId)) return res.status(403).json({ error: 'forbidden' });
-
-    try {
-        const counts = db
-            .prepare(
-                `
-      SELECT reaction_key,
-             MIN(kind)            AS kind,
-             MAX(unicode)         AS unicode,
-             MAX(custom_emoji_id) AS custom_emoji_id,
-             COUNT(*)             AS count
-      FROM dm_message_reactions
-      WHERE message_id=?
-      GROUP BY reaction_key
-      ORDER BY count DESC, reaction_key ASC
-    `
-            )
-            .all(msgId);
-
-        const allUsers = db
-            .prepare(
-                `
-      SELECT reaction_key, user_id
-      FROM dm_message_reactions
-      WHERE message_id=?
-      ORDER BY created_at ASC
-    `
-            )
-            .all(msgId);
-
-        const mapUsers = new Map();
-        for (const r of allUsers) {
-            if (!mapUsers.has(r.reaction_key)) mapUsers.set(r.reaction_key, []);
-            mapUsers.get(r.reaction_key).push(r.user_id);
-        }
-
-        const items = counts.map((c) => {
-            const users = mapUsers.get(c.reaction_key) || [];
-            return {
-                reaction_key: c.reaction_key,
-                kind: c.kind,
-                unicode: c.unicode || null,
-                custom_emoji_id: c.custom_emoji_id || null,
-                count: c.count | 0,
-                user_ids: users,
-                reacted_by_me: users.includes(req.userId),
-            };
-        });
-
-        res.json({ ok: true, reactable: pol.reactable, mode: pol.mode, items });
-    } catch (e) {
-        res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
-    }
-});
-
-function parseReactionKey(key) {
-    if (!key || typeof key !== 'string') return null;
-    if (key.startsWith('u:')) {
-        const unicode = key.slice(2);
-        if (!unicode) return null;
-        return { kind: 'emoji', reaction_key: `u:${unicode}`, unicode, custom_emoji_id: null };
-    }
-    if (key.startsWith('c:')) {
-        const id = +key.slice(2);
-        if (!Number.isFinite(id) || id <= 0) return null;
-        return { kind: 'custom', reaction_key: `c:${id}`, unicode: null, custom_emoji_id: id };
-    }
-    return null;
-}
-
-function reactionsAllowedFor(msg, settings, rxKind) {
-    const on = !!(settings?.reactable ?? 1); // default enabled in schema
-    const mode = settings?.reaction_mode || 'both';
-    if (!on || mode === 'none') return false;
-    if (settings?.reactions_effective_from) {
-        const msgMs = new Date(msg.created_at).getTime();
-        const effMs = new Date(settings.reactions_effective_from).getTime();
-        if (Number.isFinite(msgMs) && Number.isFinite(effMs) && msgMs < effMs) return false;
-    }
-    if (mode === 'emoji' && rxKind !== 'emoji') return false;
-    if (mode === 'custom' && rxKind !== 'custom') return false;
-    return true;
-}
-
-router.post('/dm/messages/:id/reactions/toggle', requireAuth, (req, res) => {
-    const reqId = Math.random().toString(36).slice(2, 8);
-    const tag = (m) => `${m} (#${reqId})`;
-
-    try {
-        rxDbg(tag('hit'), {
-            method: req.method,
-            url: req.originalUrl || req.url,
-            params: req.params,
-            headers: {
-                'content-type': req.headers['content-type'],
-                'accept': req.headers['accept'],
-                'x-requested-with': req.headers['x-requested-with'],
-            },
-            bodyType: typeof req.body,
-            body: req.body,
-            userId: req.userId,
-        });
-
-        const msgId = +req.params.id | 0;
-        const parsed = parseReactionKey((req.body && req.body.reaction_key) || '');
-        rxDbg(tag('parsed'), { msgId, parsed });
-
-        if (!msgId || !parsed) {
-            rxDbg(tag('bad_request'), {});
-            return res.status(400).json({ error: 'bad_request' });
-        }
-
-        // Verify membership + load message
-        const msg = db.prepare(`
-      SELECT m.id, m.conversation_id, m.created_at
-      FROM dm_messages m
-      JOIN dm_members mm
-        ON mm.conversation_id = m.conversation_id AND mm.user_id = ?
-      WHERE m.id = ?
-    `).get(req.userId, msgId);
-
-        rxDbg(tag('msg_lookup'), { found: !!msg, conv_id: msg?.conversation_id });
-
-        if (!msg) return res.status(404).json({ error: 'not_found_or_forbidden' });
-
-        // Load settings (dm_settings)
-        const st = db.prepare(`
-      SELECT reactable, reaction_mode, reactions_effective_from
-      FROM dm_settings WHERE conversation_id = ?
-    `).get(msg.conversation_id) || {};
-
-        const allowed = reactionsAllowedFor(msg, st, parsed.kind);
-        rxDbg(tag('policy'), { settings: st, allowed });
-
-        if (!allowed) return res.status(403).json({ error: 'reactions_disabled' });
-
-        // Toggle (exists? delete : insert)
-        const exists = db.prepare(`
-      SELECT 1 FROM dm_message_reactions
-      WHERE message_id=? AND user_id=? AND reaction_key=?
-    `).get(msgId, req.userId, parsed.reaction_key);
-
-        rxDbg(tag('exists?'), { exists: !!exists });
-
-        if (exists) {
-            const del = db.prepare(`
-        DELETE FROM dm_message_reactions
-        WHERE message_id=? AND user_id=? AND reaction_key=?
-      `).run(msgId, req.userId, parsed.reaction_key);
-            rxDbg(tag('deleted'), { changes: del.changes });
-
-            const count = db.prepare(`
-        SELECT COUNT(*) AS c FROM dm_message_reactions
-        WHERE message_id=? AND reaction_key=?
-      `).get(msgId, parsed.reaction_key)?.c || 0;
-
-            rxDbg(tag('resp(off)'), { count });
-            return res.json({ ok: true, toggled: 'off', message_id: msgId, reaction_key: parsed.reaction_key, count });
-        }
-
-        // INSERT (ensure kind/unicode/custom_emoji_id are set correctly)
-        const ins = db.prepare(`
-      INSERT INTO dm_message_reactions
-        (message_id, user_id, kind, reaction_key, unicode, custom_emoji_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).run(msgId, req.userId, parsed.kind, parsed.reaction_key, parsed.unicode, parsed.custom_emoji_id);
-        rxDbg(tag('inserted'), { changes: ins.changes });
-
-        // Recent reactions — safe upsert that works on old SQLite too
-        safeUpsertRecentReaction(db, req.userId, parsed.reaction_key);
-        rxDbg(tag('recent-upsert'), { reaction_key: parsed.reaction_key });
-
-        const count = db.prepare(`
-      SELECT COUNT(*) AS c FROM dm_message_reactions
-      WHERE message_id=? AND reaction_key=?
-    `).get(msgId, parsed.reaction_key)?.c || 0;
-
-        rxDbg(tag('resp(on)'), { count });
-        return res.json({ ok: true, toggled: 'on', message_id: msgId, reaction_key: parsed.reaction_key, count });
-
-    } catch (e) {
-        // Always JSON (prevents the "Unexpected token" crash on the client)
-        rxDbg(tag('error'), { message: e.message, name: e.name, stack: e.stack });
-        return res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
-    }
-});
-
 // Recent reactions (keep both endpoints; same data source)
 function recentReactionsForUser(userId) {
     const rows = db
@@ -2363,12 +2131,5 @@ router.delete('/dm/reactions/custom/:id/bookmark', requireAuth, (req, res) => {
         res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
     }
 });
-
-/* ====== static serving for custom emoji files ====== */
-router.use('/media/custom-emojis', express.static(EMOJI_DIR, {
-    maxAge: '31536000', // 1y
-    immutable: true,
-    fallthrough: true,
-}));
 
 module.exports = { router, removeUserFromOwnerGroups };
