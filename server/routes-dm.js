@@ -617,116 +617,9 @@ function pruneRecents(userId) {
     } catch { }
 }
 
-/* ====== routes: custom emojis (unified schema) ====== */
+/* ====== routes: custom emojis (legacy namespace removed)
 
-// Upload a new custom emoji, add it to my library (max 100 saved)
-router.post('/dm/custom-emojis', requireAuth, uploadEmoji.single('file'), (req, res) => {
-    const file = req.file;
-    if (!file || !file.buffer?.length) return res.status(400).json({ error: 'no_file' });
-    if (!/^image\//i.test(file.mimetype || '')) return res.status(415).json({ error: 'bad_type' });
 
-    const hash = crypto.createHash('sha256').update(file.buffer).digest('hex');
-    const ext =
-        (file.mimetype.split('/')[1] || 'png').toLowerCase().replace(/[^a-z0-9]+/g, '') || 'png';
-    const filename = `${hash}.${ext}`;
-    const diskPath = path.join(EMOJI_DIR, filename);
-
-    if (!fs.existsSync(diskPath)) {
-        try {
-            fs.writeFileSync(diskPath, file.buffer);
-        } catch {
-            return res.status(500).json({ error: 'store_failed' });
-        }
-    }
-
-    const tx = db.transaction(() => {
-        db.prepare(
-            `
-      INSERT INTO custom_emojis(sha256, filename, mime_type, uploader_id, created_at)
-      VALUES(?,?,?,?,CURRENT_TIMESTAMP)
-      ON CONFLICT(sha256) DO UPDATE SET filename=excluded.filename, mime_type=excluded.mime_type
-    `
-        ).run(hash, filename, file.mimetype || 'image/png', req.userId);
-
-        const emoji = db
-            .prepare(`SELECT id, filename, mime_type FROM custom_emojis WHERE sha256=?`)
-            .get(hash);
-
-        const count =
-            db.prepare(`SELECT COUNT(*) AS n FROM user_custom_emojis WHERE user_id=?`).get(req.userId)
-                ?.n | 0;
-        if (count >= 100) throw new Error('limit');
-
-        db.prepare(
-            `
-      INSERT OR IGNORE INTO user_custom_emojis(user_id, emoji_id, created_at)
-      VALUES(?,?,CURRENT_TIMESTAMP)
-    `
-        ).run(req.userId, emoji.id);
-
-        return emoji;
-    });
-
-    try {
-        const emoji = tx();
-        res.json({
-            ok: true,
-            id: emoji.id,
-            url: publicEmojiURL(emoji.filename),
-            mime_type: emoji.mime_type,
-        });
-    } catch (e) {
-        if (String(e.message).includes('limit'))
-            return res.status(400).json({ error: 'library_limit_100' });
-        return res.status(500).json({ error: 'server_error' });
-    }
-});
-
-// Bookmark someone else's custom emoji
-router.post('/dm/custom-emojis/:id/bookmark', requireAuth, (req, res) => {
-    const emojiId = +req.params.id;
-    const exists = db.prepare(`SELECT id FROM custom_emojis WHERE id=?`).get(emojiId);
-    if (!exists) return res.status(404).json({ error: 'not_found' });
-
-    const count =
-        db.prepare(`SELECT COUNT(*) AS n FROM user_custom_emojis WHERE user_id=?`).get(req.userId)?.n |
-        0;
-    if (count >= 100) return res.status(400).json({ error: 'library_limit_100' });
-
-    db.prepare(
-        `
-    INSERT OR IGNORE INTO user_custom_emojis(user_id, emoji_id, created_at)
-    VALUES(?,?,CURRENT_TIMESTAMP)
-  `
-    ).run(req.userId, emojiId);
-
-    res.json({ ok: true });
-});
-
-// My saved custom emojis
-router.get('/dm/custom-emojis/me', requireAuth, (req, res) => {
-    const rows = db
-        .prepare(
-            `
-    SELECT e.id, e.filename, e.mime_type
-    FROM user_custom_emojis u
-    JOIN custom_emojis e ON e.id=u.emoji_id
-    WHERE u.user_id=?
-    ORDER BY u.created_at DESC
-    LIMIT 100
-  `
-        )
-        .all(req.userId);
-
-    res.json({
-        ok: true,
-        items: rows.map((r) => ({
-            id: r.id,
-            url: publicEmojiURL(r.filename),
-            mime_type: r.mime_type,
-        })),
-    });
-});
 
 /* ====== conversation creation / reuse ====== */
 
@@ -1999,13 +1892,6 @@ router.get('/dm/reactions/recents', requireAuth, (req, res) => {
         res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
     }
 });
-router.get('/dm/reactions/recent', requireAuth, (req, res) => {
-    try {
-        res.json({ ok: true, items: recentReactionsForUser(req.userId) });
-    } catch (e) {
-        res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
-    }
-});
 
 /* ====== custom reactions library (unified schema) ====== */
 
@@ -2014,15 +1900,44 @@ router.get('/dm/reactions/custom/library', requireAuth, (req, res) => {
         const rows = db
             .prepare(
                 `
-      SELECT e.id, e.filename, e.mime_type, u.created_at
-      FROM user_custom_emojis u
-      JOIN custom_emojis e ON e.id = u.emoji_id
-      WHERE u.user_id=?
-      ORDER BY u.created_at DESC
-    `
+       SELECT e.id, e.filename, e.mime_type, u.created_at
+       FROM user_custom_emojis u
+       JOIN custom_emojis e ON e.id = u.emoji_id
+       WHERE u.user_id=?
+       ORDER BY u.created_at DESC
+     `
             )
             .all(req.userId);
 
+        const items = rows.map((e) => ({
+            id: e.id,
+            name: null,
+            slug: null,
+            mime_type: e.mime_type || 'image/png',
+            url: publicEmojiURL(e.filename),
+            width: null,
+            height: null,
+        }));
+        res.json({ ok: true, items });
+    } catch (e) {
+        res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
+    }
+});
+
+// --- COMPAT: some clients POST to /library (mirror the GET)
+router.post('/dm/reactions/custom/library', requireAuth, (req, res) => {
+    try {
+        const rows = db
+            .prepare(
+                `
+       SELECT e.id, e.filename, e.mime_type, u.created_at
+       FROM user_custom_emojis u
+       JOIN custom_emojis e ON e.id = u.emoji_id
+       WHERE u.user_id=?
+       ORDER BY u.created_at DESC
+     `
+            )
+            .all(req.userId);
         const items = rows.map((e) => ({
             id: e.id,
             name: null,
@@ -2102,7 +2017,7 @@ router.post('/dm/reactions/custom/upload', requireAuth, uploadEmoji.single('imag
 
 // Bookmark/unbookmark an existing custom emoji (reactions namespace)
 router.post('/dm/reactions/custom/:id/bookmark', requireAuth, (req, res) => {
-    const id = +req.params.id;
+    const id = req.params.id;
     if (!id) return res.status(400).json({ error: 'bad_id' });
     const exists = db.prepare(`SELECT 1 FROM custom_emojis WHERE id=?`).get(id);
     if (!exists) return res.status(404).json({ error: 'not_found' });
@@ -2113,14 +2028,83 @@ router.post('/dm/reactions/custom/:id/bookmark', requireAuth, (req, res) => {
         if (count >= 100) return res.status(400).json({ error: 'library_limit_100' });
 
         db.prepare(`
-      INSERT OR IGNORE INTO user_custom_emojis(user_id, emoji_id, created_at)
-      VALUES(?,?,CURRENT_TIMESTAMP)
-    `).run(req.userId, id);
+       INSERT OR IGNORE INTO user_custom_emojis(user_id, emoji_id, created_at)
+       VALUES(?,?,CURRENT_TIMESTAMP)
+     `).run(req.userId, id);
         res.json({ ok: true });
     } catch (e) {
         res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
     }
 });
+router.delete('/dm/reactions/custom/:id/bookmark', requireAuth, (req, res) => {
+    const id = req.params.id;
+    if (!id) return res.status(400).json({ error: 'bad_id' });
+    try {
+        db.prepare(`DELETE FROM user_custom_emojis WHERE user_id=? AND emoji_id=?`).run(req.userId, id);
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
+    }
+});
+
+// --- COMPAT: old client uses POST /dm/reactions/custom/bookmark (id in body or reaction_key)
+router.post('/dm/reactions/custom/bookmark', requireAuth, (req, res) => {
+    let id = (req.body?.emoji_id || req.body?.id || 0);
+    if (!id && typeof req.body?.reaction_key === 'string') {
+        const parsed = parseReactionKey(req.body.reaction_key);
+        if (parsed?.kind === 'custom') id = parsed.custom_emoji_id | 0;
+    }
+    if (!id) return res.status(400).json({ error: 'bad_id' });
+
+    const exists = db.prepare(`SELECT 1 FROM custom_emojis WHERE id=?`).get(id);
+    if (!exists) return res.status(404).json({ error: 'not_found' });
+
+    try {
+        const count = db.prepare(`SELECT COUNT(*) AS n FROM user_custom_emojis WHERE user_id=?`).get(req.userId)?.n | 0;
+        if (count >= 100) return res.status(400).json({ error: 'library_limit_100' });
+        db.prepare(`
+      INSERT OR IGNORE INTO user_custom_emojis(user_id, emoji_id, created_at)
+      VALUES(?,?,CURRENT_TIMESTAMP)
+    `).run(req.userId, id);
+        res.json({ ok: true, emoji_id: id });
+    } catch (e) {
+        res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
+    }
+});
+
+// --- COMPAT: old client uses POST /dm/reactions/custom/bookmarks/toggle
+router.post('/dm/reactions/custom/bookmarks/toggle', requireAuth, (req, res) => {
+    let id = (req.body?.emoji_id || req.body?.id || 0);
+    if (!id && typeof req.body?.reaction_key === 'string') {
+        const parsed = parseReactionKey(req.body.reaction_key);
+        if (parsed?.kind === 'custom') id = parsed.custom_emoji_id | 0;
+    }
+    if (!id) return res.status(400).json({ error: 'bad_id' });
+
+    const exists = db.prepare(`SELECT 1 FROM custom_emojis WHERE id=?`).get(id);
+    if (!exists) return res.status(404).json({ error: 'not_found' });
+
+    const mine = db.prepare(`
+    SELECT 1 FROM user_custom_emojis WHERE user_id=? AND emoji_id=?
+  `).get(req.userId, id);
+
+    try {
+        if (mine) {
+            db.prepare(`DELETE FROM user_custom_emojis WHERE user_id=? AND emoji_id=?`).run(req.userId, id);
+            return res.json({ ok: true, toggled: 'off', emoji_id: id });
+        }
+        const count = db.prepare(`SELECT COUNT(*) AS n FROM user_custom_emojis WHERE user_id=?`).get(req.userId)?.n | 0;
+        if (count >= 100) return res.status(400).json({ error: 'library_limit_100' });
+        db.prepare(`
+      INSERT INTO user_custom_emojis(user_id, emoji_id, created_at)
+      VALUES(?,?,CURRENT_TIMESTAMP)
+    `).run(req.userId, id);
+        return res.json({ ok: true, toggled: 'on', emoji_id: id });
+    } catch (e) {
+        return res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
+    }
+});
+
 router.delete('/dm/reactions/custom/:id/bookmark', requireAuth, (req, res) => {
     const id = +req.params.id;
     if (!id) return res.status(400).json({ error: 'bad_id' });

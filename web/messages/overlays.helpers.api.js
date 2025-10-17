@@ -30,6 +30,16 @@
         let _libLastFailAt = 0;
         let _libBackoffMs = 0;
 
+        // local "saved" mirror so UI can reflect state immediately
+        const SAVED_LS_KEY = 'rx.saved.v1';
+        function _readSaved() {
+            try { return new Set((JSON.parse(localStorage.getItem(SAVED_LS_KEY) || '[]') || []).map(Number)); }
+            catch { return new Set(); }
+        }
+        function _writeSaved(set) {
+            try { localStorage.setItem(SAVED_LS_KEY, JSON.stringify([...set])); } catch { }
+        }
+
         async function getCustomLibrary() {
             if (_libCache) return _libCache;
             if (_libInflight) return _libInflight;
@@ -43,7 +53,13 @@
             _libInflight = (async () => {
                 try {
                     const resp = await originalApiFn('/dm/reactions/custom/library', { method: 'GET' });
-                    const items = Array.isArray(resp?.items) ? resp.items : (resp?.items || []);
+                    const raw = Array.isArray(resp?.items) ? resp.items : (resp?.items || []);
+                    const ls = _readSaved();
+                    const items = raw.map(e => {
+                        const id = Number(e?.id);
+                        const savedServer = !!(e?.saved ?? e?.bookmarked ?? e?.starred ?? e?.is_saved);
+                        return { ...e, saved: savedServer || ls.has(id) };
+                    });
                     _libCache = items;
                     _libLastFailAt = 0;
                     _libBackoffMs = 0;
@@ -71,6 +87,15 @@
         const wrapped = async (url, opts = {}) => {
             const method = (opts.method || 'GET').toUpperCase();
             let bodyPreview = opts.body;
+
+            const bmMatch = String(url).match(/\/dm\/reactions\/custom\/(\d+)\/bookmark\b/);
+            if (bmMatch) {
+                const bodyMissing = !opts.body || (typeof opts.body === 'string' && opts.body.trim().toLowerCase() === 'null');
+                if (bodyMissing && (method === 'POST' || method === 'DELETE')) {
+                    // POST = save, DELETE = unsave
+                    opts.body = { save: method === 'POST' };
+                }
+            }
 
             // Normalize JSON bodies (not FormData)
             if (opts.body && !(opts.body instanceof FormData)) {
@@ -103,6 +128,21 @@
 
             try {
                 const resp = await originalApiFn(url, opts);
+                // if we just toggled a bookmark, mirror it locally and refresh cache
+                if (bmMatch) {
+                    const id = Number(bmMatch[1]);
+                    let want = (method === 'POST');
+                    try {
+                        const bObj = (typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body) || {};
+                        if ('save' in bObj) want = !!bObj.save;
+                    } catch { /* keep default */ }
+
+                    const set = _readSaved();
+                    if (want) set.add(id); else set.delete(id);
+                    _writeSaved(set);
+
+                    try { await MA.refreshCustomReactionsLibrary?.(); } catch { }
+                }
                 const logObj = (typeof resp === 'string')
                     ? { type: 'string', preview: resp.slice(0, 300) }
                     : { type: typeof resp, keys: resp && typeof resp === 'object' ? Object.keys(resp) : null };

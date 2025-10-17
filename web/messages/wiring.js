@@ -168,7 +168,13 @@
         buttonEl: $('chat-menu-btn'),
         getContext: () => ({ isGroup: !!(state.currentConvDetail?.is_group), isOwner: !!(state.currentConvDetail?.is_owner) }),
         handlers: {
-            rename: () => chatSettings.show('info'),
+            settings: () => {
+                const isGroup = !!(state.currentConvDetail?.is_group);
+                // Open your overlay (Info for groups, Deletion tab for DMs)
+                window.MessagesApp.chatSettings.show(isGroup ? 'info' : 'deletion');
+            },
+
+            // keep the rest as-is…
             manage: () => friendPicker.open('group-edit', {
                 preselectIds: (state.currentConvDetail?.members || [])
                     .filter(u => (u.id | 0) !== (state.meId | 0))
@@ -179,11 +185,12 @@
                     .filter(u => (u.id | 0) !== (state.meId | 0))
                     .map(u => u.id)
             }),
-            restyle: () => chatSettings.show('style'),
             myColor: () => myColor.show(),
-            toggleReactions: () => chatSettings.show('reactions'),
-            toggleDeletion: () => chatSettings.show('deletion'),
-            leave: () => chatSettings.show('info'),
+            toggleReactions: () => window.MessagesApp.chatSettings.show('reactions'),
+            toggleDeletion: () => window.MessagesApp.chatSettings.show('deletion'),
+            leave: () => window.MessagesApp.chatSettings.show('info'),
+            blockGroup: () => window.MessagesApp.chatSettings.show('info'),
+
             deleteDm: async () => {
                 if (!!(state.currentConvDetail?.is_group)) { chatSettings.show('info'); return; }
                 confirmDM({

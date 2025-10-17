@@ -222,9 +222,13 @@
                 MA.openFriendPicker?.('view', { preselectIds: ids });
             },
             chatSettings: async () => {
-                const cid = (MA.state?.convId) | 0;
+                const s = MA.state || {};
+                const isGroup = !!(s.currentConvDetail?.is_group);
+                const cid = (s.convId) | 0;
                 await MA.syncConvSettings(cid);
-                MA.chatSettingsOverlay?.show?.('style');
+                // Groups: open Info (rename + danger)
+                // DMs: open Deletion (Info/Style are hidden in DMs)
+                MA.chatSettingsOverlay?.show?.(isGroup ? 'info' : 'deletion');
             },
             restyle: () => MA.restyleOverlay?.show?.(),
             myColor: () => MA.myColorOverlay?.show?.(),

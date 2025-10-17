@@ -54,19 +54,26 @@
             const { isGroup, isOwner } = this.getContext();
             const items = [];
 
-            // Preserve original wiring.js contract
             if (isGroup) {
+                // owner can manage, otherwise view only
                 if (isOwner) {
-                    items.push({ id: 'rename', label: 'Rename group' });
+                    // removed: Rename group
                     items.push({ id: 'manage', label: 'Manage members' });
                 } else {
                     items.push({ id: 'view-members', label: 'View members' });
                 }
-                items.push({ id: 'restyle', label: 'Restyle Group' });
+
+                // NEW unified entry
+                items.push({ id: 'chat-settings', label: 'Chat settings' });
+
+                // removed per your request:
+                // items.push({ id: 'restyle', label: 'Restyle Group' });
                 items.push({ id: 'my-color', label: 'My Message Color' });
                 items.push({ id: 'leave', label: 'Leave group' });
                 items.push({ id: 'block-group', label: 'Block this group' });
             } else {
+                // DM
+                items.push({ id: 'chat-settings', label: 'Chat settings' });
                 items.push({ id: 'delete-dm', label: 'Delete chat (for me)' });
                 items.push({ id: 'block-user', label: 'Block user' });
             }
@@ -81,10 +88,11 @@
                     this.hide();
                     const h = this.cfg.handlers || {};
                     ({
-                        'rename': h.rename,
+                        'chat-settings': h.chatSettings,   // <— NEW
+                        'settings': h.chatSettings,        // <— tolerate older id if present
                         'manage': h.manage,
                         'view-members': h.viewMembers,
-                        'restyle': h.restyle,
+                        // 'restyle': h.restyle,            // removed
                         'my-color': h.myColor,
                         'leave': h.leave,
                         'block-group': h.blockGroup,

@@ -104,12 +104,36 @@
     // ---------- API ----------
     async function api(path, opts = {}) {
         const headers = Object.assign({ 'Accept': 'application/json' }, opts.headers || {});
-        const isJSON = opts.body && !(opts.body instanceof FormData);
-        if (isJSON && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+        const hasBody = opts.body !== undefined && opts.body !== null;
+        const isForm = hasBody && (opts.body instanceof FormData);
+        const isString = hasBody && (typeof opts.body === 'string');
+        // Only set JSON header & stringify when body is a plain object/array
+        if (hasBody && !isForm && !isString && !headers['Content-Type']) {
+            headers['Content-Type'] = 'application/json';
+        }
+        const body = !hasBody
+            ? undefined
+            : isForm
+                ? opts.body
+                : isString
+                    ? opts.body            // already a string; don't stringify again
+                    : JSON.stringify(opts.body);
+
         const url = API + path;
-        const r = await fetch(url, { credentials: 'include', method: opts.method || 'GET', headers, body: isJSON ? JSON.stringify(opts.body) : opts.body });
-        const t = await r.text(); let d; try { d = t ? JSON.parse(t) : {} } catch { d = { raw: t } }
-        if (!r.ok) { const e = new Error(d?.error || r.statusText); e.status = r.status; e.detail = d?.detail || t; throw e; }
+        const r = await fetch(url, {
+            credentials: 'include',
+            method: opts.method || 'GET',
+            headers,
+            body
+        });
+        const t = await r.text();
+        let d; try { d = t ? JSON.parse(t) : {} } catch { d = { raw: t } }
+        if (!r.ok) {
+            const e = new Error(d?.error || r.statusText);
+            e.status = r.status;
+            e.detail = d?.detail || t;
+            throw e;
+        }
         return d;
     }
     async function getMe() {

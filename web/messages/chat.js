@@ -457,7 +457,229 @@
 .msg.menu-open .msg-actions,
 .msg.rx-open .msg-actions,
 .msg:focus-within .msg-actions{ display:flex !important; }
+/* --- Reaction chips: slightly taller + bigger visuals --- */
+.reactions{ display:flex; flex-wrap:wrap; gap:6px !important; }
+.reactions .rx-chip{
+  position:relative !important;
+  overflow:visible !important;            /* allow overlay to overflow */
+  display:inline-flex !important;
+  align-items:center !important;
+  gap:6px !important;
+  min-height:32px !important;             /* taller */
+  padding:4px 10px !important;           /* a touch more breathing room */
+  font-size:15px !important;             /* bigger unicode emoji/count */
+  line-height:1 !important;
+}
+.reactions .rx-chip img{                 /* bigger custom emoji image */
+  width:20px !important; height:20px !important; object-fit:contain !important;
+}
 
+/* --- Hover-only bookmark overlay (chips + picker tiles) --- */
+.reactions .rx-chip .rx-bm,
+#rx-fallback-pop .rx-tile .rx-bm{
+  position:absolute !important;
+  bottom:-6px !important;                 /* overflow a little outside */
+  right:-6px !important;
+  display:none !important;                /* only on hover */
+  width:18px !important; height:18px !important;
+  border:2px solid var(--border,#e6e6e6) !important;
+  background:#0e1116 !important; color:#fff !important;
+  border-radius:50% !important;
+  line-height:14px !important; font-size:12px !important;
+  box-shadow:0 1px 0 rgba(255,255,255,.12) inset !important;
+  z-index:6 !important;
+  place-items:center !important;
+}
+
+/* Show bookmark only when hovering the reaction */
+.reactions .rx-chip:hover .rx-bm,
+#rx-fallback-pop .rx-tile:hover .rx-bm{ display:grid !important; }
+
+/* Let the overlay be clickable even though children are pointer-events:none */
+.reactions .rx-chip *{ pointer-events:none !important; }
+.reactions .rx-chip .rx-bm{ pointer-events:auto !important; }
+
+/* Picker tiles need position context & overflow so the overlay can sit outside */
+#rx-fallback-pop .rx-grid > .rx-tile{
+  position:relative !important; overflow:visible !important;
+}
+
+/* --- Reaction chips: slightly taller + bigger visuals --- */
+.reactions{ display:flex; flex-wrap:wrap; gap:8px !important; }
+.reactions .rx-chip{
+  position:relative !important;
+  overflow:visible !important;            /* allow overlay to overflow */
+  display:inline-flex !important;
+  align-items:center !important;
+  gap:6px !important;
+  min-height:32px !important;             /* taller */
+  padding:4px 4px !important;            /* breathing room */
+  font-size:22px !important;              /* bigger unicode emoji/count */
+  line-height:1 !important;
+}
+.reactions .rx-chip img{                  /* bigger custom emoji image */
+  width:30px !important; height:30px !important; object-fit:contain !important;
+}
+
+/* --- Hover-only bookmark overlay (chips + picker tiles) --- */
+.reactions .rx-chip .rx-bm,
+#rx-fallback-pop .rx-tile .rx-bm{
+  position:absolute !important;
+  bottom:-6px !important;                 /* overflow a little outside */
+  right:-6px !important;
+  display:none !important;                /* only on hover */
+  width:18px !important; height:18px !important;
+  border:2px solid var(--border,#e6e6e6) !important;
+  background:#0e1116 !important; color:#fff !important;
+  border-radius:50% !important;
+  line-height:14px !important; font-size:12px !important;
+  box-shadow:0 1px 0 rgba(255,255,255,.12) inset !important;
+  z-index:6 !important;
+  place-items:center !important;
+}
+
+/* Show bookmark only when hovering the reaction */
+.reactions .rx-chip:hover .rx-bm,
+#rx-fallback-pop .rx-tile:hover .rx-bm{ display:grid !important; }
+
+/* Let the overlay be clickable even though children are pointer-events:none */
+.reactions .rx-chip *{ pointer-events:none !important; }
+.reactions .rx-chip .rx-bm,
+#rx-fallback-pop .rx-tile .rx-bm{ pointer-events:auto !important; }
+
+/* Picker tiles need position context & overflow so the overlay can sit outside */
+#rx-fallback-pop .rx-grid > .rx-tile{
+  position:relative !important; overflow:visible !important;
+}
+.reactions .rx-chip{
+  gap: 0px !important;          /* was 6px */
+}
+
+/* (optional) trim any stray inner margins authors might add later */
+.reactions .rx-chip > *{
+  margin-left: 0 !important;
+}
+
+/* Ultra-tighten reaction → count spacing */
+.reactions .rx-chip{ 
+  gap: 0 !important; 
+  --rx-tuck: 4px;                 /* tweak: 2–6px */
+}
+
+/* Pull the count left a bit (ignore the absolute bookmark button) */
+.reactions .rx-chip > :not(.rx-bm) + :not(.rx-bm){
+  margin-left: calc(var(--rx-tuck) * -1) !important;
+}
+
+/* Kill any inline whitespace around custom-emoji imgs */
+.reactions .rx-chip img{ display:block !important; }
+
+/* Tighten emoji → count, compensating for emoji font sidebearings */
+.reactions .rx-chip{
+  gap:0 !important;
+  --rx-nudge: 0.34em;                  /* tweak: 0.28–0.40em */
+}
+
+/* Default: move the count left */
+.reactions .rx-chip > :not(.rx-bm) + :not(.rx-bm){
+  transform: translateX(calc(var(--rx-nudge) * -1)) !important;
+  letter-spacing: -0.01em;             /* tiny kerning to keep multi-digit tight */
+}
+
+/* Kill inline-img whitespace so it doesn’t add phantom gap */
+.reactions .rx-chip img{ display:block !important; line-height:1 !important; }
+
+/* Kill any built-in gap first */
+.reactions .rx-chip{
+  gap:0 !important;
+  white-space:nowrap !important;
+}
+
+/* CUSTOM EMOJI (IMG): pull the text node (count) left by nudging the image's margin */
+.reactions .rx-chip > img,
+.reactions .rx-chip > .rx-emo > img{
+  display:block !important;           /* removes inline-img phantom spacing */
+  margin-right:6px !important;       /* tweak: -4 to -8px */
+}
+
+/* UNICODE EMOJI (font): trim the sidebearing + any literal space in the markup */
+.reactions .rx-chip{
+  word-spacing:-0.30em !important;    /* collapses an actual space character */
+  letter-spacing:-0.02em !important;  /* tiny global tighten to fight sidebearing */
+}
+
+/* If your count IS wrapped (sometimes it is), keep its digits readable */
+.reactions .rx-chip .rx-count,
+.reactions .rx-chip .count,
+.reactions .rx-chip > :last-child{
+  letter-spacing:0 !important;
+}
+
+/* Option A: simplest — give the chip a bit more breathing room on the right */
+.reactions .rx-chip{
+  padding-inline-end: 7px !important;   /* = padding-right in LTR */
+}
+
+/* Option B: bulletproof — add a tiny flex spacer after the content */
+.reactions .rx-chip::after{
+  content: "";
+  display: block;
+  flex: 0 0 4px;   /* width of the inner gap */
+  height: 1px;     /* keeps it from collapsing in some engines */
+}
+
+/* Unify visual box for BOTH custom (IMG) and normal (unicode) emoji */
+.reactions .rx-chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;                 /* tight gap to the count */
+  padding-inline-end: 0px !important;  /* tiny inner gap on right */
+}
+
+/* The emoji box: same sizing whether it's an <img> or a text span */
+.reactions .rx-chip img,
+.reactions .rx-chip .rx-glyph{
+  width: 30px !important;
+  height: 30px !important;
+  flex: 0 0 30px !important;           /* prevents stretch */
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-inline-end: 12px !important;   /* teeny space before the number */
+  line-height: 1 !important;
+}
+
+/* Tune unicode emoji inside the glyph box */
+.reactions .rx-chip .rx-glyph{
+  font-size: 24px !important;          /* scale to taste (24–28 works well) */
+  font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",emoji,system-ui;
+}
+
+/* Keep custom emoji images crisp in the same box */
+.reactions .rx-chip img{
+  object-fit: contain !important;
+}
+
+/* Tighten right side after the number */
+.reactions .rx-chip::after{
+  content: none !important;   /* remove the 4px spacer */
+  flex: 0 0 0 !important;
+}
+
+.reactions .rx-chip{
+  --rx-pad-end: 2px;          /* tweak 0–3px to taste */
+  padding-inline-end: var(--rx-pad-end) !important;
+}
+
+/* belt & suspenders: ensure nothing adds extra margin on the last child */
+.reactions .rx-chip > :last-child{
+  margin-inline-end: 0 !important;
+}
+
+/* optional micro-tuck if you still see a hairline of space */
+.reactions .rx-chip .rx-count{
+  margin-inline-end: -2px !important;  /* adjust -2px..0px */
+}
 `;
         DBG('styles injected: dm-msg-actions-styles');
     })();
@@ -1458,23 +1680,65 @@
                 btn.dataset.rxKey = key || '';
                 btn.setAttribute('aria-pressed', it.reacted_by_me ? 'true' : 'false');
 
+                // — glyph box —
                 if (it.kind === 'custom' && it.custom_emoji_id) {
                     const url = customUrlFor ? (customUrlFor(it.custom_emoji_id) || '') : '';
                     if (url) {
-                        const img = document.createElement('img');
-                        img.src = url; img.alt = 'custom'; img.width = 16; img.height = 16; img.style.verticalAlign = 'middle';
-                        btn.append(img, document.createTextNode(' ' + (it.count | 0)));
+                        const img = new Image();
+                        img.src = url;
+                        img.alt = 'custom';
+                        btn.appendChild(img); // styled by .rx-chip img rules
                     } else {
-                        // fallback glyph when library missing — still show count so the bar exists
-                        btn.textContent = '★ ' + (it.count | 0);
+                        const g = document.createElement('span');
+                        g.className = 'rx-glyph';
+                        g.textContent = '★';
+                        btn.appendChild(g);
                     }
                 } else {
-                    const uni = it.unicode || it.emoji || '⭐';
-                    btn.textContent = uni + ' ' + (it.count | 0);
+                    const g = document.createElement('span');
+                    g.className = 'rx-glyph';
+                    g.textContent = it.unicode || it.emoji || '⭐';
+                    btn.appendChild(g);
                 }
+
+                // — count —
+                const c = document.createElement('span');
+                c.className = 'rx-count';
+                c.textContent = String(it.count | 0);
+                btn.appendChild(c);
+
                 el.appendChild(btn);
             });
-            // no "Add reaction" button here; picker is opened by the hover rail's 🙂 button
+            // picker opens from the hover rail's 🙂 button; no “add” chip here
+        }
+
+        function normalizeReactionGlyphs(scopeEl) {
+            const chips = scopeEl.querySelectorAll('.rx-chip');
+            chips.forEach(chip => {
+                const hasImg = !!chip.querySelector('img');
+                const hasGlyph = !!chip.querySelector('.rx-glyph');
+                if (!hasImg && !hasGlyph) {
+                    const first = chip.firstChild;
+                    if (first && first.nodeType === 3) {
+                        const g = document.createElement('span');
+                        g.className = 'rx-glyph';
+                        g.textContent = first.nodeValue.trim();
+                        chip.replaceChild(g, first);
+                    } else if (first && first.nodeType === 1 && first.tagName !== 'IMG') {
+                        first.classList.add('rx-glyph');
+                    }
+                }
+                if (!chip.querySelector('.rx-count')) {
+                    // find a trailing text node with digits and wrap it
+                    const tailText = Array.from(chip.childNodes).find(n => n.nodeType === 3 && /\d/.test(n.nodeValue || ''));
+                    if (tailText) {
+                        const c = document.createElement('span');
+                        c.className = 'rx-count';
+                        c.textContent = (tailText.nodeValue || '').replace(/[^\d]/g, '').trim() || (tailText.nodeValue || '').trim();
+                        chip.replaceChild(c, tailText);
+                    }
+                }
+            });
         }
 
         class RichReactionPickerUI {
@@ -1500,18 +1764,21 @@
             }
 
             async _toggleBookmark(id, want) {
-                // Prefer host overlay if it knows how to bookmark
-                if (window.UIOverlays?.CustomEmoji?.toggleBookmark) {
-                    await window.UIOverlays.CustomEmoji.toggleBookmark(id, want);
-                    return;
+                try {
+                    const tries = [
+                        () => window.MessagesApp.api.api(`/dm/reactions/custom/${id}/bookmark`, { method: want ? 'POST' : 'DELETE', body: { save: !!want } }),
+                        () => apiPost('/dm/reactions/custom/bookmark', { emoji_id: +id, save: !!want }),
+                        () => apiPost('/dm/reactions/custom/bookmarks/toggle', { id: +id, save: !!want }),
+                        () => apiPost('/dm/reactions/custom/library', { id: +id, bookmarked: !!want }),
+                    ];
+                    for (const t of tries) { try { await t(); break; } catch { } }
+                } finally {
+                    const set = _readSaved();
+                    if (want) set.add(+id); else set.delete(+id);
+                    _writeSaved(set);
+                    const meta = LIB.get(+id); if (meta) meta.saved = !!want;
+                    try { await refreshLibrary(); } catch { }
                 }
-                // Fallback REST: try a few common shapes; ignore failure quietly
-                const tries = [
-                    () => apiPost('/dm/reactions/custom/bookmark', { emoji_id: +id, save: !!want }),
-                    () => apiPost('/dm/reactions/custom/bookmarks/toggle', { id: +id, save: !!want }),
-                    () => apiPost('/dm/reactions/custom/library', { id: +id, bookmarked: !!want }), // PATCH-y API sometimes aliased as POST
-                ];
-                for (const t of tries) { try { await t(); return; } catch { } }
             }
 
             async _openUploader() {
@@ -1533,7 +1800,7 @@
                         document.body.removeChild(inp);
                         if (!f) return resolve();
                         const fd = new FormData();
-                        fd.append('file', f, f.name || 'custom-emoji');
+                        fd.append('image', f, f.name || 'custom-emoji');
                         try {
                             await window.MessagesApp.api.api('/dm/reactions/custom/upload', { method: 'POST', body: fd });
                         } catch (e) {
@@ -1961,7 +2228,7 @@
 
                         try {
                             const fd = new FormData();
-                            fd.append('file', blob, nameInp.value + '.png');
+                            fd.append('image', blob, nameInp.value + '.png'); // server expects "image"
                             fd.append('name', nameInp.value);
                             await window.MessagesApp.api.api('/dm/reactions/custom/upload', { method: 'POST', body: fd });
                             setMsg('Created!', true);
@@ -2007,11 +2274,15 @@
                 const customH1 = document.createElement('div'); customH1.className = 'rx-h1'; customH1.textContent = 'Custom';
                 const customGrid = document.createElement('div'); customGrid.className = 'rx-grid'; customGrid.id = 'rx-grid-custom';
 
+                // Saved
+                const savedH1 = document.createElement('div'); savedH1.className = 'rx-h1'; savedH1.textContent = 'Saved';
+                const savedGrid = document.createElement('div'); savedGrid.className = 'rx-grid';
+
                 // EMOJI (by categories)
                 const emojiH1 = document.createElement('div'); emojiH1.className = 'rx-h1'; emojiH1.textContent = 'Emoji';
                 const emojiCatsWrap = document.createElement('div');
 
-                sections.append(recentH1, recentGrid, customH1, customGrid, emojiH1, emojiCatsWrap);
+                sections.append(recentH1, recentGrid, savedH1, savedGrid, customH1, customGrid, emojiH1, emojiCatsWrap);
                 pop.append(head, sections);
 
                 // portal + position + listeners
@@ -2088,6 +2359,19 @@
                     });
                 };
 
+                const renderSaved = () => {
+                    savedGrid.innerHTML = '';
+                    const items = Array.from(LIB.values() || []).filter(e => e.saved && qMatch(e.name || ''));
+                    if (!items.length) { savedH1.style.display = 'none'; savedGrid.style.display = 'none'; return; }
+                    savedH1.style.display = ''; savedGrid.style.display = '';
+                    items.forEach(e => {
+                        savedGrid.appendChild(this._makeTile(
+                            { kind: 'custom', custom_emoji_id: e.id },
+                            { saved: true, title: e.name || 'Custom', imgUrl: e.url }
+                        ));
+                    });
+                };
+
                 const buildEmojiCategories = () => {
                     emojiCatsWrap.innerHTML = '';
                     const cats = [...new Set(this.EMOJI.map(e => e.cat))]; // already provided by constructor
@@ -2105,6 +2389,7 @@
 
                 const refreshAll = () => {
                     renderRecent();
+                    renderSaved();
                     renderCustom();
                     buildEmojiCategories();
                 };
@@ -2151,6 +2436,9 @@
 
         const LIB = new Map();         // custom_emoji_id -> url
         const MSG_BAR = new Map();     // msgId -> { barEl, meta }
+        const SAVED_LS_KEY = 'rx.saved.v1';
+        function _readSaved() { try { return new Set((JSON.parse(localStorage.getItem(SAVED_LS_KEY) || '[]') || []).map(Number)); } catch { return new Set(); } }
+        function _writeSaved(set) { try { localStorage.setItem(SAVED_LS_KEY, JSON.stringify([...set])); } catch { } }
         let picker = null;
 
         // --- use the app's API wrapper when available (it dedupes /dm/reactions/custom/library)
@@ -2187,9 +2475,13 @@
                 try {
                     const j = await apiGet('/dm/reactions/custom/library');
                     const items = Array.isArray(j?.items) ? j.items : (j?.items || []);
+                    const ls = _readSaved();
                     items.forEach(e => {
                         if (e?.id && e?.url) {
-                            LIB.set(+e.id, { id: +e.id, url: e.url, name: e.name || '', saved: !!(e.saved ?? e.bookmarked ?? e.starred ?? e.is_saved) });
+                            const id = +e.id;
+                            const savedServer = !!(e.saved ?? e.bookmarked ?? e.starred ?? e.is_saved);
+                            const saved = savedServer || ls.has(id);
+                            LIB.set(id, { id, url: e.url, name: e.name || '', saved });
                         }
                     });
                     _libCache = items; _libLastFail = 0; _libBackoff = 0;
@@ -2312,6 +2604,73 @@
             return bar;
         }
 
+        // Toggle bookmark for a custom emoji (used by chips & picker)
+        async function toggleCustomBookmark(id, want) {
+            if (!id) return;
+            const overlayAPI = window.UIOverlays?.CustomEmoji;
+            try {
+                if (overlayAPI?.toggleBookmark) {
+                    await overlayAPI.toggleBookmark(id, want);
+                } else {
+                    const tries = [
+                        () => want
+                            ? window.MessagesApp.api.api(`/dm/reactions/custom/${id}/bookmark`, { method: 'POST' })
+                            : window.MessagesApp.api.api(`/dm/reactions/custom/${id}/bookmark`, { method: 'DELETE' }),
+                        () => apiPost('/dm/reactions/custom/bookmark', { emoji_id: +id, save: !!want }),
+                        () => apiPost('/dm/reactions/custom/bookmarks/toggle', { id: +id, save: !!want }),
+                        () => apiPost('/dm/reactions/custom/library', { id: +id, bookmarked: !!want }),
+                    ];
+                    for (const t of tries) { try { await t(); break; } catch { } }
+                }
+            } finally {
+                const meta = LIB.get(+id);
+                if (meta) meta.saved = !!want;
+            }
+        }
+
+        // After the bar renders, decorate chips with a hover-only bookmark nub
+        function ensureBookmarkOverlays(barEl, items) {
+            const chips = Array.from(barEl.querySelectorAll('.rx-chip, [data-rx-key]'));
+            if (!chips.length) return;
+
+            chips.forEach((chip, idx) => {
+                let key = chip.getAttribute('data-rx-key') || chip.dataset.rxKey || chip.dataset.key || null;
+                if (!key && items && items[idx] && items[idx].reaction_key) {
+                    key = items[idx].reaction_key;          // fallback: align by index
+                    chip.setAttribute('data-rx-key', key);
+                }
+                if (!key || !key.startsWith('c:')) return;  // custom-only
+
+                const id = +key.slice(2);
+                let bm = chip.querySelector(':scope > .rx-bm');
+                if (!bm) {
+                    bm = document.createElement('button');
+                    bm.type = 'button';
+                    bm.className = 'rx-bm';
+                    chip.appendChild(bm);
+
+                    // capture-phase so it doesn't bubble to the chip toggle
+                    bm.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        e.stopPropagation();
+                        const want = !Boolean(LIB.get(id)?.saved);
+                        toggleCustomBookmark(id, want).then(() => {
+                            const savedNow = !!LIB.get(id)?.saved;
+                            bm.classList.toggle('saved', savedNow);
+                            bm.textContent = savedNow ? '★' : '☆';
+                            bm.title = savedNow ? 'Remove from favorites' : 'Save to favorites';
+                        }).catch(() => { });
+                    }, true);
+                }
+
+                const saved = !!LIB.get(id)?.saved;
+                bm.classList.toggle('saved', saved);
+                bm.textContent = saved ? '★' : '☆';
+                bm.title = saved ? 'Remove from favorites' : 'Save to favorites';
+            });
+        }
+
         async function renderBarFor(msgId) {
             const info = MSG_BAR.get(msgId);
             if (!info) return;
@@ -2342,7 +2701,23 @@
                     if (reaction_key) { await toggleByKey(msgId, reaction_key); await renderBarFor(msgId); }
                 }
             });
+
+            renderReactionBar(barEl, items, {
+                disabled: !reactable,
+                customUrlFor: urlForCustom,
+                onOpenPicker: () => openPicker(barEl, { id: msgId, reactable }),
+                onToggle: async (reaction_key) => {
+                    if (reaction_key) { await toggleByKey(msgId, reaction_key); await renderBarFor(msgId); }
+                }
+            });
+
+            // NEW: ensure unicode chips have the same structure as custom
+            normalizeReactionGlyphs(barEl);
+
+            // ➜ Add the hover-only bookmark to custom chips
+            ensureBookmarkOverlays(barEl, items);
         }
+
 
         async function attachBar(wrap, message) {
             await loadLibraryOnce();
@@ -2438,17 +2813,19 @@
     // Universal click-to-toggle for reaction chips.
     // Capture phase so it works even if other handlers stopPropagation.
     document.addEventListener('click', async (ev) => {
+        // NEW: ignore clicks on the bookmark nub
+        if (ev.target && ev.target.closest('.rx-bm')) return;
+
         const chip = ev.target && (ev.target.closest('[data-rx-key]') || ev.target.closest('.rx-chip'));
         if (!chip) return;
         const row = chip.closest('.msg');
         const bar = chip.closest('.reactions');
-        if (!row || !bar) return; // must be inside a message row
+        if (!row || !bar) return;
         const msgId = +(row.dataset.msgId || 0);
         const key = chip.getAttribute('data-rx-key') || chip.dataset.rxKey || chip.dataset.key || null;
         if (!msgId || !key) return;
 
         ev.preventDefault();
-        // don’t let bubbling handlers (e.g. open picker) fire
         ev.stopPropagation();
 
         try {
@@ -2457,7 +2834,7 @@
         } finally {
             chip.disabled = false;
         }
-    }, true); // <-- capture phase
+    }, true);
 
     // Boot (formerly your IIFE tail)
     async function boot() {
