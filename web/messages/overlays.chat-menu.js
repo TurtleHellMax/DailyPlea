@@ -49,6 +49,8 @@
             else { this.render(); this.menu.style.display = 'block'; }
         }
 
+        // /web/messages/overlays.chat-menu.js
+
         render() {
             if (!this.menu) return;
             const { isGroup, isOwner } = this.getContext();
@@ -57,25 +59,23 @@
             if (isGroup) {
                 // owner can manage, otherwise view only
                 if (isOwner) {
-                    // removed: Rename group
                     items.push({ id: 'manage', label: 'Manage members' });
                 } else {
                     items.push({ id: 'view-members', label: 'View members' });
                 }
 
-                // NEW unified entry
+                // Unified entry
                 items.push({ id: 'chat-settings', label: 'Chat settings' });
 
-                // removed per your request:
-                // items.push({ id: 'restyle', label: 'Restyle Group' });
+                // Keep per-user color quick action if you like
                 items.push({ id: 'my-color', label: 'My Message Color' });
-                items.push({ id: 'leave', label: 'Leave group' });
-                items.push({ id: 'block-group', label: 'Block this group' });
+
+                // ✂️ removed per request (now in Chat settings → Info → Danger zone):
+                // items.push({ id: 'leave', label: 'Leave group' });
+                // items.push({ id: 'block-group', label: 'Block this group' });
             } else {
                 // DM
                 items.push({ id: 'chat-settings', label: 'Chat settings' });
-                items.push({ id: 'delete-dm', label: 'Delete chat (for me)' });
-                items.push({ id: 'block-user', label: 'Block user' });
             }
 
             this.menu.innerHTML = items
@@ -87,17 +87,17 @@
                     const id = el.dataset.id;
                     this.hide();
                     const h = this.cfg.handlers || {};
+                    const run = (fn) => {
+                        if (typeof fn === 'function') return fn();
+                        (window.MessagesApp?.chatSettingsOverlay?.show?.('info'))
+                            || window.MessagesApp?.chatSettings?.show?.('info');
+                    };
                     ({
-                        'chat-settings': h.chatSettings,   // <— NEW
-                        'settings': h.chatSettings,        // <— tolerate older id if present
+                        'chat-settings': () => run(h.chatSettings),
+                        'settings': () => run(h.chatSettings),   // legacy id
                         'manage': h.manage,
                         'view-members': h.viewMembers,
-                        // 'restyle': h.restyle,            // removed
                         'my-color': h.myColor,
-                        'leave': h.leave,
-                        'block-group': h.blockGroup,
-                        'delete-dm': h.deleteDm,
-                        'block-user': h.blockUser,
                     }[id] || (() => { }))();
                 };
             });

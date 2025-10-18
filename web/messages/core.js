@@ -2,32 +2,40 @@
     const API = 'http://localhost:3000/api';
     const $ = (id) => document.getElementById(id);
 
-    // ---------- state ----------
-    const state = {
-        convId: null, meId: 0,
-        allConvs: [], filteredConvs: [],
-        lastMsgId: 0, oldestMsgId: null, nextBefore: null,
-        es: null, esGlobal: null, poll: null,
-        uploading: false,
-        pendingFiles: [],
-        recording: { active: false, chunks: [], size: 0, rec: null, warnShown: false, mime: '' },
+    // Reuse the existing MessagesApp + state instead of clobbering it
+    const MA = (window.MessagesApp = window.MessagesApp || {});
+    const state = (MA.state = MA.state || {});
 
-        // conv + meta
-        convMeta: new Map(),
-        convRowEls: new Map(),
-        convUserOg: new Map(),
-        userCache: new Map(),
-        convItems: new Map(),
+    // ----- state (send/UI control intentionally absent) -----
+    state.convId ??= null;
+    state.meId ??= 0;
+    state.allConvs ??= [];
+    state.filteredConvs ??= [];
+    state.lastMsgId ??= 0;
+    state.oldestMsgId ??= null;
+    state.nextBefore ??= null;
+    state.es ??= null;
+    state.esGlobal ??= null;
+    state.poll ??= null;
 
-        audioPlayers: new Map(),
-        msgColorsByConv: new Map(),
-        convDetailById: new Map(),
-        currentConvDetail: null,
+    // File/recording/state buckets (no gating logic here)
+    state.pendingFiles ??= [];
+    state.uploadingCount ??= 0;           // maintained by other modules; no UI logic here
+    state.uploading = !!state.uploading;  // legacy boolean; not used for UI here
 
-        renderedMsgIds: new Set(),
-        fetchingAfter: false,
-        meSlug: '',
-    };
+    state.recording ??= { active: false, chunks: [], size: 0, rec: null, warnShown: false, mime: '' };
+    state.convMeta ??= new Map();
+    state.convRowEls ??= new Map();
+    state.convUserOg ??= new Map();
+    state.userCache ??= new Map();
+    state.convItems ??= new Map();
+    state.audioPlayers ??= new Map();
+    state.msgColorsByConv ??= new Map();
+    state.convDetailById ??= new Map();
+    state.currentConvDetail ??= null;
+    state.renderedMsgIds ??= new Set();
+    state.fetchingAfter = !!state.fetchingAfter;
+    state.meSlug ??= '';
 
     // ---------- constants & tiny utils ----------
     const LASTDM_KEY = 'dp:lastdm';
@@ -58,8 +66,12 @@
     const pickPhoto = o => o?.profile_photo || o?.profile_photo_url || o?.photo || o?.photo_url || o?.avatar || o?.avatar_url || o?.picture || o?.image || o?.image_url || null;
     const pickName = o => o?.display_name || o?.name || o?.username || o?.first_username || o?.handle || o?.title || null;
 
-    function saveLastDM() { try { localStorage.setItem(LASTDM_KEY, JSON.stringify({ meId: state.meId | 0, convId: state.convId | 0, at: Date.now() })) } catch { } }
-    function loadLastDM() { try { return JSON.parse(localStorage.getItem(LASTDM_KEY) || 'null'); } catch { return null; } }
+    function saveLastDM() {
+        try { localStorage.setItem(LASTDM_KEY, JSON.stringify({ meId: state.meId | 0, convId: state.convId | 0, at: Date.now() })) } catch { }
+    }
+    function loadLastDM() {
+        try { return JSON.parse(localStorage.getItem(LASTDM_KEY) || 'null'); } catch { return null; }
+    }
 
     function _getHideMap() { try { return JSON.parse(localStorage.getItem(HIDE_BEFORE_KEY) || '{}'); } catch { return {}; } }
     function _setHideMap(m) { try { localStorage.setItem(HIDE_BEFORE_KEY, JSON.stringify(m)); } catch { } }
@@ -71,7 +83,13 @@
         return (items || []).filter(m => (m.id | 0) > cut);
     }
 
-    function joinNames(arr) { const a = (arr || []).filter(Boolean); if (!a.length) return 'Group'; if (a.length === 1) return a[0]; if (a.length === 2) return a[0] + ' & ' + a[1]; return a.slice(0, -1).join(', ') + ' & ' + a[a.length - 1]; }
+    function joinNames(arr) {
+        const a = (arr || []).filter(Boolean);
+        if (!a.length) return 'Group';
+        if (a.length === 1) return a[0];
+        if (a.length === 2) return a[0] + ' & ' + a[1];
+        return a.slice(0, -1).join(', ') + ' & ' + a[a.length - 1];
+    }
     const labelForMember = u => pickName(u) || 'user';
     const computeDefaultGroupTitle = members => joinNames((members || []).map(labelForMember));
 
@@ -107,7 +125,7 @@
         const hasBody = opts.body !== undefined && opts.body !== null;
         const isForm = hasBody && (opts.body instanceof FormData);
         const isString = hasBody && (typeof opts.body === 'string');
-        // Only set JSON header & stringify when body is a plain object/array
+
         if (hasBody && !isForm && !isString && !headers['Content-Type']) {
             headers['Content-Type'] = 'application/json';
         }
@@ -116,7 +134,7 @@
             : isForm
                 ? opts.body
                 : isString
-                    ? opts.body            // already a string; don't stringify again
+                    ? opts.body
                     : JSON.stringify(opts.body);
 
         const url = API + path;
@@ -136,6 +154,7 @@
         }
         return d;
     }
+
     async function getMe() {
         const j = await api('/auth/me');
         state.meId = j?.user?.id || 0;
@@ -143,9 +162,14 @@
         return state.meId;
     }
 
-    async function fetchMsgColors(cid) { const j = await api(`/dm/conversations/${cid}/message_colors`); return j?.colors || {}; }
-    const setMyMsgColor = (cid, color) => api(`/dm/conversations/${cid}/message_colors/me`, { method: 'PATCH', body: { color } });
-    const patchMsgColors = (cid, colors) => api(`/dm/conversations/${cid}/message_colors`, { method: 'PATCH', body: { colors } });
+    async function fetchMsgColors(cid) {
+        const j = await api(`/dm/conversations/${cid}/message_colors`);
+        return j?.colors || {};
+    }
+    const setMyMsgColor = (cid, color) =>
+        api(`/dm/conversations/${cid}/message_colors/me`, { method: 'PATCH', body: { color } });
+    const patchMsgColors = (cid, colors) =>
+        api(`/dm/conversations/${cid}/message_colors`, { method: 'PATCH', body: { colors } });
 
     const setColorMap = (cid, map) => state.msgColorsByConv.set(cid, map || {});
     const getColorMap = (cid) => state.msgColorsByConv.get(cid) || {};
@@ -175,7 +199,8 @@
         const out = {};
         for (const uid of userIds) {
             if (existingMap[uid]) continue;
-            const color = available.length ? available.splice((Math.random() * available.length) | 0, 1)[0]
+            const color = available.length
+                ? available.splice((Math.random() * available.length) | 0, 1)[0]
                 : palette[(Math.random() * palette.length) | 0];
             out[uid] = color; used.add(color);
         }
@@ -192,7 +217,7 @@
         });
     }
 
-    // expose
+    // expose (no send-button or gate APIs here)
     window.MessagesApp = Object.assign(window.MessagesApp || {}, {
         API, $, state,
         DEFAULT_PFP_DM, DEFAULT_PFP_GROUP, MAX_BYTES, GROUP_COLORS,
@@ -205,6 +230,9 @@
             saveMetaCache, scheduleSaveMeta, loadMetaCache,
             updateAllMessageBorders
         },
-        api: { api, getMe, fetchMsgColors, setMyMsgColor, patchMsgColors, setColorMap, getColorMap, syncMsgColors, chooseUniqueColorsForUsers }
+        api: {
+            api, getMe, fetchMsgColors, setMyMsgColor, patchMsgColors,
+            setColorMap, getColorMap, syncMsgColors, chooseUniqueColorsForUsers
+        }
     });
 })();

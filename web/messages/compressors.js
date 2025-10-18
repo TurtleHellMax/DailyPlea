@@ -14,6 +14,85 @@
 
     const API = global.API_BASE || ''; // used by renderAttachmentInline; set in your app
 
+    // === upload gating hooks (MA.uploadingCount integration) ===
+    const __opsInflight = new Set();
+
+    function __MA() {
+        // always fetch the live object
+        return (global.MessagesApp && typeof global.MessagesApp === 'object') ? global.MessagesApp : {};
+    }
+    function __pendingLen() {
+        try { return (__MA().state?.pendingFiles?.length | 0) || 0; } catch { return 0; }
+    }
+    function __appCount() {
+        try { return Number.isFinite(__MA().uploadingCount) ? __MA().uploadingCount : null; } catch { return null; }
+    }
+    function __findFn(obj, names) {
+        for (const n of names) if (typeof obj[n] === 'function') return n;
+        return null;
+    }
+    function __sync(reason) {
+        const MA = __MA();
+        try { MA.syncSendUI?.(); } catch { }
+        // kick a few times to beat racey layouts
+        try { requestAnimationFrame(() => MA.syncSendUI?.()); } catch { }
+        try { setTimeout(() => MA.syncSendUI?.(), 0); } catch { }
+        console.log(`[compress] syncSendUI (${reason})`);
+    }
+
+    function __signalCompressStart(opId) {
+        const MA = __MA();
+        if (__opsInflight.has(opId)) {
+            console.warn(`[compress] start(${opId}) ignored (already inflight)`);
+            return;
+        }
+        __opsInflight.add(opId);
+
+        const incName = __findFn(MA, ['uploadsInc', 'uploadInc', 'uploadsAdd']);
+        const setName = __findFn(MA, ['setUploading', 'setUploadsInProgress']);
+
+        if (incName && __findFn(MA, ['uploadsDec', 'uploadDec', 'uploadsRemove'])) {
+            try { MA; } catch { }
+            console.log(`[compress] START op=${opId} → ${incName}(1) | inflight=${__opsInflight.size} | appCount=${__appCount()} | pending=${__pendingLen()}`);
+        } else if (setName) {
+            try { MA[setName](true); } catch { }
+            console.log(`[compress] START op=${opId} → ${setName}(true) | inflight=${__opsInflight.size} | pending=${__pendingLen()}`);
+        } else {
+            console.log(`[compress] START op=${opId} (no app hooks) | inflight=${__opsInflight.size} | pending=${__pendingLen()}`);
+        }
+
+        __sync('start');
+    }
+
+    function __signalCompressDone(opId) {
+        const MA = __MA();
+        if (!__opsInflight.has(opId)) {
+            console.warn(`[compress] DONE(${opId}) ignored (not inflight)`);
+            __sync('done-ignored');
+            return;
+        }
+        __opsInflight.delete(opId);
+
+        const decName = __findFn(MA, ['uploadsDec', 'uploadDec', 'uploadsRemove']);
+        const setName = __findFn(MA, ['setUploading', 'setUploadsInProgress']);
+
+        if (decName && __findFn(MA, ['uploadsInc', 'uploadInc', 'uploadsAdd'])) {
+            try { MA; } catch { }
+            console.log(`[compress] DONE  op=${opId} → ${decName}(1) | inflight=${__opsInflight.size} | appCount=${__appCount()} | pending=${__pendingLen()}`);
+        } else if (setName) {
+            const on = __opsInflight.size > 0;
+            try { MA[setName](on); } catch { }
+            console.log(`[compress] DONE  op=${opId} → ${setName}(${on}) | inflight=${__opsInflight.size} | pending=${__pendingLen()}`);
+        } else {
+            console.log(`[compress] DONE  op=${opId} (no app hooks) | inflight=${__opsInflight.size} | pending=${__pendingLen()}`);
+        }
+
+        // belt-and-suspenders resyncs
+        __sync('done');
+        try { queueMicrotask(() => __sync('done-micro')); } catch { }
+        try { setTimeout(() => __sync('done-timeout'), 16); } catch { }
+    }
+
     function dbg() { /* console.log('[compress]', ...arguments); */ }
     function dberr() { /* console.error('[compress]', ...arguments); */ }
 
@@ -1249,6 +1328,9 @@ ${tail()}`);
         const mt = (file.type || '').toLowerCase();
         const prog = wrapProgress(onProgress, 'compressFileSmart');
 
+        const opId = 'op_' + Math.random().toString(36).slice(2);
+        __signalCompressStart(opId);
+
         dbg('compressFileSmart.in', { name: origName, size: file.size || 0, type: file.type || '(none)' });
 
         let result;
@@ -1278,7 +1360,6 @@ ${tail()}`);
             if (mt.startsWith('image/')) {
                 prog(0.02, 'starting');
 
-                // TIFF or huge images → use ffmpeg fallback; otherwise canvas path
                 const isTiff = /image\/(tif|tiff)/i.test(mt) || /\.(tif|tiff)$/i.test(origName);
                 const isHuge = (file.size || 0) > 25 * 1024 * 1024;
 
@@ -1305,7 +1386,6 @@ ${tail()}`);
 
             const canPreview = isPreviewableMime(mt) || isTextLike(origName, mt);
 
-            // If the file is already under the cap OR is previewable (text/code/PDF), do NOT gzip.
             if ((file.size || 0) <= MAX_BYTES || canPreview) {
                 const name = fixFilenameForType(origName, file.type || '');
                 const mime = (file.type || 'application/octet-stream');
@@ -1315,7 +1395,6 @@ ${tail()}`);
                 return result;
             }
 
-            // Otherwise we try gzip to squeeze under 1MB (binary docs, etc.)
             const { blob, encoding } = await gzipGeneric(file, prog);
             const mime = blob.type || (file.type || 'application/octet-stream');
             const name = fixFilenameForType(origName, mime);
@@ -1328,8 +1407,17 @@ ${tail()}`);
             dberr('compressFileSmart.error', e);
             throw e;
         } finally {
-            prog(1, 'finalizing');
-            dbg('compressFileSmart.done', { dtMs: +(performance.now() - t0).toFixed(1) });
+            // progress UI might be gone; never let it block the decrement
+            try { prog(1, 'finalizing'); } catch { }
+            try { dbg('compressFileSmart.done', { dtMs: +(performance.now() - t0).toFixed(1) }); } catch { }
+
+            // make 'done' absolutely certain & visible
+            try {
+                console.log(`[compress] finally → calling __signalCompressDone(${opId})`);
+                __signalCompressDone(opId);
+            } catch (err) {
+                console.warn(`[compress] finally → __signalCompressDone(${opId}) threw`, err);
+            }
         }
     }
 

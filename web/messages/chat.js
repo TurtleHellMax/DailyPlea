@@ -857,6 +857,27 @@
         return null;
     }
 
+    function ensureConvInList(id, seed = {}) {
+        id = id | 0;
+        if (!id) return;
+
+        // Already present? nothing to do.
+        if ((state.allConvs || []).some(c => ((c.id | 0) === id))) return;
+
+        const meta = state.convMeta.get(id) || {};
+        const is_group = seed.is_group ?? !!meta.is_group;
+        const title = seed.title || meta.name || (is_group ? 'Group' : 'Direct Message');
+        const color = seed.color ?? meta.color ?? null;
+
+        const item = { id, is_group, title, preview: '', color };
+        state.allConvs = [item, ...(state.allConvs || [])];
+        state.convItems.set(id, item);
+
+        // Re-render with the new placeholder
+        state.filteredConvs = [...state.allConvs];
+        renderConvs(state.filteredConvs);
+    }
+
     function updateEverywhere(id) {
         const meta = state.convMeta.get(id); if (!meta) return;
         const row = state.convRowEls.get(id);
@@ -924,6 +945,12 @@
             await Promise.allSettled(state.allConvs.map(it => fetchConvMeta(it.id)));
         } else {
             state.allConvs.forEach(it => { if (!state.convMeta.has(it.id)) fetchConvMeta(it.id).catch(() => { }); });
+        }
+        if (state.convId && !state.allConvs.some(c => ((c.id | 0) === (state.convId | 0)))) {
+            const meta = state.convMeta.get(state.convId) || {};
+            const is_group = !!meta.is_group;
+            const title = meta.name || (is_group ? 'Group' : 'Direct Message');
+            state.allConvs.unshift({ id: state.convId, is_group, title, preview: '', color: meta.color || null });
         }
         renderConvs(state.allConvs);
     }
@@ -1132,48 +1159,37 @@
             dotsBtn.type = 'button';
             dotsBtn.className = 'bubble-menu-btn';
             dotsBtn.textContent = '⋮';
-            actions.appendChild(dotsBtn); // <— appended FIRST so it's above the reaction button
+            dotsBtn.setAttribute('aria-label', 'Message menu');
+            dotsBtn.setAttribute('aria-haspopup', 'menu');
+            dotsBtn.setAttribute('aria-expanded', 'false');
+            actions.appendChild(dotsBtn); // appended FIRST so it's above the reaction button
 
             menu = document.createElement('div');
             menu.className = 'bubble-menu';
+            menu.setAttribute('role', 'menu');
+            menu.tabIndex = -1; // focusable container for Escape handling
 
             const parts = [];
             if (atts.length) {
                 parts.push(...atts.map(a => {
                     const href = `${API}/dm/attachments/${a.id}/download`;
                     const filename = esc(a.filename || 'attachment');
-                    return `<div class="item"><a href="${href}" download="${filename}">Download ${filename}</a></div>`;
+                    return `<div class="item" role="none"><a role="menuitem" href="${href}" download="${filename}">Download ${filename}</a></div>`;
                 }));
             }
             if (deletable) {
-                parts.push(`<div class="item"><a href="#" class="msg-del-link">Delete message</a></div>`);
+                parts.push(`<div class="item" role="none"><a role="menuitem" href="#" class="msg-del-link">Delete message</a></div>`);
             }
             menu.innerHTML = parts.join('');
             actions.appendChild(menu);
 
-            // Toggle menu
-            dotsBtn.addEventListener('click', e => {
-                e.stopPropagation();
+            function openMenu() {
                 if (!hasMenuItems) return;
-
-                const isOpen = menu.style.display === 'block';
                 closeAllBubbleMenus();
-
-                if (isOpen) {
-                    menu.dataset.open = '0';
-                    menu.style.display = 'none';
-                    root.classList.remove('menu-open');
-                    menu._detachReposition && menu._detachReposition();
-                    portalClose(menu, 'bubble-menu--portal');
-                    return;
-                }
-
                 portalOpen(menu, 'bubble-menu--portal');
 
-                // >>> NEW: adopt theme so borders/font match app
                 inheritTheme(dotsBtn.closest('.msg') || dotsBtn, menu);
 
-                // <<< NEW: ensure fixed positioning & no transforms
                 menu.style.position = 'fixed';
                 menu.style.transform = 'none';
                 menu.style.margin = '0';
@@ -1181,8 +1197,48 @@
                 menu.dataset.open = '1';
                 menu.style.display = 'block';
                 root.classList.add('menu-open');
+                dotsBtn.setAttribute('aria-expanded', 'true');
+
                 positionUnderAnchor(dotsBtn, menu);
                 bindReposition(menu, dotsBtn);
+
+                // Move focus to the first actionable item for keyboard users
+                const firstItem = menu.querySelector('[role="menuitem"]');
+                (firstItem || menu).focus();
+            }
+
+            function closeMenu() {
+                menu.dataset.open = '0';
+                menu.style.display = 'none';
+                root.classList.remove('menu-open');
+                dotsBtn.setAttribute('aria-expanded', 'false');
+                menu._detachReposition && menu._detachReposition();
+                portalClose(menu, 'bubble-menu--portal');
+                // restore focus to the trigger if it is still in the document
+                if (document.contains(dotsBtn)) dotsBtn.focus();
+            }
+
+            // Toggle via click
+            dotsBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = menu.style.display === 'block';
+                if (isOpen) closeMenu(); else openMenu();
+            });
+
+            // Toggle via keyboard (Enter/Space)
+            dotsBtn.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    dotsBtn.click();
+                }
+            });
+
+            // Close on Escape when focus is inside the menu
+            menu.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeMenu();
+                }
             });
 
             // Fix downloads
@@ -1197,8 +1253,7 @@
             if (delLink) {
                 delLink.addEventListener('click', async (e) => {
                     e.preventDefault(); e.stopPropagation();
-                    menu.style.display = 'none';
-                    root.classList.remove('menu-open');
+                    closeMenu();
                     try {
                         await window.MessagesApp.api.api(`/dm/messages/${message.id}`, { method: 'DELETE' });
                         const metaEl = root.querySelector(':scope > .meta');
@@ -1219,12 +1274,19 @@
             rbtn.className = 'react-btn';
             rbtn.setAttribute('aria-label', 'React');
             rbtn.textContent = '🙂';
-            rbtn.onclick = (e) => {
+            const openPickerFromBtn = (e) => {
                 e.stopPropagation();
                 root.classList.add('rx-open');   // hides ⋮ via CSS while picker open
                 window.MessagesApp.reactions?.openPicker?.(rbtn, message);
             };
-            actions.appendChild(rbtn); // <— appended SECOND so it sits below the dots
+            rbtn.onclick = openPickerFromBtn;
+            rbtn.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openPickerFromBtn(e);
+                }
+            });
+            actions.appendChild(rbtn); // appended SECOND so it sits below the dots
         }
     }
 
@@ -1438,6 +1500,7 @@
 
     // open/paging/realtime
     async function openConversation(id) {
+        ensureConvInList(id);
         if (state.es) { try { state.es.close(); } catch { } state.es = null; }
         if (state.poll) { clearInterval(state.poll); state.poll = null; }
 
@@ -1503,9 +1566,69 @@
 
     function openStream(id) {
         const es = new EventSource(`${API}/dm/conversations/${id}/stream`, { withCredentials: true });
-        state.es = es; es.addEventListener('new', async () => { await fetchAfter(state.lastMsgId); });
-        es.addEventListener('message', async () => { await fetchAfter(state.lastMsgId); });
+        state.es = es;
+
+        const safeAfter = () => fetchAfter(state.lastMsgId).catch(() => { /* handled in fetchAfter */ });
+
+        es.addEventListener('new', safeAfter);
+        es.addEventListener('message', safeAfter);
         window.MessagesApp.reactions?.bindStream(es, id);
+
+        // (optional) also guard errors: if server kills the stream on revoke, just drop silently
+        es.onerror = () => { /* no-op; fetchAfter handler already handles terminal state */ };
+    }
+    // --- remove a conversation from the UI/state instantly ---
+    function dropConversationRightNow(convId, reason = '') {
+        convId = convId | 0;
+
+        // 1) Kill the row in the left list immediately
+        const row = state.convRowEls.get(convId);
+        if (row && row.parentNode) row.parentNode.removeChild(row);
+        state.convRowEls.delete(convId);
+
+        // 2) Prune all local caches
+        state.allConvs = (state.allConvs || []).filter(c => ((c.id | 0) !== convId));
+        state.filteredConvs = (state.filteredConvs || []).filter(c => ((c.id | 0) !== convId));
+        state.convItems.delete(convId);
+        state.convMeta.delete(convId);
+        state.convDetailById?.delete?.(convId);
+        state.msgColorsByConv?.delete?.(convId);
+
+        // 3) If it was open, close the view & stream and switch to the next convo if any
+        if ((state.convId | 0) === convId) {
+            try { state.es?.close?.(); } catch { }
+            state.es = null;
+            if (state.poll) { clearInterval(state.poll); state.poll = null; }
+
+            // Reset the chat pane
+            $('msgs').innerHTML = '<div id="pad-top"></div><div id="pad-bottom"></div>';
+            state.renderedMsgIds?.clear?.();
+            state.audioPlayers?.clear?.();
+            state.lastMsgId = 0;
+            state.oldestMsgId = null;
+            state.nextBefore = null;
+
+            // Pick a next chat if available
+            const next = state.allConvs[0];
+            state.convId = 0; // clear selection before we possibly open next
+            if (next) {
+                openConversation(next.id).catch(() => { });
+            } else {
+                // No conversations left — reset header/pfp
+                $('chat-title').textContent = 'Direct Message';
+                const pfp = $('chat-pfp');
+                if (pfp) {
+                    setImgSafe(pfp, DEFAULT_PFP_DM);
+                    pfp.style.borderColor = 'var(--border)';
+                    pfp.style.background = '#000';
+                    pfp.classList.toggle('pixel', true);
+                    pfp.classList.remove('tinted-default');
+                }
+            }
+        }
+
+        // Optional: refresh menu state
+        try { window.MessagesApp.renderChatMenu?.(); } catch { }
     }
     function openGlobalStream() {
         if (state.esGlobal) { try { state.esGlobal.close(); } catch { } }
@@ -1537,9 +1660,32 @@
             window.MessagesApp.api.setColorMap(cid, cmap);
             if ((cid | 0) === (state.convId | 0)) updateAllMessageBorders();
         });
-        es.onerror = () => { };
+
+        // --- NEW: instant removal/hide (no refresh needed) ---
+        es.addEventListener('conv_removed', e => {
+            try {
+                const d = JSON.parse(e.data || '{}');
+                const cid = d.conversation_id || d.id;
+                if (cid) dropConversationRightNow(cid | 0, d.reason || 'removed');
+            } catch { }
+        });
+        es.addEventListener('conv_hidden', e => {
+            try {
+                const d = JSON.parse(e.data || '{}');
+                const cid = d.conversation_id || d.id;
+                if (cid) dropConversationRightNow(cid | 0, d.reason || 'hidden');
+            } catch { }
+        });
+
+        es.onerror = () => { /* keep silent; server will reconnect */ };
     }
     function startCatchup() { state.poll = setInterval(() => { fetchAfter(state.lastMsgId).catch(() => { }); }, 30000); }
+    function _isForbidden(err) {
+        const msg = (err && (err.message || err.detail || '') || '');
+        return (err && (err.status === 403 || err.code === 403 || err?.response?.status === 403)) ||
+            /forbidden/i.test(msg);
+    }
+
     async function fetchAfter(lastId) {
         if (state.fetchingAfter) return;
         state.fetchingAfter = true;
@@ -1550,8 +1696,20 @@
             const stick = nearBottom(80);
             appendMessagesAscending(filtered);
             if (stick) { await afterPaint(); scrollToBottom(); }
-            loadConversations().catch(() => { }); jumpBtn.sync();
-        } finally { state.fetchingAfter = false; }
+            loadConversations().catch(() => { });
+            // jumpBtn.sync() kept as-is
+            jumpBtn.sync();
+        } catch (e) {
+            if (_isForbidden(e)) {
+                // conversation is gone (blocked/hidden/left). Clean up quietly.
+                dropConversationRightNow(state.convId, 'forbidden');
+                return; // swallow expected error
+            }
+            // non-403: keep it quiet but visible in debug
+            try { console.debug('[after] fetch failed', e); } catch { }
+        } finally {
+            state.fetchingAfter = false;
+        }
     }
 
     async function fetchFriends() {
@@ -1583,7 +1741,9 @@
                 const meta = { name: (u.display_name || u.first_username || u.username || 'User'), photo: u.profile_photo || DEFAULT_PFP_DM, is_group: false };
                 setConvMeta(cid, meta);
                 state.userCache.set(og, { username: og, photo: u.profile_photo || DEFAULT_PFP_DM, display_name: null, raw: u });
-                scheduleSaveMeta(); openConversation(cid);
+                scheduleSaveMeta();
+                ensureConvInList(cid, { is_group: false, title: meta.name, color: null });
+                openConversation(cid);
             } else if (state.allConvs[0]) {
                 openConversation(state.allConvs[0].id);
             }
@@ -2679,6 +2839,7 @@
             let j = {};
             try { j = await listForMessage(msgId); } catch { j = {}; }
             const items = j.items || [];
+
             const reactable = (j.reactable !== undefined) ? !!j.reactable : (function rowReactable(msgId) {
                 const row = document.querySelector(`.msg[data-msg-id="${msgId}"]`);
                 if (!row) return true;
@@ -2698,26 +2859,18 @@
                 customUrlFor: urlForCustom,
                 onOpenPicker: () => openPicker(barEl, { id: msgId, reactable }),
                 onToggle: async (reaction_key) => {
-                    if (reaction_key) { await toggleByKey(msgId, reaction_key); await renderBarFor(msgId); }
+                    if (!reaction_key) return;
+                    await toggleByKey(msgId, reaction_key);
+                    await renderBarFor(msgId);
                 }
             });
 
-            renderReactionBar(barEl, items, {
-                disabled: !reactable,
-                customUrlFor: urlForCustom,
-                onOpenPicker: () => openPicker(barEl, { id: msgId, reactable }),
-                onToggle: async (reaction_key) => {
-                    if (reaction_key) { await toggleByKey(msgId, reaction_key); await renderBarFor(msgId); }
-                }
-            });
-
-            // NEW: ensure unicode chips have the same structure as custom
+            // Normalize HTML so unicode/custom chips match structure
             normalizeReactionGlyphs(barEl);
 
-            // ➜ Add the hover-only bookmark to custom chips
+            // Add hover-only bookmark to custom chips
             ensureBookmarkOverlays(barEl, items);
         }
-
 
         async function attachBar(wrap, message) {
             await loadLibraryOnce();
@@ -2762,19 +2915,25 @@
             }
 
             lastPickerMsgId = message.id;
-
-            // mark the row as "reaction-open" to hide 3-dots
-            const row = anchorEl?.closest?.('.msg');
-            row && row.classList.add('rx-open');
-
             picker.open(message.id, anchorEl);
 
-            // If using the fallback popup (#rx-fallback-pop), watch for its removal to clear rx-open
+            // Ensure rx-open clears on Escape too
+            const row = anchorEl?.closest?.('.msg') || null;
+            const escToClear = (ev) => {
+                if (ev.key === 'Escape') {
+                    row && row.classList.remove('rx-open');
+                    document.removeEventListener('keydown', escToClear, true);
+                }
+            };
+            document.addEventListener('keydown', escToClear, true);
+
+            // existing outside-click watcher remains as-is
             setTimeout(() => {
                 const closeWatcher = (ev) => {
                     if (!document.getElementById('rx-fallback-pop')) {
                         row && row.classList.remove('rx-open');
                         document.removeEventListener('click', closeWatcher, true);
+                        document.removeEventListener('keydown', escToClear, true);
                     }
                 };
                 document.addEventListener('click', closeWatcher, true);
@@ -2854,7 +3013,13 @@
         const last = loadLastDM();
         if (last && (last.meId | 0) === (state.meId | 0)) {
             const exists = state.allConvs.find(c => (c.id | 0) === (last.convId | 0));
-            if (exists) { await openConversation(exists.id); }
+            if (exists) {
+                await openConversation(exists.id);
+            } else {
+                // Not in the fetched list (likely empty). Add placeholder and open it.
+                ensureConvInList(last.convId | 0);
+                await openConversation(last.convId | 0);
+            }
         }
     }
 

@@ -644,11 +644,6 @@ router.post('/dm/with/:slug', requireAuth, (req, res) => {
 
     if (row) {
         ensureConvKey(row.id);
-        db.prepare(`DELETE FROM dm_hidden WHERE conversation_id=? AND user_id IN (?,?)`).run(
-            row.id,
-            req.userId,
-            other.id
-        );
         return res.json({ ok: true, conversation_id: row.id, id: row.id });
     }
 
@@ -693,7 +688,6 @@ router.post('/dm/conversations', requireAuth, (req, res) => {
             .get(user_ids[0], user_ids[1]);
         if (row) {
             ensureConvKey(row.id);
-            db.prepare(`DELETE FROM dm_hidden WHERE conversation_id=? AND user_id=?`).run(row.id, req.userId);
             return res.json({ ok: true, conversation_id: row.id, id: row.id });
         }
     } else {
@@ -891,6 +885,14 @@ router.get('/dm/conversations/:id/messages', requireAuth, (req, res) => {
     const before = parseInt(req.query.before || '0', 10) || 0;
     const after = parseInt(req.query.after || '0', 10) || 0;
 
+    // Per-user hidden watermark: only show messages strictly newer than this id
+    const hiddenRow = db
+        .prepare(`SELECT last_hidden_msg_id AS hid
+              FROM dm_hidden WHERE conversation_id=? AND user_id=?`)
+        .get(convId, req.userId);
+    const hideMin = (hiddenRow?.hid | 0) || 0;        // minimum visible id (exclusive)
+    const lowerAfter = Math.max(after, hideMin);      // for ?after pagination
+
     let rows = [];
     const baseCols = `
         id, sender_id, kind, body_cipher, body_nonce, created_at
@@ -900,29 +902,28 @@ router.get('/dm/conversations/:id/messages', requireAuth, (req, res) => {
 
     if (after > 0) {
         rows = db.prepare(`
-            SELECT ${baseCols}
-            FROM dm_messages
-            WHERE conversation_id=? AND id > ?
-            ORDER BY id ASC
-            LIMIT ?
-        `).all(convId, after, limit);
+      SELECT ${baseCols}
+      FROM dm_messages
+      WHERE conversation_id=? AND id > ?
+      ORDER BY id ASC
+      LIMIT ?
+    `).all(convId, lowerAfter, limit);
     } else if (before > 0) {
         const r = db.prepare(`
-            SELECT ${baseCols}
-            FROM dm_messages
-            WHERE conversation_id=? AND id < ?
-            ORDER BY id DESC
-            LIMIT ?
-        `).all(convId, before, limit);
-        rows = r.reverse();
+      SELECT ${baseCols}
+      FROM dm_messages
+      WHERE conversation_id=? AND id > ? AND id < ?
+      ORDER BY id DESC
+      LIMIT ?
+    `).all(convId, hideMin, before, limit);
     } else {
         const r = db.prepare(`
-            SELECT ${baseCols}
-            FROM dm_messages
-            WHERE conversation_id=?
-            ORDER BY id DESC
-            LIMIT ?
-        `).all(convId, limit);
+      SELECT ${baseCols}
+      FROM dm_messages
+      WHERE conversation_id=? AND id > ?
+      ORDER BY id DESC
+      LIMIT ?
+    `).all(convId, hideMin, limit);
         rows = r.reverse();
     }
 
@@ -1188,6 +1189,10 @@ router.patch('/dm/conversations/:id/members', requireAuth, (req, res) => {
     });
     tx();
 
+    for (const uid of rems) {
+        try { broadcastToUser(uid, 'conv_removed', { conversation_id: convId, reason: 'removed' }); } catch { }
+    }
+
     const remaining = memberCount(convId);
     if (remaining <= 0) softDeleteGroup(convId);
 
@@ -1251,6 +1256,9 @@ router.post('/dm/conversations/:id/leave', requireAuth, (req, res) => {
     const remaining = memberCount(convId);
     if (remaining <= 0) softDeleteGroup(convId);
 
+    // Instantly remove from leaver’s list
+    try { broadcastToUser(req.userId, 'conv_removed', { conversation_id: convId, reason: 'left' }); } catch { }
+
     res.json({ ok: true, remaining, deleted: remaining <= 0 });
 });
 
@@ -1259,6 +1267,7 @@ router.post('/dm/conversations/:id/disband', requireAuth, (req, res) => {
     const { conv, error } = ensureActiveGroup(convId);
     if (error) return res.status(error === 'not_group' ? 400 : error === 'deleted' ? 410 : 404).json({ error });
     if ((conv.owner_id | 0) !== (req.userId | 0)) return res.status(403).json({ error: 'owner_only' });
+    const members = listMemberUsers(convId); // capture before delete
 
     const tx = db.transaction(() => {
         db.prepare(`UPDATE dm_conversations SET deleted_at = CURRENT_TIMESTAMP WHERE id=?`).run(convId);
@@ -1268,6 +1277,11 @@ router.post('/dm/conversations/:id/disband', requireAuth, (req, res) => {
         db.prepare(`DELETE FROM dm_conversations WHERE id=?`).run(convId);
     });
     tx();
+
+    // Instantly remove for everyone
+    for (const m of members) {
+        try { broadcastToUser(m.id, 'conv_removed', { conversation_id: convId, reason: 'disbanded' }); } catch { }
+    }
 
     res.json({ ok: true });
 });
@@ -1283,11 +1297,18 @@ router.post('/dm/conversations/:id/delete_for_me', requireAuth, (req, res) => {
 
     db.prepare(
         `
-    INSERT INTO dm_hidden(user_id, conversation_id, last_hidden_msg_id)
-    VALUES(?,?,?)
-    ON CONFLICT(user_id,conversation_id) DO UPDATE SET last_hidden_msg_id=excluded.last_hidden_msg_id
-  `
+     INSERT INTO dm_hidden(user_id, conversation_id, last_hidden_msg_id)
+     VALUES(?,?,?)
+     ON CONFLICT(user_id,conversation_id) DO UPDATE SET last_hidden_msg_id=excluded.last_hidden_msg_id
+   `
     ).run(req.userId, convId, lastId);
+
+    // Tell this user to drop the conversation right away
+    const payload = { conversation_id: convId, last_hidden_msg_id: lastId, reason: 'deleted_for_me' };
+    try {
+        broadcastToUser(req.userId, 'conv_hidden', payload);
+        broadcastToUser(req.userId, 'conv_removed', payload);
+    } catch { }
 
     res.json({ ok: true });
 });
@@ -1306,6 +1327,22 @@ router.post('/dm/conversations/:id/block', requireAuth, (req, res) => {
         db.prepare(`DELETE FROM dm_message_colors WHERE conversation_id=? AND user_id=?`).run(convId, req.userId);
         addSystemMessage(convId, req.userId, `${getUserLabel(req.userId)} left the group.`);
     }
+
+    if (!conv.is_group) {
+        const lastMsg = db
+            .prepare(`SELECT id FROM dm_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1`)
+            .get(convId);
+        const lastId = lastMsg?.id || 0;
+        db.prepare(`
+      INSERT INTO dm_hidden(user_id, conversation_id, last_hidden_msg_id)
+      VALUES(?,?,?)
+      ON CONFLICT(user_id,conversation_id) DO UPDATE SET last_hidden_msg_id=excluded.last_hidden_msg_id
+    `).run(req.userId, convId, lastId);
+        try { broadcastToUser(req.userId, 'conv_hidden', { conversation_id: convId, last_hidden_msg_id: lastId, reason: 'blocked' }); } catch { }
+    }
+
+    // Always tell the blocker to drop it from the list right now
+    try { broadcastToUser(req.userId, 'conv_removed', { conversation_id: convId, reason: 'blocked' }); } catch { }
 
     res.json({ ok: true });
 });
@@ -1846,6 +1883,7 @@ function removeUserFromOwnerGroups(ownerId, removedUserId) {
                 ownerId,
                 `${ownerName} unfriended ${removedName}. They've been removed from the group.`
             );
+            try { broadcastToUser(removedUserId, 'conv_removed', { conversation_id: convId, reason: 'unfriended_removed' }); } catch { }
         }
     });
     tx();
