@@ -217,6 +217,174 @@
         });
     }
 
+    const GDBG = {
+        on: true, // flip to false to silence
+        log(...a) { try { this.on && console.debug('[groups]', ...a); } catch { } },
+        warn(...a) { try { this.on && console.warn('[groups]', ...a); } catch { } },
+        err(...a) { try { this.on && console.error('[groups]', ...a); } catch { } },
+    };
+
+    // ===== GROUP CREATION + AUTO-TITLE (core.js) =====
+
+    // Build "A & B" or "A, B & C" (already in your utils, but we depend on it here)
+    // Normalize a server "members" list across shapes and exclude "me" by default
+    function _normalizeMembers(raw, { excludeMe = true } = {}) {
+        const me = (window.MessagesApp?.state?.meId | 0) || 0;
+        const arr = (raw || []);
+        // tolerate: [user], [{user}], {users:[]}, {participants:[]}, {people:[]}
+        const list = Array.isArray(arr) ? arr
+            : (arr.users || arr.members || arr.participants || arr.people || arr.items || []);
+        const flat = list.map(m => m?.user || m?.member || m).filter(Boolean);
+        return excludeMe ? flat.filter(u => ((u.id | 0) !== me)) : flat;
+    }
+
+    const _pickName = o =>
+        (window.MessagesApp?.utils?.pickName?.(o)) ||
+        o?.display_name || o?.name || o?.username || o?.first_username || o?.handle || 'user';
+
+    function computeMemberListTitle(members, { excludeMe = true } = {}) {
+        const flat = _normalizeMembers(members, { excludeMe });
+        const seen = new Set();
+        const names = flat
+            .map(_pickName)
+            .map(s => String(s || '').replace(/^@+/, '').trim())
+            .filter(Boolean)
+            .filter(n => { const k = n.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+
+        if (names.length === 0) return 'Group';
+        if (names.length === 1) return names[0];
+        if (names.length === 2) return `${names[0]} & ${names[1]}`;
+        return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+    }
+
+    const _joinNames = (arr) => {
+        const a = (arr || []).filter(Boolean);
+        if (!a.length) return 'Group';
+        if (a.length === 1) return a[0];
+        if (a.length === 2) return a[0] + ' & ' + a[1];
+        return a.slice(0, -1).join(', ') + ' & ' + a[a.length - 1];
+    };
+
+    function _pickGroupColor() {
+        const palette = (GROUP_COLORS || []).map(c => c.val).filter(Boolean);
+        return palette.length ? palette[(Math.random() * palette.length) | 0] : null;
+    }
+
+    async function _apiGet(path) {
+        GDBG.log('GET', path);
+        const r = await window.MessagesApp.api.api(path, { method: 'GET' });
+        GDBG.log('GET ok', path, { keys: Object.keys(r || {}) });
+        return r;
+    }
+    async function _apiPost(path, body) {
+        GDBG.log('POST', path, body);
+        const r = await window.MessagesApp.api.api(path, { method: 'POST', body });
+        GDBG.log('POST ok', path, { keys: Object.keys(r || {}) });
+        return r;
+    }
+    async function _apiPatch(path, body) {
+        GDBG.log('PATCH', path, body);
+        const r = await window.MessagesApp.api.api(path, { method: 'PATCH', body });
+        GDBG.log('PATCH ok', path, { keys: Object.keys(r || {}) });
+        return r;
+    }
+
+    function _isGenericTitle(s) {
+        const t = String(s || '').trim().toLowerCase();
+        return !t || t === 'group' || t === 'new group' || t === 'untitled group';
+    }
+
+    async function createGroup(userIds, opts = {}) {
+        if (!Array.isArray(userIds) || userIds.length < 2) {
+            throw new Error('createGroup: pass userIds (Array) of at least 2 users');
+        }
+        const color = opts.color || _pickGroupColor();
+        GDBG.log('createGroup:start', { userIds, color });
+
+        // 1) create
+        const res = await _apiPost('/dm/conversations', { user_ids: userIds, color });
+        const cid = res?.conversation_id || res?.id;
+        if (!cid) {
+            GDBG.err('createGroup:no-id', res);
+            throw new Error('createGroup: server did not return conversation id');
+        }
+
+        // Prefer embedded conversation if provided; otherwise fetch it.
+        let conv = res?.conversation;
+        if (!conv) {
+            conv = await _apiGet(`/dm/conversations/${cid}`);
+        }
+        GDBG.log('createGroup:created', { cid, hasMembers: !!(conv?.members || conv?.users || conv?.participants) });
+
+        // 2) compute desired title from members (excluding me)
+        const desired = computeMemberListTitle(conv, { excludeMe: true });
+        const serverTitle = (conv?.title || '').trim();
+        const shouldRename = opts.alwaysRename === true || _isGenericTitle(serverTitle);
+
+        GDBG.log('createGroup:titleDecision', { serverTitle, desired, shouldRename });
+
+        // 3) rename if needed
+        if (shouldRename) {
+            try {
+                await _apiPatch(`/dm/conversations/${cid}/title`, { title: desired });
+                // Re-read to ensure we reflect whatever the server persisted
+                conv = await _apiGet(`/dm/conversations/${cid}`);
+                GDBG.log('createGroup:renamed', { finalTitle: conv?.title });
+            } catch (e) {
+                GDBG.err('createGroup:renameFailed', e);
+            }
+        }
+
+        // 4) Update local meta so UI shows immediately
+        try {
+            const finalTitle = (conv?.title || desired || 'Group');
+            const meta = {
+                name: finalTitle,
+                photo: conv?.photo || DEFAULT_PFP_GROUP,
+                is_group: true,
+                color: conv?.color || color || null,
+                auto_title: _isGenericTitle(serverTitle) // was generic before we set it
+            };
+            state.convMeta?.set?.(cid, meta);
+            // Persist + surface in the left list if needed
+            state.convItems?.set?.(cid, { id: cid, is_group: true, title: finalTitle, preview: '', color: meta.color });
+            scheduleSaveMeta?.();
+            GDBG.log('createGroup:localMetaSet', { cid, meta });
+        } catch (e) {
+            GDBG.warn('createGroup:localMetaSet failed (non-fatal)', e);
+        }
+
+        return {
+            id: cid,
+            conversation: conv || {},
+            title: conv?.title || desired,
+            color: conv?.color || color || null
+        };
+    }
+
+    async function renameGroupToMembers(conversationId) {
+        if (!conversationId) throw new Error('renameGroupToMembers: missing conversationId');
+        const conv = await _apiGet(`/dm/conversations/${conversationId}`);
+        const desired = computeMemberListTitle(conv, { excludeMe: true });
+        GDBG.log('renameGroupToMembers', { conversationId, desired });
+        await _apiPatch(`/dm/conversations/${conversationId}/title`, { title: desired });
+        try {
+            const prev = state.convMeta?.get?.(conversationId) || {};
+            state.convMeta?.set?.(conversationId, { ...prev, name: desired, auto_title: true });
+            scheduleSaveMeta?.();
+        } catch { }
+        return desired;
+    }
+
+    // ---- export a tiny surface you can call from chat.js (after you strip its old creation code)
+    window.MessagesApp.groups = Object.assign(window.MessagesApp.groups || {}, {
+        create: createGroup,
+        renameToMembers: renameGroupToMembers,
+        // handy re-export
+        computeMemberListTitle
+    });
+
+
     // expose (no send-button or gate APIs here)
     window.MessagesApp = Object.assign(window.MessagesApp || {}, {
         API, $, state,

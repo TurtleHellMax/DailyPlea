@@ -10,6 +10,79 @@
 
     const DBG = (...a) => { try { console.debug('[dm-ui]', ...a); } catch { } };
 
+    const GROUPS = window.MessagesApp.groups || null;
+
+    // === groups: helpers + debug ==========================
+    const _isGenericGroupTitle = (s) => {
+        const t = String(s || '').trim().toLowerCase();
+        return !t || t === 'group' || t === 'new group' || t === 'untitled group';
+    };
+
+    const _titleFromMembers = (members) => {
+        const me = (state.meId | 0);
+        const flat = (members || []).map(m => m?.user || m).filter(Boolean);
+        const names = flat
+            .filter(u => ((u.id | 0) !== me))
+            .map(u => (pickName(u) || u?.username || u?.first_username || 'user'))
+            .map(s => String(s).replace(/^@+/, '').trim())
+            .filter(Boolean);
+
+        if (names.length === 0) return 'Group';
+        if (names.length === 1) return names[0];
+        if (names.length === 2) return `${names[0]} & ${names[1]}`;
+        return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+    };
+
+    console.debug('[dm-ui] groups module present?', !!(window.MessagesApp?.groups));
+
+    // Use the real groups module if present; otherwise, fall back to local API calls.
+    const GROUPS_SAFE = (() => {
+        if (window.MessagesApp?.groups?.create && window.MessagesApp?.groups?.renameToMembers) {
+            return window.MessagesApp.groups;
+        }
+
+        // Fallback that still creates + renames groups and logs loudly.
+        const randColor = () => {
+            const pal = (GROUP_COLORS || []).map(c => c.val).filter(Boolean);
+            return pal.length ? pal[(Math.random() * pal.length) | 0] : null;
+        };
+
+        async function create(userIds, opts = {}) {
+            if (!Array.isArray(userIds) || userIds.length < 2) {
+                throw new Error('fallback groups.create: need >= 2 userIds');
+            }
+            const color = opts.color || randColor();
+            console.debug('[groups-fallback] POST /dm/conversations', { userIds, color });
+            const res = await api(`/dm/conversations`, { method: 'POST', body: { user_ids: userIds, color } });
+            const cid = res?.conversation_id || res?.id;
+            if (!cid) throw new Error('fallback groups.create: server returned no id');
+
+            let conv = await api(`/dm/conversations/${cid}`, { method: 'GET' });
+            const desired = _titleFromMembers(conv?.members || conv?.users || conv?.participants || []);
+            const serverTitle = (conv?.title || '').trim();
+
+            if (opts.alwaysRename || _isGenericGroupTitle(serverTitle)) {
+                try {
+                    await api(`/dm/conversations/${cid}/title`, { method: 'PATCH', body: { title: desired } });
+                    conv = await api(`/dm/conversations/${cid}`, { method: 'GET' });
+                    console.debug('[groups-fallback] renamed new group', { cid, title: conv?.title });
+                } catch (e) {
+                    console.error('[groups-fallback] rename failed', e);
+                }
+            }
+            return { id: cid, conversation: conv, title: conv?.title || desired, color: conv?.color || color || null };
+        }
+
+        async function renameToMembers(conversationId) {
+            const conv = await api(`/dm/conversations/${conversationId}`, { method: 'GET' });
+            const desired = _titleFromMembers(conv?.members || []);
+            await api(`/dm/conversations/${conversationId}/title`, { method: 'PATCH', body: { title: desired } });
+            return desired;
+        }
+
+        return { create, renameToMembers, computeMemberListTitle: _titleFromMembers };
+    })();
+
     // Helpers used across
     (function ensureMsgActionStyles() {
         // Always (re)write the stylesheet so hot-reloads pick up changes.
@@ -739,13 +812,16 @@
 
             if (j.is_group) {
                 const members = j.members || [];
-                const autoDefault = computeDefaultGroupTitle(members);
+                // Prefer the central groups helper (excludes "me" properly), else fall back
+                const listTitle =
+                    (GROUPS && GROUPS.computeMemberListTitle
+                        ? GROUPS.computeMemberListTitle(members)
+                        : computeDefaultGroupTitle(members));
                 const serverTitle = (j.title || '').trim();
-                const hasCustom = !!(serverTitle && serverTitle !== autoDefault);
-                meta.name = hasCustom ? serverTitle : autoDefault;
+                meta.name = serverTitle || listTitle;
                 meta.photo = j.photo || j.avatar || DEFAULT_PFP_GROUP;
                 meta.color = j.color || meta.color || '#ffffff';
-                meta.auto_title = !hasCustom;
+                meta.auto_title = _isGenericGroupTitle(serverTitle); // consider "Group" generic, too
             } else {
                 const other = j.other || (Array.isArray(j.members) ? j.members.find(u => (u.id | 0) !== (state.meId | 0)) : null);
                 meta.name = pickName(other) || meta.name;
@@ -1630,6 +1706,20 @@
         // Optional: refresh menu state
         try { window.MessagesApp.renderChatMenu?.(); } catch { }
     }
+    async function ensureGroupHasSmartTitle(cid) {
+        try {
+            const j = await api(`/dm/conversations/${cid}`, { method: 'GET' });
+            if (!j?.is_group) return;
+            const t = (j.title || '').trim();
+            if (_isGenericGroupTitle(t)) {
+                console.debug('[dm-ui] auto-rename generic group title', { cid, title: t });
+                const newTitle = await GROUPS_SAFE.renameToMembers(cid);
+                setConvMeta(cid, { name: newTitle, auto_title: true });
+            }
+        } catch (e) {
+            console.debug('[dm-ui] ensureGroupHasSmartTitle failed', cid, e);
+        }
+    }
     function openGlobalStream() {
         if (state.esGlobal) { try { state.esGlobal.close(); } catch { } }
         const es = new EventSource(`${API}/dm/stream`, { withCredentials: true });
@@ -1638,7 +1728,16 @@
         const scheduleConvsReload = () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(() => { loadConversations().catch(() => { }); }, 200); };
 
         es.addEventListener('conv_new', e => {
-            try { const d = JSON.parse(e.data || '{}'); const cid = d.conversation_id || d.id; if (cid) { state.msgColorsByConv.delete(cid); fetchConvMeta(cid).catch(() => { }); } } catch { }
+            try {
+                const d = JSON.parse(e.data || '{}');
+                const cid = d.conversation_id || d.id;
+                if (cid) {
+                    state.msgColorsByConv.delete(cid);
+                    fetchConvMeta(cid).catch(() => { });
+                    // NEW: if server left it as "Group", rename it to member list
+                    ensureGroupHasSmartTitle(cid);
+                }
+            } catch { }
             scheduleConvsReload();
         });
         es.addEventListener('message', e => {
@@ -1750,20 +1849,37 @@
         } catch (e) { alert(window.MessagesApp.utils.errMsg(e)); }
     }
 
+    async function createGroupFromIds(userIds, opts = {}) {
+        if (!Array.isArray(userIds) || userIds.length < 2) {
+            alert('Pick at least 2 people'); return;
+        }
+        try {
+            console.debug('[dm-ui] createGroupFromIds', { userIds, opts, via: (window.MessagesApp?.groups ? 'groups-module' : 'fallback') });
+            const { id, title, color, conversation } = await GROUPS_SAFE.create(userIds, opts);
+
+            // seed UI
+            const photo = conversation?.photo || DEFAULT_PFP_GROUP;
+            setConvMeta(id, { name: title, photo, is_group: true, color: color || null, auto_title: true });
+            ensureConvInList(id, { is_group: true, title, color });
+
+            await openConversation(id);
+            return id;
+        } catch (e) {
+            alert(window.MessagesApp.utils.errMsg(e));
+            throw e;
+        }
+    }
+
     async function maybeAutoRenameGroup() {
         const det = state.currentConvDetail || state.convDetailById.get(state.convId) || {};
         if (!det?.is_group) return;
         const meta = state.convMeta.get(state.convId) || {};
-        if (meta.auto_title === false) return;
-        const desired = computeDefaultGroupTitle(det.members || []);
-        const current = (det.title || meta.name || '').trim();
-        const stripAts = s => s.replace(/@/g, '');
-        const sameIgnoringAts = (a, b) => stripAts(a) === stripAts(b);
-        const isAutoNow = (current === '' || sameIgnoringAts(current, computeDefaultGroupTitle(det.members || [])));
-        if (isAutoNow && !sameIgnoringAts(current, desired)) {
-            await api(`/dm/conversations/${state.convId}/title`, { method: 'PATCH', body: { title: desired } });
-            setConvMeta(state.convId, { name: desired, auto_title: true });
-        }
+        if (meta.auto_title === false) return; // user explicitly set a custom title
+
+        try {
+            const newTitle = await (GROUPS_SAFE.renameToMembers(state.convId));
+            if (newTitle) setConvMeta(state.convId, { name: newTitle, auto_title: true });
+        } catch { /* silent */ }
     }
 
     async function sendMessage() {
@@ -2964,7 +3080,8 @@
     Object.assign(window.MessagesApp, {
         chat: {
             fetchConvMeta, setConvMeta, updateTopBar, renderConvs, loadConversations, openConversation,
-            startDmWith, fetchFriends, maybeAutoRenameGroup, sendMessage
+            startDmWith, fetchFriends, maybeAutoRenameGroup, sendMessage,
+            createGroup: createGroupFromIds
         },
         revoke: { revokeAudioURLsIn, revokeObjectURLsIn }
     });
@@ -3052,7 +3169,7 @@
                 menuEl, buttonEl: btnEl,
                 getContext: getCtx,
                 handlers: {
-                    rename: () => window.MessagesApp.renameGroup?.(),
+                    rename: () => GROUPS?.renameToMembers?.(window.MessagesApp.state.convId),
                     manage: () => {
                         const ids = (window.MessagesApp.state.currentConvDetail?.members || []).map(m => m.id);
                         window.MessagesApp.openFriendPicker?.('group-edit', { preselectIds: ids });
