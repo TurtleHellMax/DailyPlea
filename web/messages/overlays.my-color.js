@@ -106,11 +106,7 @@
                 try {
                     const cid = MA.state?.convId;
                     if (!cid) return;
-                    if (MA.api?.syncMsgColors) {
-                        await MA.api.syncMsgColors(cid, { retry: 1 });
-                    } else if (MA.chat?.openConversation) {
-                        await MA.api?.syncMsgColors?.(cid, { retry: 1 });
-                    }
+                    await MA.api?.syncMsgColors?.(cid, { retry: 1 });
                 } catch { }
             },
             getColorMap: () => {
@@ -132,9 +128,19 @@
 
                 // Local optimistic update
                 try {
-                    const cmap = { ...(MA.api?.getColorMap?.(cid) || {}) };
-                    if (toSet) cmap[me] = toSet; else delete cmap[me];
+                    const cm = MA.api?.getColorMap?.(cid) || null;
+                    let cmap = cm instanceof Map
+                        ? new Map(cm) // clone
+                        : new Map(Object.entries(cm || {}).map(([k, v]) => [Number(k) || k, v]));
+
+                    if (toSet) cmap.set(me, toSet); else cmap.delete(me);
+
+                    // If your API expects a Map:
                     MA.api?.setColorMap?.(cid, cmap);
+
+                    // If your API expects a plain object, convert:
+                    const obj = Object.fromEntries(cmap);
+                    MA.api?.setColorMapObj?.(cid, obj)
 
                     // repaint borders immediately
                     if (MA.utils?.updateAllMessageBorders) MA.utils.updateAllMessageBorders();

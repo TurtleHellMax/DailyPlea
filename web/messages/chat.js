@@ -11,6 +11,34 @@
     const DBG = (...a) => { try { console.debug('[dm-ui]', ...a); } catch { } };
 
     const GROUPS = window.MessagesApp.groups || null;
+    const CORE = window.MessagesApp || {};
+    const U = CORE.utils || {};
+
+    function coreComputeGroupTitleFromMembers(members) {
+        if (GROUPS?.computeMemberListTitle) return GROUPS.computeMemberListTitle(members);
+        if (typeof computeDefaultGroupTitle === 'function') return computeDefaultGroupTitle(members);
+        return _titleFromMembers(members); // final fallback
+    }
+
+    // Returns a color the server/UI will accept.
+    // Try a core/utility normalizer first; else pick from GROUP_COLORS safely.
+    function corePickGroupColor(want) {
+        try {
+            if (U?.pickGroupColor) return U.pickGroupColor(want); // already returns hex, honors 'want'
+            if (U?.normalizeGroupColor) {
+                const hex = U.normalizeGroupColor(want);
+                if (hex) return hex; // normalized key/hex -> hex
+            }
+        } catch { /* ignore */ }
+
+        const pal = Array.isArray(GROUP_COLORS) ? GROUP_COLORS : [];
+        const hexes = pal
+            .map(c => (c && (c.val || c.hex || c.color || c)))
+            .map(v => (v ? String(v) : null))
+            .filter(Boolean);
+
+        return hexes.length ? hexes[(Math.random() * hexes.length) | 0] : '#3b82f6';
+    }
 
     // === groups: helpers + debug ==========================
     const _isGenericGroupTitle = (s) => {
@@ -33,6 +61,32 @@
         return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
     };
 
+    // === NEW: make a title that INCLUDES the host's name ===
+    function _titleFromMembersIncludingHost(members) {
+        const meId = (state.meId | 0);
+        const flat = (members || []).map(m => m?.user || m).filter(Boolean);
+
+        const nameFor = (u) => {
+            // prefer pickName; fall back to usernames
+            const n = pickName(u) || u?.display_name || u?.first_username || u?.username || '';
+            return String(n).replace(/^@+/, '').trim();
+        };
+
+        // host (me) first if present, then others
+        const meUser = flat.find(u => ((u.id | 0) === meId));
+        const meName = meUser ? nameFor(meUser) : (window.MessagesApp?.me?.display_name || 'Me');
+
+        const others = flat.filter(u => ((u.id | 0) !== meId)).map(nameFor).filter(Boolean);
+
+        const names = (meName ? [meName] : []).concat(others);
+        const uniq = Array.from(new Set(names)).filter(Boolean);
+
+        if (!uniq.length) return 'Group';
+        if (uniq.length === 1) return uniq[0];
+        if (uniq.length === 2) return `${uniq[0]} & ${uniq[1]}`;
+        return `${uniq.slice(0, -1).join(', ')} & ${uniq[uniq.length - 1]}`;
+    }
+
     console.debug('[dm-ui] groups module present?', !!(window.MessagesApp?.groups));
 
     // Use the real groups module if present; otherwise, fall back to local API calls.
@@ -41,46 +95,39 @@
             return window.MessagesApp.groups;
         }
 
-        // Fallback that still creates + renames groups and logs loudly.
-        const randColor = () => {
-            const pal = (GROUP_COLORS || []).map(c => c.val).filter(Boolean);
-            return pal.length ? pal[(Math.random() * pal.length) | 0] : null;
-        };
-
         async function create(userIds, opts = {}) {
             if (!Array.isArray(userIds) || userIds.length < 2) {
                 throw new Error('fallback groups.create: need >= 2 userIds');
             }
-            const color = opts.color || randColor();
+            const color = corePickGroupColor(opts.color);
             console.debug('[groups-fallback] POST /dm/conversations', { userIds, color });
             const res = await api(`/dm/conversations`, { method: 'POST', body: { user_ids: userIds, color } });
             const cid = res?.conversation_id || res?.id;
             if (!cid) throw new Error('fallback groups.create: server returned no id');
 
             let conv = await api(`/dm/conversations/${cid}`, { method: 'GET' });
-            const desired = _titleFromMembers(conv?.members || conv?.users || conv?.participants || []);
+            const members = conv?.members || conv?.users || conv?.participants || [];
+            const desired = coreComputeGroupTitleFromMembers(members);
             const serverTitle = (conv?.title || '').trim();
 
-            if (opts.alwaysRename || _isGenericGroupTitle(serverTitle)) {
-                try {
-                    await api(`/dm/conversations/${cid}/title`, { method: 'PATCH', body: { title: desired } });
-                    conv = await api(`/dm/conversations/${cid}`, { method: 'GET' });
-                    console.debug('[groups-fallback] renamed new group', { cid, title: conv?.title });
-                } catch (e) {
-                    console.error('[groups-fallback] rename failed', e);
-                }
-            }
-            return { id: cid, conversation: conv, title: conv?.title || desired, color: conv?.color || color || null };
+            const title = _isGenericGroupTitle(serverTitle) ? desired : serverTitle;
+            return { id: cid, conversation: conv, title, color: conv?.color || color || null };
         }
 
         async function renameToMembers(conversationId) {
             const conv = await api(`/dm/conversations/${conversationId}`, { method: 'GET' });
-            const desired = _titleFromMembers(conv?.members || []);
-            await api(`/dm/conversations/${conversationId}/title`, { method: 'PATCH', body: { title: desired } });
-            return desired;
+            const serverTitle = (conv?.title || '').trim();
+            const desired = coreComputeGroupTitleFromMembers(conv?.members || []);
+            const newTitle = _isGenericGroupTitle(serverTitle) ? desired : serverTitle;
+            try {
+                const prev = state.convMeta?.get?.(conversationId) || {};
+                state.convMeta?.set?.(conversationId, { ...prev, name: newTitle, auto_title: true, is_group: true });
+                scheduleSaveMeta?.();
+            } catch { /* ignore */ }
+            return newTitle;
         }
 
-        return { create, renameToMembers, computeMemberListTitle: _titleFromMembers };
+        return { create, renameToMembers, computeMemberListTitle: coreComputeGroupTitleFromMembers };
     })();
 
     // Helpers used across
@@ -788,7 +835,14 @@
         const prev = state.convMeta.get(id);
         try {
             const j = await api(`/dm/conversations/${id}`);
-            let meta = { name: 'Direct Message', photo: DEFAULT_PFP_DM, is_group: !!j.is_group, color: (j.color || null) };
+            const normalize = (c) => (U?.normalizeGroupColor ? U.normalizeGroupColor(c) : c);
+
+            let meta = {
+                name: 'Direct Message',
+                photo: DEFAULT_PFP_DM,
+                is_group: !!j.is_group,
+                color: normalize(j.color || null) || (prev?.color ?? null)
+            };
 
             const rxRaw = (j.reactable ?? j.reactions_enabled);
             const delRaw = (j.allow_delete ?? j.message_delete_enabled);
@@ -812,7 +866,6 @@
 
             if (j.is_group) {
                 const members = j.members || [];
-                // Prefer the central groups helper (excludes "me" properly), else fall back
                 const listTitle =
                     (GROUPS && GROUPS.computeMemberListTitle
                         ? GROUPS.computeMemberListTitle(members)
@@ -820,13 +873,30 @@
                 const serverTitle = (j.title || '').trim();
                 meta.name = serverTitle || listTitle;
                 meta.photo = j.photo || j.avatar || DEFAULT_PFP_GROUP;
-                meta.color = j.color || meta.color || '#ffffff';
-                meta.auto_title = _isGenericGroupTitle(serverTitle); // consider "Group" generic, too
+                meta.color = normalize(j.color) || meta.color || null; // <— ensure hex
+                meta.auto_title = _isGenericGroupTitle(serverTitle);
             } else {
-                const other = j.other || (Array.isArray(j.members) ? j.members.find(u => (u.id | 0) !== (state.meId | 0)) : null);
-                meta.name = pickName(other) || meta.name;
-                meta.photo = pickPhoto(other) || DEFAULT_PFP_DM;
+                const asUser = (u) => (u && (u.user || u)) || null;
 
+                const memberUsers = Array.isArray(j.members)
+                    ? j.members.map(asUser)
+                    : [];
+
+                const rawOther =
+                    asUser(j.other) ||
+                    memberUsers.find(u => ((u?.id | 0) !== (state.meId | 0))) ||
+                    null;
+
+                const other = asUser(rawOther);
+
+                // Prefer display name/username fallbacks if pickName yields empty
+                const fallbackName =
+                    (other?.display_name || other?.first_username || other?.username || '').replace(/^@+/, '').trim();
+
+                meta.name = pickName(other) || fallbackName || meta.name || 'Direct Message';
+                meta.photo = pickPhoto(other) || other?.profile_photo || DEFAULT_PFP_DM;
+
+                // keep reaction/delete flags as you already do...
                 if (reactable !== undefined) {
                     meta.reactions_enabled = reactable;
                     meta.reactable = reactable;
@@ -934,22 +1004,20 @@
     }
 
     function ensureConvInList(id, seed = {}) {
-        id = id | 0;
-        if (!id) return;
-
-        // Already present? nothing to do.
+        id = id | 0; if (!id) return;
         if ((state.allConvs || []).some(c => ((c.id | 0) === id))) return;
+
+        const normalize = (c) => (U?.normalizeGroupColor ? U.normalizeGroupColor(c) : c);
 
         const meta = state.convMeta.get(id) || {};
         const is_group = seed.is_group ?? !!meta.is_group;
         const title = seed.title || meta.name || (is_group ? 'Group' : 'Direct Message');
-        const color = seed.color ?? meta.color ?? null;
+        const color = normalize(seed.color ?? meta.color ?? null) || null;
 
         const item = { id, is_group, title, preview: '', color };
         state.allConvs = [item, ...(state.allConvs || [])];
         state.convItems.set(id, item);
 
-        // Re-render with the new placeholder
         state.filteredConvs = [...state.allConvs];
         renderConvs(state.filteredConvs);
     }
@@ -963,9 +1031,15 @@
 
     function renderConvs(list) {
         const wrap = $('convs'); wrap.innerHTML = ''; state.convRowEls.clear();
+        const normalize = (c) => (U?.normalizeGroupColor ? U.normalizeGroupColor(c) : c);
         list.forEach(it => {
             const row = document.createElement('div'); row.className = 'conv'; row.dataset.id = it.id;
-            const defaultMeta = { name: (it.is_group ? (it.title || 'Group') : (it.title || 'Direct Message')), photo: it.is_group ? DEFAULT_PFP_GROUP : DEFAULT_PFP_DM, is_group: !!it.is_group, color: it.color || null };
+            const defaultMeta = {
+                name: (it.is_group ? (it.title || 'Group') : (it.title || 'Direct Message')),
+                photo: it.is_group ? DEFAULT_PFP_GROUP : DEFAULT_PFP_DM,
+                is_group: !!it.is_group,
+                color: normalize(it.color || null) || null
+            };
             const meta = state.convMeta.get(it.id) || defaultMeta;
             row.onclick = () => openConversation(it.id, meta?.name || defaultMeta.name);
             const hasCut = !!window.MessagesApp.utils.getHideBeforeId(it.id);
@@ -995,12 +1069,15 @@
         state.allConvs = j.items || [];
         state.allConvs.forEach(it => state.convItems.set(it.id, it));
 
+        const normalize = (c) => (U?.normalizeGroupColor ? U.normalizeGroupColor(c) : c);
+
         for (const it of state.allConvs) {
             if (!state.convMeta.has(it.id)) {
                 let meta = {
                     name: it.is_group ? (it.title || 'Group') : 'Direct Message',
                     photo: it.is_group ? DEFAULT_PFP_GROUP : DEFAULT_PFP_DM,
-                    is_group: !!it.is_group, color: it.color || null
+                    is_group: !!it.is_group,
+                    color: normalize(it.color || null) || null
                 };
                 if (!it.is_group) {
                     let og = state.convUserOg.get(it.id) || extractOgFromConvDetail(it);
@@ -1706,20 +1783,51 @@
         // Optional: refresh menu state
         try { window.MessagesApp.renderChatMenu?.(); } catch { }
     }
+
     async function ensureGroupHasSmartTitle(cid) {
         try {
             const j = await api(`/dm/conversations/${cid}`, { method: 'GET' });
             if (!j?.is_group) return;
-            const t = (j.title || '').trim();
-            if (_isGenericGroupTitle(t)) {
-                console.debug('[dm-ui] auto-rename generic group title', { cid, title: t });
-                const newTitle = await GROUPS_SAFE.renameToMembers(cid);
-                setConvMeta(cid, { name: newTitle, auto_title: true });
-            }
+
+            const normalize = (c) => (U?.normalizeGroupColor ? U.normalizeGroupColor(c) : c);
+
+            const serverTitle = (j.title || '').trim();
+            const serverColor = normalize(j.color) || null;
+
+            const desiredTitle =
+                (typeof _titleFromMembersIncludingHost === 'function')
+                    ? _titleFromMembersIncludingHost(j.members || [])
+                    : (typeof computeDefaultGroupTitle === 'function'
+                        ? computeDefaultGroupTitle(j.members || [])
+                        : 'Group');
+
+            const needTitle = _isGenericGroupTitle(serverTitle);
+            const needColor = !serverColor;
+
+            if (!needTitle && !needColor) return;
+
+            // Pick a default color if the server didn't assign one
+            const targetColor = needColor ? (normalize(serverColor) || corePickGroupColor()) : serverColor;
+
+            // Optimistic UI
+            setConvMeta(cid, {
+                name: needTitle ? desiredTitle : serverTitle,
+                auto_title: needTitle,
+                is_group: true,
+                color: targetColor || serverColor || null
+            });
+
+            // Persist using only supported endpoints (or groups API if present)
+            await setGroupNameAndColor(cid, {
+                name: needTitle ? desiredTitle : undefined,
+                color: needColor ? targetColor : undefined
+            });
         } catch (e) {
             console.debug('[dm-ui] ensureGroupHasSmartTitle failed', cid, e);
         }
     }
+
+
     function openGlobalStream() {
         if (state.esGlobal) { try { state.esGlobal.close(); } catch { } }
         const es = new EventSource(`${API}/dm/stream`, { withCredentials: true });
@@ -1747,8 +1855,14 @@
         es.addEventListener('conv_meta', e => {
             const d = JSON.parse(e.data || '{}'); const cid = d.conversation_id | 0;
             const prev = state.convMeta.get(cid) || {};
+            const normalize = (c) => (U?.normalizeGroupColor ? U.normalizeGroupColor(c) : c);
             const newPhoto = d.photo_ts ? `${API}/dm/conversations/${cid}/icon?ts=${encodeURIComponent(d.photo_ts)}` : prev.photo;
-            const next = { ...prev, is_group: true, color: (typeof d.color === 'string' && d.color) ? d.color : prev.color || null, photo: newPhoto || prev.photo };
+            const next = {
+                ...prev,
+                is_group: true,
+                color: normalize(d.color) || prev.color || null,   // <— normalize to hex for UI
+                photo: newPhoto || prev.photo
+            };
             state.convMeta.set(cid, next); updateEverywhere(cid);
             if ((cid | 0) === (state.convId | 0)) updateTopBar(next);
         });
@@ -1849,20 +1963,109 @@
         } catch (e) { alert(window.MessagesApp.utils.errMsg(e)); }
     }
 
+    // === SET: group name + color (server + local UI) ==========================
+    // REPLACE the old setGroupNameAndColor with this safe shim:
+    async function setGroupNameAndColor(conversationId, { name, title, color } = {}) {
+        const cid = conversationId | 0;
+        if (!cid) throw new Error('setGroupNameAndColor: bad conversation id');
+
+        const normalize = (c) => (U?.normalizeGroupColor ? U.normalizeGroupColor(c) : c);
+        const wantTitle = String(name || title || '').trim();
+        const wantColor = normalize(color || '');
+
+        // Prefer the groups module if it exists (uses /title + /appearance under the hood)
+        if (window.MessagesApp?.groups?.setTitleAndColor) {
+            return await window.MessagesApp.groups.setTitleAndColor(cid, {
+                title: wantTitle, color: wantColor
+            });
+        }
+
+        // Fallback: call only endpoints that exist on your server
+        const out = { id: cid };
+
+        if (wantTitle) {
+            await api(`/dm/conversations/${cid}/title`, { method: 'PATCH', body: { title: wantTitle } });
+            out.title = wantTitle;
+        }
+
+        if (wantColor) {
+            const fd = new FormData();
+            fd.append('color', wantColor);
+            await api(`/dm/conversations/${cid}/appearance`, { method: 'PATCH', body: fd });
+            out.color = wantColor;
+        }
+
+        // Optimistic local UI update
+        setConvMeta(cid, {
+            name: wantTitle || undefined,
+            is_group: true,
+            color: wantColor || undefined,
+            auto_title: wantTitle ? false : undefined
+        });
+        try { if ((state.convId | 0) === cid) updateTopBar(state.convMeta.get(cid)); } catch { }
+        try { updateAllMessageBorders(); } catch { }
+
+        return out;
+    }
+
+    // CHANGED: createGroupFromIds — now applies explicit name/color if provided
     async function createGroupFromIds(userIds, opts = {}) {
         if (!Array.isArray(userIds) || userIds.length < 2) {
             alert('Pick at least 2 people'); return;
         }
         try {
-            console.debug('[dm-ui] createGroupFromIds', { userIds, opts, via: (window.MessagesApp?.groups ? 'groups-module' : 'fallback') });
-            const { id, title, color, conversation } = await GROUPS_SAFE.create(userIds, opts);
+            const wantColor = corePickGroupColor(opts?.color);
+            console.debug('[dm-ui] createGroupFromIds', { userIds, wantColor, via: (window.MessagesApp?.groups ? 'groups-module' : 'fallback') });
 
-            // seed UI
+            const { id, title: serverTitle, color: serverColor, conversation } =
+                await GROUPS_SAFE.create(userIds, { ...opts, color: wantColor });
+
+            const normalize = (c) => (U?.normalizeGroupColor ? U.normalizeGroupColor(c) : c);
+
+            const members = conversation?.members || conversation?.users || conversation?.participants || [];
+            const desiredTitle = _titleFromMembersIncludingHost(members);
+            const serverT = (conversation?.title || serverTitle || '').trim();
+
+            // Pre-resolve what the server gave us
+            const finalTitle = _isGenericGroupTitle(serverT) ? desiredTitle : (serverT || desiredTitle);
+            const finalColor = normalize(conversation?.color || serverColor || wantColor) || '#3b82f6';
             const photo = conversation?.photo || DEFAULT_PFP_GROUP;
-            setConvMeta(id, { name: title, photo, is_group: true, color: color || null, auto_title: true });
-            ensureConvInList(id, { is_group: true, title, color });
+
+            // Seed immediately
+            setConvMeta(id, { name: finalTitle, photo, is_group: true, color: finalColor, auto_title: true });
+            ensureConvInList(id, { is_group: true, title: finalTitle, color: finalColor });
+
+            // If caller supplied explicit name/color, enforce them on the server + UI
+            const wantTitleRaw = String((opts?.name || opts?.title || '')).trim();
+            const wantColorRaw = opts?.color;
+            const wantColorNorm = wantColorRaw ? normalize(corePickGroupColor(wantColorRaw)) : null;
+
+            if (wantTitleRaw || wantColorRaw) {
+                const targetTitle = wantTitleRaw || finalTitle;
+                const targetColor = wantColorNorm || finalColor;
+                try {
+                    await setGroupNameAndColor(id, { name: targetTitle, color: targetColor });
+                } catch { /* even if server refuses, local UI is already set */ }
+            }
 
             await openConversation(id);
+
+            try {
+                if (window.MessagesApp?.api?.randomizeMyMsgColor) {
+                    await window.MessagesApp.api.randomizeMyMsgColor(id);
+                } else {
+                    // Fallback: hit the same endpoint directly
+                    const randHex = () => '#' + Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0');
+                    const color = randHex();
+                    await api(`/dm/conversations/${id}/message_colors/me`, { method: 'PATCH', body: { color } });
+                    await syncMsgColors(id, { retry: 1 });
+                    window.MessagesApp.utils?.updateAllMessageBorders?.();
+                    console.log('[dm-ui] my color ->', color);
+                }
+            } catch (err) {
+                console.debug('[dm-ui] randomizeMyMsgColor failed (non-fatal)', err);
+            }
+
             return id;
         } catch (e) {
             alert(window.MessagesApp.utils.errMsg(e));
@@ -3081,7 +3284,8 @@
         chat: {
             fetchConvMeta, setConvMeta, updateTopBar, renderConvs, loadConversations, openConversation,
             startDmWith, fetchFriends, maybeAutoRenameGroup, sendMessage,
-            createGroup: createGroupFromIds
+            createGroup: createGroupFromIds,
+            setGroupNameAndColor,            // ← NEW export
         },
         revoke: { revokeAudioURLsIn, revokeObjectURLsIn }
     });

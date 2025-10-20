@@ -664,8 +664,39 @@ router.post('/dm/with/:slug', requireAuth, (req, res) => {
     res.json({ ok: true, conversation_id: id, id });
 });
 
+function shuffleInPlace(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = crypto.randomInt(i + 1); // 0..i
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
+function oxfordJoin(list) {
+    if (!list || list.length === 0) return '';
+    if (list.length === 1) return list[0];
+    if (list.length === 2) return `${list[0]} & ${list[1]}`;
+    return `${list.slice(0, -1).join(', ')}, & ${list[list.length - 1]}`;
+}
+
+function formatGroupTitle(list, maxLen = 120) {
+    // Try full title first.
+    const full = oxfordJoin(list);
+    if (full.length <= maxLen) return full;
+
+    // Otherwise, include as many names as fit, then append +N.
+    let best = '';
+    for (let i = 1; i <= list.length; i++) {
+        const partial = oxfordJoin(list.slice(0, i));
+        const rest = list.length - i;
+        const candidate = rest > 0 ? `${partial} +${rest}` : partial;
+        if (candidate.length <= maxLen) best = candidate; else break;
+    }
+    return best || `${list[0]} +${Math.max(0, list.length - 1)}`;
+}
+
 router.post('/dm/conversations', requireAuth, (req, res) => {
-    let { user_ids = [], title = null, color = null } = req.body || {};
+    let { user_ids = [] } = req.body || {};
     user_ids = Array.from(
         new Set([...(user_ids || []).map((n) => +n).filter(Boolean), req.userId])
     ).sort((a, b) => a - b);
@@ -674,18 +705,14 @@ router.post('/dm/conversations', requireAuth, (req, res) => {
     const isGroup = user_ids.length > 2 ? 1 : 0;
 
     if (!isGroup) {
-        const row = db
-            .prepare(
-                `
+        const row = db.prepare(`
       SELECT c.id
       FROM dm_conversations c
       JOIN dm_members m1 ON m1.conversation_id=c.id AND m1.user_id=?
       JOIN dm_members m2 ON m2.conversation_id=c.id AND m2.user_id=?
       WHERE c.is_group=0 AND c.deleted_at IS NULL
       LIMIT 1
-    `
-            )
-            .get(user_ids[0], user_ids[1]);
+    `).get(user_ids[0], user_ids[1]);
         if (row) {
             ensureConvKey(row.id);
             return res.json({ ok: true, conversation_id: row.id, id: row.id });
@@ -694,32 +721,80 @@ router.post('/dm/conversations', requireAuth, (req, res) => {
         if (user_ids.length < 3) return res.status(400).json({ error: 'min_size' });
     }
 
+    // ---- group defaults (server-side) ----
+    const PALETTE = ['#3b82f6', '#22c55e', '#a855f7', '#f97316', '#ec4899', '#14b8a6', '#eab308', '#ef4444'];
+
+    const names = user_ids.map((id) => getUserLabel(id)).filter(Boolean);
+
+    // Title from ALL members (creator included). If too long, collapse with +N.
+    function makeGroupTitle(list, maxLen = 120) {
+        const full = list.join(', ');
+        if (full.length <= maxLen) return full;
+        const out = [];
+        let used = 0;
+        for (const n of list) {
+            const sep = out.length ? ', ' : '';
+            if (used + sep.length + n.length > maxLen - 4) break;
+            out.push(n);
+            used += sep.length + n.length;
+        }
+        const rest = list.length - out.length;
+        return rest > 0 ? `${out.join(', ')} +${rest}` : out.join(', ');
+    }
+    const autoTitle = isGroup ? (formatGroupTitle(names, 120) || 'Group') : null;
+    const groupColor = isGroup ? PALETTE[crypto.randomInt(PALETTE.length)] : null;
+
     const tx = db.transaction(() => {
-        const r = db
-            .prepare(
-                `INSERT INTO dm_conversations(is_group, title, owner_id, color) VALUES(?,?,?,?)`
-            )
-            .run(isGroup, isGroup ? String(title || 'Group') : null, isGroup ? req.userId : null, isGroup ? color || null : null);
+        const r = db.prepare(`
+      INSERT INTO dm_conversations(is_group, title, owner_id, color)
+      VALUES(?,?,?,?)
+    `).run(
+            isGroup,
+            isGroup ? autoTitle : null,
+            isGroup ? req.userId : null,
+            isGroup ? groupColor : null
+        );
 
         const convId = r.lastInsertRowid;
+
+        // members
         for (const uid of user_ids) {
             db.prepare(`INSERT INTO dm_members(conversation_id, user_id) VALUES(?,?)`).run(convId, uid);
         }
         ensureConvKey(convId);
 
         if (isGroup) {
-            const palette = ['#3b82f6', '#22c55e', '#a855f7', '#f97316', '#ec4899', '#14b8a6', '#eab308', '#ef4444'];
-            const used = new Set();
+            // Build a shuffled "bag" so the first N users get unique random colors.
+            // If there are more members than colors, we reshuffle and reuse.
+            let bag = shuffleInPlace([...PALETTE]);
+            let idx = 0;
+
             for (const uid of user_ids) {
-                const pick = palette.find((c) => !used.has(c)) || palette[Math.random() * palette.length | 0];
-                used.add(pick);
-                db.prepare(
-                    `INSERT INTO dm_message_colors(conversation_id, user_id, color, updated_at)
-           VALUES(?,?,?,CURRENT_TIMESTAMP)
-           ON CONFLICT(conversation_id,user_id) DO UPDATE SET color=excluded.color, updated_at=CURRENT_TIMESTAMP`
-                ).run(convId, uid, pick);
+                if (idx >= bag.length) {            // palette exhausted -> reshuffle a fresh bag
+                    bag = shuffleInPlace([...PALETTE]);
+                    idx = 0;
+                }
+                const color = bag[idx++];
+
+                db.prepare(`
+      INSERT INTO dm_message_colors(conversation_id, user_id, color, updated_at)
+      VALUES(?,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(conversation_id,user_id)
+      DO UPDATE SET color=excluded.color, updated_at=CURRENT_TIMESTAMP
+    `).run(convId, uid, color);
+
+                // notify clients so they don't "ensure" later
+                try {
+                    broadcastToUsersOfConv(convId, 'color_change', { conversation_id: convId, user_id: uid, color });
+                } catch { }
             }
+
+            // Broadcast group meta (keeps clients from trying to set a color themselves)
+            try {
+                broadcastToUsersOfConv(convId, 'conv_meta', { conversation_id: convId, color: groupColor, photo_ts: null });
+            } catch { }
         }
+
         return convId;
     });
 

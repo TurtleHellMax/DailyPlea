@@ -288,6 +288,7 @@
                     const name = (title || '').trim();
                     if (!cid) return;
                     try {
+                        console.debug('[Title Change]', 'Changed title to', name);
                         await getApi()(`/dm/conversations/${cid}/title`, { method: 'PATCH', body: { title: name } });
                         const prev = (MA.state?.convMeta?.get?.(cid)) || {};
                         const next = { ...prev, name, auto_title: false };
